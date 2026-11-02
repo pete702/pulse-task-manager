@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Memory Spike "Black Box"** (`MemorySpikeEvent`, `detect_memory_spike()`): captures timestamp, peak RAM %, culprit name/PID/bytes when total RAM usage reaches ≥ 85%. `collect_process_memory()` refreshes processes with `ProcessRefreshKind::new().with_memory()`.
 - **Multi-Horizon Memory Chart** (`ChartWindow` in `model.rs`, switcher in `chart_view.rs`): `[ 1m | 5m | 15m ]` buttons; history ring buffer extended from 120 to 900 points (15 minutes at 1s); windowed point iterators; the plot now occupies 100% of card width (no `view_aspect`).
 - **Self Working-Set Trim** (`src/modules/memory/collector.rs`): `K32EmptyWorkingSet(GetCurrentProcess())` is called before measuring PULSE's own RSS, releasing font/OpenGL buffers and lowering the process footprint.
-- **Real UI Render Time** (`src/app.rs`): `update()` is timed with `Instant::now()` instead of `ctx.input().unstable_dt`, so the top badge reports actual render cost rather than VSync wait.
+- **Real UI Render Time** (`src/app.rs`): `update()` duration is measured with `Instant::now()` and shown on the next frame, so the top badge reports actual UI cost (≈1 ms) instead of the 1000 ms repaint interval.
 - **Complete Localization** (`src/i18n.rs`, `src/modules/memory/view.rs`, `src/ui/chrome.rs`): RAM/Swap cards, kernel tiles (OS reserve %, paged/non-paged pools, OS commit limit), chart title, and status bar are fully translated with no mixed-language leftovers; the active language follows the Windows locale.
 
 ### Changed
@@ -27,8 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`src/modules/memory/mod.rs`**: registers `pub mod process_model;`.
 - **`Cargo.toml`**: version bumped to `0.0.8`.
 
+### Fixed
+- English UI no longer leaks Ukrainian fragments in the memory cards (`Available / Free` values, cache/kernel/commit subtitles, OS activity counters).
+- Format templates (`{}`, `{:.1}`) are no longer rendered literally; new `i18n` helpers produce fully substituted strings.
+- UI badge no longer reports the repaint interval as render time.
+
 ### Infrastructure
-- **61 unit tests passing** (0 failed), including 9 new process-model tests (clone grouping, hog detector, search by name/PID, sorting, spike detection).
+- **64 unit tests passing** (0 failed), including 9 new process-model tests (clone grouping, hog detector, search by name/PID, sorting, spike detection) and 3 i18n formatting tests.
+- README hero screenshot (`screenshot.png`, English UI via `--lang=en`).
 - `cargo fmt` and `cargo clippy -- -D warnings` clean; live GUI self-test passes (`SELF-TEST PASSED (LIVE GUI)`).
 - Release binary exported to `../PULSE_BUILDS/PULSE_v0.0.8_multi_horizon_processes.exe` and `PULSE_latest.exe`.
 - Clean backup created at `../PULSE_BACKUPS/v0.0.8_verified/`.

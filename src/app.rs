@@ -60,7 +60,7 @@ pub struct PulseApp {
     /// Currently active tab.
     active_tab: ActiveTab,
     /// Last frame render time for UI timing.
-    last_frame_time: Instant,
+    last_ui_ms: f32,
     /// Memory usage history (ring buffer).
     memory_history: MemoryHistory,
 }
@@ -71,7 +71,7 @@ impl Default for PulseApp {
             snapshot_rx: spawn_telemetry_worker(),
             latest_snapshot: None,
             active_tab: ActiveTab::Memory,
-            last_frame_time: Instant::now(),
+            last_ui_ms: 0.0,
             memory_history: MemoryHistory::new(),
         }
     }
@@ -105,7 +105,7 @@ impl eframe::App for PulseApp {
 
         // Top panel
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            chrome::render_top_panel(ui, &latest_snapshot, frame_start, self.last_frame_time);
+            chrome::render_top_panel(ui, &latest_snapshot, self.last_ui_ms);
         });
 
         // Status bar
@@ -195,8 +195,8 @@ impl eframe::App for PulseApp {
             }
         });
 
-        // Update last frame time
-        self.last_frame_time = frame_start;
+        // Store the measured UI cost of this frame (shown on the next frame)
+        self.last_ui_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
 
         // Request repaint after 1000ms (1 second interval for 1s chart updates)
         ctx.request_repaint_after(std::time::Duration::from_millis(1000));

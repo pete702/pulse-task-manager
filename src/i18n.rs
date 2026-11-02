@@ -140,13 +140,9 @@ pub enum Key {
 
     // Kernel mini-tiles
     SystemCache,
-    SystemCacheSubtitle,
     KernelPool,
-    KernelPoolPaged,
-    KernelPoolNonpaged,
     CommitCharge,
-    CommitChargeLimitLabel,
-    OsActivity,
+    OsActivityTitle,
 
     // Chart
     MemoryHistoryTitle,
@@ -194,6 +190,38 @@ impl Key {
     #[inline]
     pub fn t_lang(self, lang: Lang) -> &'static str {
         lang.translate(self)
+    }
+}
+
+/// Formats the system-cache subtitle, e.g. "OS Reserve • 13.4% of RAM".
+pub fn system_cache_subtitle(pct: f64) -> String {
+    match current_lang() {
+        Lang::Uk => format!("Резерв ОС • {pct:.1}% від ОЗП"),
+        Lang::En => format!("OS Reserve • {pct:.1}% of RAM"),
+    }
+}
+
+/// Formats the kernel pool paged/non-paged detail line.
+pub fn kernel_pool_detail(paged: &str, nonpaged: &str) -> String {
+    match current_lang() {
+        Lang::Uk => format!("Вивантаж.: {paged} / Невивантаж.: {nonpaged}"),
+        Lang::En => format!("Paged: {paged} / Non-paged: {nonpaged}"),
+    }
+}
+
+/// Formats the commit limit line with its usage percentage.
+pub fn commit_limit_label(limit: &str, pct: f32) -> String {
+    match current_lang() {
+        Lang::Uk => format!("Ліміт ОС: {limit} ({pct:.1}%)"),
+        Lang::En => format!("Limit: {limit} ({pct:.1}%)"),
+    }
+}
+
+/// Formats the OS activity counts (processes, threads, handles).
+pub fn os_activity(processes: u32, threads: u32, handles: u32) -> String {
+    match current_lang() {
+        Lang::Uk => format!("{processes} процеси | {threads} потоки | {handles} дескриптори"),
+        Lang::En => format!("{processes} processes | {threads} threads | {handles} handles"),
     }
 }
 
@@ -285,26 +313,14 @@ impl Lang {
             (Lang::Uk, Key::SystemCache) => "Системний кеш",
             (Lang::En, Key::SystemCache) => "System Cache",
 
-            (Lang::Uk, Key::SystemCacheSubtitle) => "Резерв ОС • {:.1}% від ОЗП",
-            (Lang::En, Key::SystemCacheSubtitle) => "OS Reserve • {:.1}% of RAM",
-
             (Lang::Uk, Key::KernelPool) => "Пул ядра",
             (Lang::En, Key::KernelPool) => "Kernel Pool",
-
-            (Lang::Uk, Key::KernelPoolPaged) => "Вивантаж.: {} / Невивантаж.: {}",
-            (Lang::En, Key::KernelPoolPaged) => "Paged: {} / Non-paged: {}",
-
-            (Lang::Uk, Key::KernelPoolNonpaged) => "Невивантаж.: {}",
-            (Lang::En, Key::KernelPoolNonpaged) => "Non-paged: {}",
 
             (Lang::Uk, Key::CommitCharge) => "Виділено",
             (Lang::En, Key::CommitCharge) => "Committed",
 
-            (Lang::Uk, Key::CommitChargeLimitLabel) => "Ліміт ОС: {} ({:.1}%)",
-            (Lang::En, Key::CommitChargeLimitLabel) => "Limit: {} ({:.1}%)",
-
-            (Lang::Uk, Key::OsActivity) => "Активність ОС: {} процеси | {} потоки | {} дескриптори",
-            (Lang::En, Key::OsActivity) => "OS Activity: {} processes | {} threads | {} handles",
+            (Lang::Uk, Key::OsActivityTitle) => "Активність ОС",
+            (Lang::En, Key::OsActivityTitle) => "OS Activity",
 
             // Chart
             (Lang::Uk, Key::MemoryHistoryTitle) => "● ДИНАМІКА НАВАНТАЖЕННЯ ПАМ'ЯТІ",
@@ -480,5 +496,57 @@ mod tests {
         let (lang, lang_id) = detect_os_language();
         assert!(matches!(lang, Lang::Uk | Lang::En));
         assert_ne!(lang_id, 0);
+    }
+
+    #[test]
+    fn test_formatted_strings_uk() {
+        set_lang(Lang::Uk);
+        assert_eq!(system_cache_subtitle(13.4), "Резерв ОС • 13.4% від ОЗП");
+        assert_eq!(
+            kernel_pool_detail("790.4 MiB", "455.0 MiB"),
+            "Вивантаж.: 790.4 MiB / Невивантаж.: 455.0 MiB"
+        );
+        assert_eq!(
+            commit_limit_label("30.5 GiB", 67.5),
+            "Ліміт ОС: 30.5 GiB (67.5%)"
+        );
+        assert_eq!(
+            os_activity(181, 4318, 123_721),
+            "181 процеси | 4318 потоки | 123721 дескриптори"
+        );
+        assert_eq!(Key::OsActivityTitle.t(), "Активність ОС");
+    }
+
+    #[test]
+    fn test_formatted_strings_en() {
+        set_lang(Lang::En);
+        assert_eq!(system_cache_subtitle(13.4), "OS Reserve • 13.4% of RAM");
+        assert_eq!(
+            kernel_pool_detail("790.4 MiB", "455.0 MiB"),
+            "Paged: 790.4 MiB / Non-paged: 455.0 MiB"
+        );
+        assert_eq!(
+            commit_limit_label("30.5 GiB", 67.5),
+            "Limit: 30.5 GiB (67.5%)"
+        );
+        assert_eq!(
+            os_activity(181, 4318, 123_721),
+            "181 processes | 4318 threads | 123721 handles"
+        );
+        assert_eq!(Key::OsActivityTitle.t(), "OS Activity");
+    }
+
+    #[test]
+    fn test_formatted_strings_have_no_placeholders() {
+        set_lang(Lang::En);
+        let text = format!(
+            "{} {} {} {}",
+            system_cache_subtitle(10.0),
+            kernel_pool_detail("1 MiB", "2 MiB"),
+            commit_limit_label("3 GiB", 4.0),
+            os_activity(5, 6, 7)
+        );
+        assert!(!text.contains("{}"), "unformatted template leaked: {text}");
+        assert!(!text.contains("{:"), "unformatted template leaked: {text}");
     }
 }

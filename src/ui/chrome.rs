@@ -11,8 +11,7 @@ use crate::theme::colors;
 pub fn render_top_panel(
     ui: &mut egui::Ui,
     latest_snapshot: &Option<SystemSnapshot>,
-    frame_start: std::time::Instant,
-    last_frame_time: std::time::Instant,
+    last_ui_ms: f32,
 ) {
     ui.horizontal(|ui| {
         // App title
@@ -58,11 +57,10 @@ pub fn render_top_panel(
 
         // Self-diagnosis badge: [ PULSE: XX.X MB | UI: X.XX ms ]
         if let Some(ref snapshot) = latest_snapshot {
-            let ui_ms = frame_start.duration_since(last_frame_time).as_secs_f32() * 1000.0;
             ui.label(
                 egui::RichText::new(format!(
                     "[ PULSE: {:.1} MB | UI: {:.2} ms ]",
-                    snapshot.pulse_ram_mb, ui_ms
+                    snapshot.pulse_ram_mb, last_ui_ms
                 ))
                 .monospace()
                 .size(12.0)

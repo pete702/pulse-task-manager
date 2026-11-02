@@ -2,7 +2,7 @@
 
 use eframe::egui;
 
-use crate::i18n::Key;
+use crate::i18n::{self, Key};
 use crate::modules::memory::model::MemorySnapshot;
 use crate::theme::{card_frame, colors};
 
@@ -99,7 +99,7 @@ pub fn render_memory_cards(
                         );
                         ui.label(
                             egui::RichText::new(format!(
-                                "{:.2} GiB / Вільно: {:.2} GiB",
+                                "{:.2} GiB / {:.2} GiB",
                                 mem.ram_available_gib(),
                                 mem.ram_free_bytes as f64 / 1_073_741_824.0
                             ))
@@ -290,14 +290,10 @@ pub fn render_memory_cards(
                     0.0
                 };
                 ui.label(
-                    egui::RichText::new(format!(
-                        "{} {:.1}% від ОЗП",
-                        Key::SystemCacheSubtitle.t(),
-                        cache_pct
-                    ))
-                    .monospace()
-                    .size(10.0)
-                    .color(colors::TEXT_SECONDARY),
+                    egui::RichText::new(i18n::system_cache_subtitle(cache_pct))
+                        .monospace()
+                        .size(10.0)
+                        .color(colors::TEXT_SECONDARY),
                 );
             });
         });
@@ -321,13 +317,12 @@ pub fn render_memory_cards(
                 );
                 ui.add_space(2.0);
                 ui.label(
-                    egui::RichText::new(format!(
-                        "{} / {}",
-                        format_bytes(mem.kernel_paged_bytes),
-                        format_bytes(mem.kernel_nonpaged_bytes)
+                    egui::RichText::new(i18n::kernel_pool_detail(
+                        &format_bytes(mem.kernel_paged_bytes),
+                        &format_bytes(mem.kernel_nonpaged_bytes),
                     ))
                     .monospace()
-                    .size(10.0)
+                    .size(9.0)
                     .color(colors::TEXT_SECONDARY),
                 );
             });
@@ -355,10 +350,9 @@ pub fn render_memory_cards(
                     0.0
                 };
                 ui.label(
-                    egui::RichText::new(format!(
-                        "Ліміт ОС: {} ({:.1}%)",
-                        format_bytes(mem.commit_limit_bytes),
-                        commit_pct
+                    egui::RichText::new(i18n::commit_limit_label(
+                        &format_bytes(mem.commit_limit_bytes),
+                        commit_pct,
                     ))
                     .monospace()
                     .size(10.0)
@@ -371,16 +365,17 @@ pub fn render_memory_cards(
         card_frame().show(&mut cols[3], |ui| {
             ui.vertical_centered(|ui| {
                 ui.label(
-                    egui::RichText::new(Key::OsActivity.t())
+                    egui::RichText::new(Key::OsActivityTitle.t())
                         .monospace()
                         .size(11.0)
                         .color(colors::TEXT_SECONDARY),
                 );
                 ui.add_space(4.0);
                 ui.label(
-                    egui::RichText::new(format!(
-                        "{} процеси | {} потоки | {} дескриптори",
-                        mem.system_processes, mem.system_threads, mem.system_handles
+                    egui::RichText::new(i18n::os_activity(
+                        mem.system_processes,
+                        mem.system_threads,
+                        mem.system_handles,
                     ))
                     .monospace()
                     .size(13.0)

@@ -12,6 +12,10 @@
 - **Zero-Cost Abstractions** — Pinned dependency versions for 100% API compatibility. Release profile uses LTO, strip, panic=abort.
 - **Reference-Grade "Obsidian HUD" UI** — Dark theme (`#0B0C10` window, `#12141C` cards, `#1F2330` borders, 6px radius). All numbers (MB, GB, %, PID) rendered in monospace. Traffic-light load colors: `<60%` cyan (`#00F0FF`), `60–85%` amber (`#FFB800`), `≥85%` neon red (`#FF2A54`).
 
+![PULSE — Memory tab (English UI)](screenshot.png)
+
+*Memory tab: RAM/Swap cards, kernel metrics, and 1m/5m/15m utilization history.*
+
 ---
 
 ## ✨ Key Features (Roadmap — 7 Phases to v1.0.0)
@@ -83,7 +87,7 @@ pulse_manager/
 - ✅ **Memory HUD Cards & 60s Chart** (v0.0.6): Dual RAM/Swap cards with traffic-light progress bars, 4 kernel mini-tiles (System Cache, Kernel Pool, Commit Charge, OS Handles/Threads), `egui_plot` dual-line neon chart (60s history), GitHub Release pipeline
 - ✅ **OS Audit & Code Review** (v0.0.7): Auto-detect Windows UI Language via `GetUserDefaultUILanguage()` (no manual switcher), fixed real SystemCache via `K32GetPerformanceInfo` (cb init + override field), 60s chart stretches to full card width (`.width(ui.available_width())`), worker optimized to `refresh_pids(&[pid])` (~35-50MB RAM vs 150MB), all UI text 100% localized via i18n (no bilingual "vinagret"), UI chrome extracted to `src/ui/chrome.rs` (< 180 lines/file)
 - ✅ **Multi-Horizon Chart & Process Memory Model** (v0.0.8): 1m/5m/15m chart switcher with 900-point (15-min) ring buffer; `process_model.rs` with `ProcessMemoryItem`, `MemorySortCol`, case-insensitive search, clone grouping, `is_hog` (RAM ≥ 15%), and `MemorySpikeEvent` black box (RAM ≥ 85%); `K32EmptyWorkingSet` self-trim before RSS measurement; real `update()` render timing; fully localized cards, kernel tiles, and status bar (language auto-selected from the Windows locale, no mixed-language leftovers)
-- ✅ **61 unit tests passing** (theme: 6, app: 10, core: 3, i18n: 7, memory model: 12, collector: 7, process model: 9, chart: 2, view: 2, ui: 1, integration: 1, file size: 1)
+- ✅ **64 unit tests passing** (theme: 6, app: 10, core: 3, i18n: 10, memory model: 12, collector: 7, process model: 9, chart: 2, view: 2, ui: 1, integration: 1, file size: 1)
 - ✅ `cargo clippy -- -D warnings` — zero warnings
 - ✅ Self-test: **HEADLESS CI** (`CI=true` / `GITHUB_ACTIONS=true`) — runs without `eframe::run_native`, validates live snapshot + memory history + i18n toggle; **LIVE GUI** — auto-switches tabs & lang
 - ✅ Release profile optimized (LTO=fat, strip, panic=abort)
