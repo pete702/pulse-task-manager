@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.3] - 2026-11-02
+
+### Added
+- **Internationalization (i18n)** (`src/i18n.rs`): Language switcher `Lang { Uk, En }` with default Uk, instant toggle via `[ UA | EN ]` button in top bar. Type-safe translation keys for all UI elements. Unit tests for language switching and translations.
+- **System Fonts** (`src/theme.rs::setup_fonts`): Loads Segoe UI (proportional) and Consolas (monospace) from `C:\Windows\Fonts\` with safe fallback to egui defaults.
+- **Application Icon**: Programmatically generated 32x32 RGBA icon — dark `#0B0C10` background with neon cyan `#00F0FF` pulse wave symbol.
+- **Self-Diagnosis Badge**: Top-right corner shows `[ PULSE: XX.X MB | UI: X.XX ms ]` — live process RAM and frame render time (monospace).
+- **Self-Test Mode** (`--self-test`): CI headless mode (`CI=true`) validates `pulse_ram_mb > 0` and exits 0; Local GUI mode renders 5 frames after first snapshot, validates, auto-closes.
+- **GitHub Actions CI** (`.github/workflows/ci.yml`): `windows-latest`, fmt, clippy -D warnings, check, test, release build, self-test.
+- **Updated DoD (Definition of Done)**: 8 iron rules (fmt, clippy, test, self-test, build/export, clean backup, docs, git push) in `ARCHITECTURE.md`.
+
+### Changed
+- **`src/main.rs`**: Added `#![deny(unsafe_code)]`, `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`, viewport 1180x760 (min 950x620), custom icon, `--self-test` argument parsing.
+- **`src/core/mod.rs`**: `SystemSnapshot` extended with `pulse_ram_mb: f32` (self process RAM in MB).
+- **`src/core/worker.rs`**: Worker now collects current process RAM via `sysinfo::Process::memory()` every 500ms. Unit tests updated.
+- **`src/app.rs`**: Language switcher button, self-diagnosis badge, `request_repaint_after(500ms)` for economical updates. `SelfTestApp` for automated testing. `ActiveTab::label()` now uses i18n.
+- **`src/theme.rs`**: Added `setup_fonts(ctx)` for Windows system fonts.
+- **`Cargo.toml`**: Version bumped to `0.0.3`.
+
+### Infrastructure
+- All 23 unit tests passing (theme: 6, app: 7, core: 2, i18n: 8).
+- Zero warnings on `cargo clippy --all-targets -- -D warnings`.
+- Self-test passes both headless (CI) and live GUI modes.
+- Release binary exported to `../PULSE_BUILDS/pulse_v0.0.3.exe` and `PULSE_LATEST.exe`.
+- Clean backup created at `../PULSE_BACKUPS/v0.0.3_verified/`.
+
 ---
 
 ## [v0.0.2] - 2026-11-02
@@ -51,22 +77,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Planned for v0.0.3
+### Planned for v0.0.4
 - **Memory Module — Model** (`src/modules/memory/model.rs`): `PhysicalMemory`, `SwapMemory`, `CacheCleaner` structs with English doc-comments, unit tests.
 
-### Planned for v0.0.4
+### Planned for v0.0.5
 - **Memory Module — Collector** (`src/modules/memory/collector.rs`): `sysinfo` integration for RAM/Swap, `EmptyWorkingSet` wrapper via `windows-sys`.
 
-### Planned for v0.0.5
+### Planned for v0.0.6
 - **Memory Module — View** (`src/modules/memory/view.rs`): RAM/Swap cards with `card_frame()`, progress bars, `%` with `load_color()`, `egui_plot` history graphs, "Clear Cache" button.
 
-### Planned for v0.0.6
+### Planned for v0.0.7
 - **Processes Module — Model** (`src/modules/processes/model.rs`): `ProcessEntry`, `GroupKey`, `ProcessGroup`.
 
-### Planned for v0.0.7
+### Planned for v0.0.8
 - **Processes Module — Collector** (`src/modules/processes/collector.rs`): `sysinfo::Processes` snapshot + Windows enrichment (exe path, session, cmdline).
 
-### Planned for v0.0.8
+### Planned for v0.0.9
 - **Processes Module — View** (`src/modules/processes/view.rs`): `egui_extras::TableBuilder` with monospace PID, grouping, search/filter.
 
 ### Planned for v0.1.0 — Memory Release

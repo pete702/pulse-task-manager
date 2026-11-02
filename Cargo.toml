@@ -1,6 +1,6 @@
 [package]
 name = "pulse_manager"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
 description = "⚡ PULSE // Next-Gen System Telemetry for Windows — modular task manager in Rust + egui"
 license = "MIT"

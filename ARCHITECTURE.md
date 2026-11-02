@@ -96,35 +96,20 @@ windows-sys = { version = "0.52.0", features = ["Win32_System_ProcessStatus", "W
 
 ---
 
-## 5. Definition of Done (DoD) — Per-Version Completion Rule
+## 5. Definition of Done (DoD) — 8 Iron Rules of Step Completion
 
-> **The agent MUST perform 5 actions** on every version completion:
+> **The agent MUST perform ALL 8 actions** on every version completion. No exceptions.
 
-### 5.1. Code Quality
-- `cargo check` — **0 compilation errors**
-- `cargo test` — **all tests pass** (unit + integration, if any)
-
-### 5.2. Versioning
-- Update `version` in `Cargo.toml` (SemVer: `MAJOR.MINOR.PATCH`)
-
-### 5.3. Official CHANGELOG.md (inside repository)
-- Add entry per [Keep a Changelog](https://keepachangelog.com/):
-  - `## [vX.Y.Z] - YYYY-MM-DD`
-  - `### Added / Changed / Fixed / Removed`
-
-### 5.4. External Engineering History — `../PULSE_AI_CONTEXT.md`
-> **STRICT RULE:** **Never delete old entries**. Project passport updated at top; chronological history appended at bottom.
-
-Version entry structure:
-1. **Files created/modified** and what was implemented
-2. **BUG & FIX LOG**: detailed compilation/test errors, root cause, exact fix (or "Compiled first try without errors")
-3. **Next version plan**
-
-### 5.5. Git Commit
-```bash
-git add .
-git commit -m "vX.Y.Z: short description"
-```
+| # | Action | Command / Description | Success Criteria |
+|---|--------|----------------------|------------------|
+| **1** | **Format** | `cargo fmt` | Zero formatting diffs |
+| **2** | **Clippy** | `cargo clippy --all-targets -- -D warnings` | **0 warnings**, **0 errors** |
+| **3** | **Unit Tests** | `cargo test` | **All tests pass** |
+| **4** | **Self-Test** | `cargo run -- --self-test` | Prints `SELF-TEST PASSED` and exits 0 |
+| **5** | **Build & Export** | `cargo build --release` → copy to `../PULSE_BUILDS/pulse_vX.Y.Z.exe` + `PULSE_LATEST.exe` | Both `.exe` files exist and run |
+| **6** | **Clean Backup** | Copy `src/`, `Cargo.toml`, `Cargo.lock`, `*.md` to `../PULSE_BACKUPS/vX.Y.Z_verified/` (NO `target/`, NO `.git/`) | Backup folder complete |
+| **7** | **Documentation** | Update `CHANGELOG.md` (EN), append to `../PULSE_AI_CONTEXT.md` (UA), update `../PULSE_UA_MANUAL.md` (UA) — **never delete history** | All three files current |
+| **8** | **Git Push** | `git add . && git commit -m "vX.Y.Z: description" && git push` | Remote `main` updated |
 
 ---
 
@@ -141,7 +126,11 @@ pulse_manager/
 ├── src/
 │   ├── main.rs                 # Entry point: eframe::run_native
 │   ├── app.rs                  # Root App struct, state, update loop
-│   ├── theme.rs                # Obsidian HUD tokens + style builder
+│   ├── theme.rs                # Obsidian HUD tokens + style builder + fonts
+│   ├── i18n.rs                 # Language switcher (UA/EN)
+│   ├── core/
+│   │   ├── mod.rs              # SystemSnapshot, mpsc channel types, spawn_telemetry_worker
+│   │   └── worker.rs           # Background thread: 500ms interval, System::uptime() → channel
 │   ├── modules/
 │   │   ├── mod.rs              # Pub re-exports all modules
 │   │   ├── memory/
@@ -183,17 +172,18 @@ pulse_manager/
 ## 8. CI/CD Gates (Pre-Push Checks)
 
 ```yaml
-# .github/workflows/ci.yml (planned)
+# .github/workflows/ci.yml
 - cargo fmt --check
-- cargo clippy -- -D warnings
+- cargo clippy --all-targets -- -D warnings
 - cargo check --all-targets
 - cargo test --all-targets
 - cargo build --release
+- cargo run -- --self-test
 ```
 
 > All gates **mandatory**. Merge without green checks — forbidden.
 
 ---
 
-**Document Version:** `v0.0.2` (synced with `Cargo.toml`)
+**Document Version:** `v0.0.3` (synced with `Cargo.toml`)
 **Last Updated:** 2026-11-02
