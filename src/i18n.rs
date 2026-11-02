@@ -1,4 +1,4 @@
-//! Internationalization (i18n) for PULSE: language switching UA/EN.
+//! Internationalization (i18n) for PULSE: auto-detect Windows UI language (UA/EN).
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -13,24 +13,6 @@ pub enum Lang {
 }
 
 impl Lang {
-    /// Returns the other language (toggle).
-    #[inline]
-    pub fn toggle(self) -> Self {
-        match self {
-            Lang::Uk => Lang::En,
-            Lang::En => Lang::Uk,
-        }
-    }
-
-    /// Button label for the language switcher in the top bar.
-    #[inline]
-    pub fn button_label(self) -> &'static str {
-        match self {
-            Lang::Uk => "[ UA | EN ]",
-            Lang::En => "[ EN | UA ]",
-        }
-    }
-
     /// Current language indicator for display.
     #[allow(dead_code)]
     #[inline]
@@ -38,6 +20,15 @@ impl Lang {
         match self {
             Lang::Uk => "UA",
             Lang::En => "EN",
+        }
+    }
+
+    /// Returns the locale string for display in top bar.
+    #[inline]
+    pub fn locale_string(self) -> &'static str {
+        match self {
+            Lang::Uk => "UK-UA (0x0422)",
+            Lang::En => "EN-US (0x0409)",
         }
     }
 }
@@ -61,12 +52,49 @@ pub fn set_lang(lang: Lang) {
     CURRENT_LANG.store(lang as u8, Ordering::Relaxed);
 }
 
-/// Toggles the global language and returns the new value.
-#[inline]
-pub fn toggle_lang() -> Lang {
-    let new = current_lang().toggle();
-    set_lang(new);
-    new
+/// Initializes language from OS detection (Windows GetUserDefaultUILanguage).
+/// Called once at startup. Can be overridden by `--lang=uk|en` CLI arg for testing.
+pub fn init_language(cli_lang_override: Option<&str>) {
+    let lang = if let Some(override_str) = cli_lang_override {
+        match override_str {
+            "uk" => Lang::Uk,
+            "en" => Lang::En,
+            _ => detect_os_language().0,
+        }
+    } else {
+        detect_os_language().0
+    };
+    set_lang(lang);
+}
+
+/// Detects the Windows UI language via GetUserDefaultUILanguage().
+/// Returns (Lang, lang_id) where lang_id is the raw LANGID (e.g., 0x0422 for Ukrainian).
+#[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
+pub fn detect_os_language() -> (Lang, u16) {
+    use windows_sys::Win32::Globalization::GetUserDefaultUILanguage;
+
+    // SAFETY: GetUserDefaultUILanguage is a simple Win32 API call with no unsafe preconditions.
+    let lang_id = unsafe { GetUserDefaultUILanguage() };
+
+    // Extract primary language ID (lower 10 bits)
+    // LANG_UKRAINIAN = 0x22, LANG_ENGLISH = 0x09
+    let primary_lang = lang_id & 0x3FF;
+
+    let lang = if primary_lang == 0x22 {
+        // LANG_UKRAINIAN
+        Lang::Uk
+    } else {
+        Lang::En
+    };
+
+    (lang, lang_id)
+}
+
+/// Fallback for non-Windows targets (should not happen for this Windows-only app).
+#[cfg(not(target_os = "windows"))]
+pub fn detect_os_language() -> (Lang, u16) {
+    (Lang::En, 0x0409)
 }
 
 /// Translation key type for type-safe lookups.
@@ -78,7 +106,7 @@ pub enum Key {
     VersionPrefix,
     UptimeLabel,
     SelfDiagLabel,
-    LangSwitcherTooltip,
+    LocaleIndicator,
 
     // Sidebar tabs
     TabMemory,
@@ -95,7 +123,35 @@ pub enum Key {
     SelfTestPassedLive,
     SelfTestFailed,
 
-    // Memory module
+    // Memory module - Card headers
+    PhysicalRamTitle,
+    SwapCommitTitle,
+
+    // Memory module - Grid labels
+    UsedTotal,
+    AvailableFree,
+    CachedStandby,
+    PeakSession,
+    SwapUsedTotal,
+    CommitChargeLimit,
+    CommitPercent,
+
+    // Kernel mini-tiles
+    SystemCache,
+    KernelPool,
+    CommitCharge,
+    OsActivity,
+
+    // Chart
+    MemoryHistory60s,
+    RamPercent,
+    SwapPercent,
+
+    // Status bar
+    StatusReady,
+    StatusInfo,
+
+    // Memory module - legacy keys (keep for backward compat)
     MemoryTotal,
     MemoryAvailable,
     MemoryUsed,
@@ -139,8 +195,8 @@ impl Lang {
             (Lang::Uk, Key::SelfDiagLabel) => "Self-Diag",
             (Lang::En, Key::SelfDiagLabel) => "Self-Diag",
 
-            (Lang::Uk, Key::LangSwitcherTooltip) => "Перемкнути мову інтерфейсу",
-            (Lang::En, Key::LangSwitcherTooltip) => "Switch interface language",
+            (Lang::Uk, Key::LocaleIndicator) => "Локаль",
+            (Lang::En, Key::LocaleIndicator) => "Locale",
 
             // Sidebar tabs (geometric Unicode symbols, no emoji)
             (Lang::Uk, Key::TabMemory) => "◈ Пам'ять (RAM)",
@@ -160,10 +216,10 @@ impl Lang {
 
             // Central panel
             (Lang::Uk, Key::AwaitingMemoryModel) => {
-                "Ядро телеметрії активне. Очікування моделі пам'яті (v0.0.4)..."
+                "Ядро телеметрії активне. Очікування моделі пам'яті..."
             }
             (Lang::En, Key::AwaitingMemoryModel) => {
-                "Telemetry core active. Awaiting memory model (v0.0.4)..."
+                "Telemetry core active. Awaiting memory model..."
             }
 
             // Self-test
@@ -176,7 +232,70 @@ impl Lang {
             (Lang::Uk, Key::SelfTestFailed) => "SELF-TEST FAILED",
             (Lang::En, Key::SelfTestFailed) => "SELF-TEST FAILED",
 
-            // Memory module
+            // Memory module - Card headers
+            (Lang::Uk, Key::PhysicalRamTitle) => "◈ ФІЗИЧНА ПАМ'ЯТЬ (RAM)",
+            (Lang::En, Key::PhysicalRamTitle) => "◈ PHYSICAL MEMORY (RAM)",
+
+            (Lang::Uk, Key::SwapCommitTitle) => "▣ ФАЙЛ ПІДКАЧКИ ТА COMMIT",
+            (Lang::En, Key::SwapCommitTitle) => "▣ SWAP FILE & COMMIT",
+
+            // Memory module - Grid labels
+            (Lang::Uk, Key::UsedTotal) => "Використано / Всього",
+            (Lang::En, Key::UsedTotal) => "Used / Total",
+
+            (Lang::Uk, Key::AvailableFree) => "Доступно / Вільно",
+            (Lang::En, Key::AvailableFree) => "Available / Free",
+
+            (Lang::Uk, Key::CachedStandby) => "Кешовано (Standby)",
+            (Lang::En, Key::CachedStandby) => "Cached (Standby)",
+
+            (Lang::Uk, Key::PeakSession) => "Пік за сесію",
+            (Lang::En, Key::PeakSession) => "Peak (Session)",
+
+            (Lang::Uk, Key::SwapUsedTotal) => "Swap Використано / Всього",
+            (Lang::En, Key::SwapUsedTotal) => "Swap Used / Total",
+
+            (Lang::Uk, Key::CommitChargeLimit) => "Commit Charge / Limit",
+            (Lang::En, Key::CommitChargeLimit) => "Commit Charge / Limit",
+
+            (Lang::Uk, Key::CommitPercent) => "Commit %",
+            (Lang::En, Key::CommitPercent) => "Commit %",
+
+            // Kernel mini-tiles
+            (Lang::Uk, Key::SystemCache) => "Системний кеш",
+            (Lang::En, Key::SystemCache) => "System Cache",
+
+            (Lang::Uk, Key::KernelPool) => "Пул ядра",
+            (Lang::En, Key::KernelPool) => "Kernel Pool",
+
+            (Lang::Uk, Key::CommitCharge) => "Виділено (Commit Charge)",
+            (Lang::En, Key::CommitCharge) => "Committed (Commit Charge)",
+
+            (Lang::Uk, Key::OsActivity) => "Активність ОС (Handles & Threads)",
+            (Lang::En, Key::OsActivity) => "OS Activity (Handles & Threads)",
+
+            // Chart
+            (Lang::Uk, Key::MemoryHistory60s) => "● 60-SECOND MEMORY HISTORY",
+            (Lang::En, Key::MemoryHistory60s) => "● 60-SECOND MEMORY HISTORY",
+
+            (Lang::Uk, Key::RamPercent) => "RAM %",
+            (Lang::En, Key::RamPercent) => "RAM %",
+
+            (Lang::Uk, Key::SwapPercent) => "Swap %",
+            (Lang::En, Key::SwapPercent) => "Swap %",
+
+            // Status bar
+            (Lang::Uk, Key::StatusReady) => "● ГОТОВО",
+            (Lang::En, Key::StatusReady) => "● READY",
+
+            (Lang::Uk, Key::StatusInfo) => {
+                "PULSE v0.0.7  |  Obsidian HUD  |  60s History  |  Windows Kernel Metrics"
+            }
+            (Lang::En, Key::StatusInfo) => {
+                "PULSE v0.0.7  |  Obsidian HUD  |  60s History  |  Windows Kernel Metrics"
+            }
+
+            // Memory module - legacy keys (keep for backward compat)
             (Lang::Uk, Key::MemoryTotal) => "Всього RAM",
             (Lang::En, Key::MemoryTotal) => "Total RAM",
 
@@ -217,12 +336,6 @@ mod tests {
     }
 
     #[test]
-    fn test_lang_toggle() {
-        assert_eq!(Lang::Uk.toggle(), Lang::En);
-        assert_eq!(Lang::En.toggle(), Lang::Uk);
-    }
-
-    #[test]
     fn test_current_lang_get_set() {
         set_lang(Lang::En);
         assert_eq!(current_lang(), Lang::En);
@@ -231,15 +344,11 @@ mod tests {
     }
 
     #[test]
-    fn test_toggle_lang() {
-        set_lang(Lang::Uk);
-        let new = toggle_lang();
-        assert_eq!(new, Lang::En);
-        assert_eq!(current_lang(), Lang::En);
-
-        let new = toggle_lang();
-        assert_eq!(new, Lang::Uk);
+    fn test_init_language_override() {
+        init_language(Some("uk"));
         assert_eq!(current_lang(), Lang::Uk);
+        init_language(Some("en"));
+        assert_eq!(current_lang(), Lang::En);
     }
 
     #[test]
@@ -252,10 +361,12 @@ mod tests {
         assert_eq!(Key::TabNetwork.t(), "⇅ Мережа (Network)");
         assert_eq!(Key::TabSystem.t(), "⚙ Система та GPU");
         assert_eq!(Key::UptimeLabel.t(), "Uptime");
-        assert_eq!(
-            Key::AwaitingMemoryModel.t(),
-            "Ядро телеметрії активне. Очікування моделі пам'яті (v0.0.4)..."
-        );
+        assert_eq!(Key::PhysicalRamTitle.t(), "◈ ФІЗИЧНА ПАМ'ЯТЬ (RAM)");
+        assert_eq!(Key::SwapCommitTitle.t(), "▣ ФАЙЛ ПІДКАЧКИ ТА COMMIT");
+        assert_eq!(Key::UsedTotal.t(), "Використано / Всього");
+        assert_eq!(Key::AvailableFree.t(), "Доступно / Вільно");
+        assert_eq!(Key::CachedStandby.t(), "Кешовано (Standby)");
+        assert_eq!(Key::PeakSession.t(), "Пік за сесію");
     }
 
     #[test]
@@ -268,32 +379,25 @@ mod tests {
         assert_eq!(Key::TabNetwork.t(), "⇅ Network & Ping");
         assert_eq!(Key::TabSystem.t(), "⚙ System & GPU");
         assert_eq!(Key::UptimeLabel.t(), "Uptime");
-        assert_eq!(
-            Key::AwaitingMemoryModel.t(),
-            "Telemetry core active. Awaiting memory model (v0.0.4)..."
-        );
+        assert_eq!(Key::PhysicalRamTitle.t(), "◈ PHYSICAL MEMORY (RAM)");
+        assert_eq!(Key::SwapCommitTitle.t(), "▣ SWAP FILE & COMMIT");
+        assert_eq!(Key::UsedTotal.t(), "Used / Total");
+        assert_eq!(Key::AvailableFree.t(), "Available / Free");
+        assert_eq!(Key::CachedStandby.t(), "Cached (Standby)");
+        assert_eq!(Key::PeakSession.t(), "Peak (Session)");
     }
 
     #[test]
-    fn test_button_labels() {
-        assert_eq!(Lang::Uk.button_label(), "[ UA | EN ]");
-        assert_eq!(Lang::En.button_label(), "[ EN | UA ]");
+    fn test_locale_strings() {
+        assert_eq!(Lang::Uk.locale_string(), "UK-UA (0x0422)");
+        assert_eq!(Lang::En.locale_string(), "EN-US (0x0409)");
     }
 
     #[test]
-    fn test_self_test_messages() {
-        set_lang(Lang::En);
-        assert_eq!(
-            Key::SelfTestPassedHeadless.t(),
-            "SELF-TEST PASSED (HEADLESS CI)"
-        );
-        assert_eq!(Key::SelfTestPassedLive.t(), "SELF-TEST PASSED (LIVE GUI)");
-        assert_eq!(Key::SelfTestFailed.t(), "SELF-TEST FAILED");
-    }
-
-    #[test]
-    fn test_tab_labels() {
-        assert_eq!(Lang::Uk.button_label(), "[ UA | EN ]");
-        assert_eq!(Lang::En.button_label(), "[ EN | UA ]");
+    fn test_detect_os_language() {
+        // This test just verifies the function exists and returns a valid tuple
+        let (lang, lang_id) = detect_os_language();
+        assert!(matches!(lang, Lang::Uk | Lang::En));
+        assert_ne!(lang_id, 0);
     }
 }

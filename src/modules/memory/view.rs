@@ -2,6 +2,7 @@
 
 use eframe::egui;
 
+use crate::i18n::Key;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::theme::colors;
 
@@ -36,7 +37,7 @@ pub fn render_memory_cards(
                 // Header
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new("◈ ФІЗИЧНА ОЗП / PHYSICAL RAM")
+                        egui::RichText::new(Key::PhysicalRamTitle.t())
                             .monospace()
                             .size(13.0)
                             .color(colors::TEXT_PRIMARY),
@@ -72,7 +73,7 @@ pub fn render_memory_cards(
                     .show(ui, |ui| {
                         // Used / Total
                         ui.label(
-                            egui::RichText::new("Used / Total")
+                            egui::RichText::new(Key::UsedTotal.t())
                                 .monospace()
                                 .size(12.0)
                                 .color(colors::TEXT_SECONDARY),
@@ -91,7 +92,7 @@ pub fn render_memory_cards(
 
                         // Available / Free
                         ui.label(
-                            egui::RichText::new("Available / Free")
+                            egui::RichText::new(Key::AvailableFree.t())
                                 .monospace()
                                 .size(12.0)
                                 .color(colors::TEXT_SECONDARY),
@@ -110,7 +111,7 @@ pub fn render_memory_cards(
 
                         // Cached
                         ui.label(
-                            egui::RichText::new("Cached (Standby)")
+                            egui::RichText::new(Key::CachedStandby.t())
                                 .monospace()
                                 .size(12.0)
                                 .color(colors::TEXT_SECONDARY),
@@ -125,7 +126,7 @@ pub fn render_memory_cards(
 
                         // Peak
                         ui.label(
-                            egui::RichText::new("Peak (Session)")
+                            egui::RichText::new(Key::PeakSession.t())
                                 .monospace()
                                 .size(12.0)
                                 .color(colors::TEXT_SECONDARY),
@@ -147,7 +148,7 @@ pub fn render_memory_cards(
                 // Header
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new("▣ ФАЙЛ ПІДКАЧКИ ТА COMMIT / SWAP & COMMIT")
+                        egui::RichText::new(Key::SwapCommitTitle.t())
                             .monospace()
                             .size(13.0)
                             .color(colors::TEXT_PRIMARY),
@@ -201,7 +202,7 @@ pub fn render_memory_cards(
                     .show(ui, |ui| {
                         // Swap Used / Total
                         ui.label(
-                            egui::RichText::new("Swap Used / Total")
+                            egui::RichText::new(Key::SwapUsedTotal.t())
                                 .monospace()
                                 .size(12.0)
                                 .color(colors::TEXT_SECONDARY),
@@ -220,7 +221,7 @@ pub fn render_memory_cards(
 
                         // Commit Total / Limit
                         ui.label(
-                            egui::RichText::new("Commit Charge / Limit")
+                            egui::RichText::new(Key::CommitChargeLimit.t())
                                 .monospace()
                                 .size(12.0)
                                 .color(colors::TEXT_SECONDARY),
@@ -239,7 +240,7 @@ pub fn render_memory_cards(
 
                         // Commit %
                         ui.label(
-                            egui::RichText::new("Commit %")
+                            egui::RichText::new(Key::CommitPercent.t())
                                 .monospace()
                                 .size(12.0)
                                 .color(colors::TEXT_SECONDARY),
@@ -270,7 +271,7 @@ pub fn render_memory_cards(
         crate::theme::card_frame().show(&mut cols[0], |ui| {
             ui.vertical_centered(|ui| {
                 ui.label(
-                    egui::RichText::new("Системний кеш")
+                    egui::RichText::new(Key::SystemCache.t())
                         .monospace()
                         .size(11.0)
                         .color(colors::TEXT_SECONDARY),
@@ -283,7 +284,7 @@ pub fn render_memory_cards(
                         .color(colors::ACCENT_CYAN),
                 );
                 ui.label(
-                    egui::RichText::new("System Cache")
+                    egui::RichText::new(Key::SystemCache.t())
                         .monospace()
                         .size(10.0)
                         .color(colors::TEXT_SECONDARY),
@@ -295,7 +296,7 @@ pub fn render_memory_cards(
         crate::theme::card_frame().show(&mut cols[1], |ui| {
             ui.vertical_centered(|ui| {
                 ui.label(
-                    egui::RichText::new("Пул ядра (Kernel Pool)")
+                    egui::RichText::new(Key::KernelPool.t())
                         .monospace()
                         .size(11.0)
                         .color(colors::TEXT_SECONDARY),
@@ -326,7 +327,7 @@ pub fn render_memory_cards(
         crate::theme::card_frame().show(&mut cols[2], |ui| {
             ui.vertical_centered(|ui| {
                 ui.label(
-                    egui::RichText::new("Виділено (Commit Charge)")
+                    egui::RichText::new(Key::CommitCharge.t())
                         .monospace()
                         .size(11.0)
                         .color(colors::TEXT_SECONDARY),
@@ -360,7 +361,7 @@ pub fn render_memory_cards(
         crate::theme::card_frame().show(&mut cols[3], |ui| {
             ui.vertical_centered(|ui| {
                 ui.label(
-                    egui::RichText::new("Активність ОС (Handles & Threads)")
+                    egui::RichText::new(Key::OsActivity.t())
                         .monospace()
                         .size(11.0)
                         .color(colors::TEXT_SECONDARY),
@@ -431,6 +432,7 @@ mod tests {
             system_handles: 50000,
             system_threads: 2000,
             system_processes: 150,
+            ram_cached_bytes_override: 0,
         };
         let _history = crate::modules::memory::model::MemoryHistory::new();
 

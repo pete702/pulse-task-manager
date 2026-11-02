@@ -22,15 +22,16 @@
 | **2. i18n, Fonts, Icon, Self-Test, CI** | v0.0.3 | Language switcher (UA/EN), system fonts (Segoe UI/Consolas), generated neon icon, `--self-test` (headless CI + live GUI), GitHub Actions CI, backup automation, self-diagnosis badge | ✅ **Done** |
 | **3. Memory Math Model & Ring Buffer** | v0.0.4 | Pure math `MemorySnapshot` (RAM/Swap bytes, GiB/MiB, saturating cached, clamped usage %, division-by-zero guard), `MemoryHistory` ring buffer (120 points = 60s), session peaks, 6 new unit tests | ✅ **Done** |
 | **4. OS Memory Collector & Worker Integration** | v0.0.5 | `sysinfo` RAM/Swap collection, `EmptyWorkingSet` via `windows-sys` PSAPI, worker integration with `MemorySnapshot` + `MemoryHistory`, headless CI fix for OpenGL-less runners | ✅ **Done** |
-| **5. Memory HUD Cards & 60s Chart** | v0.0.6 | RAM/Swap cards with `card_frame()`, progress bars with traffic-light colors, `egui_plot` dual-line chart (ring buffer), one-click cache cleanup | 🔄 **Next** |
-| **6. Process Grouping & Spike Black Box** | v0.0.7 | `ProcessEntry`, `GroupKey`, `ProcessGroup` aggregation, spike detection, persistent black box log | ⏳ Planned |
-| **7. Interactive Process Table** | v0.0.8 | `egui_extras::TableBuilder` with monospace PID, expandable groups, search/filter, per-process EmptyWorkingSet | ⏳ Planned |
-| **8. Phase 1 Release: WinAPI RAM Purge** | **v0.1.0** | Full RAM/Swap monitoring + one-click cache cleanup end-to-end, `CHANGELOG.md` + `PULSE_AI_CONTEXT.md` updated, Git tag | 🎯 **Target** |
-| **9. CPU Module** | v0.2.0 | Per-core usage, frequency, temperature (MSR), `egui_plot` graphs, top consumers table | ⏳ Planned |
-| **10. Storage I/O Module** | v0.3.0 | Disk read/write throughput, latency, queue depth, SMART health, partition usage | ⏳ Planned |
-| **11. Network & Ping Radar** | v0.4.0 | Per-interface throughput, TCP/UDP stats, gamer ping, connection table | ⏳ Planned |
-| **12. GPU DXGI & System** | v0.5.0 | DXGI GPU usage/VRAM/temp, process GPU attribution | ⏳ Planned |
-| **13. Mini HUD Overlay** | v1.0.0 | Always-on-top overlay, hotkey toggle, customizable panels, export HTML/JSON | 🎯 **Final** |
+| **5. Memory HUD Cards & 60s Chart** | v0.0.6 | RAM/Swap cards with `card_frame()`, progress bars with traffic-light colors, `egui_plot` dual-line chart (ring buffer), one-click cache cleanup | ✅ **Done** |
+| **6. OS Audit & Code Review** | v0.0.7 | Auto-detect Windows UI Language (GetUserDefaultUILanguage), fix SystemCache bytes (K32GetPerformanceInfo), stretch 60s plot to full width, optimize worker (refresh_pid), remove bilingual text, extract UI chrome module | ✅ **Done** |
+| **7. Process Grouping & Spike Black Box** | v0.0.8 | `ProcessEntry`, `GroupKey`, `ProcessGroup` aggregation, spike detection, persistent black box log | ⏳ Planned |
+| **8. Interactive Process Table** | v0.0.9 | `egui_extras::TableBuilder` with monospace PID, expandable groups, search/filter, per-process EmptyWorkingSet | ⏳ Planned |
+| **9. Phase 1 Release: WinAPI RAM Purge** | **v0.1.0** | Full RAM/Swap monitoring + one-click cache cleanup end-to-end, `CHANGELOG.md` + `PULSE_AI_CONTEXT.md` updated, Git tag | 🎯 **Target** |
+| **10. CPU Module** | v0.2.0 | Per-core usage, frequency, temperature (MSR), `egui_plot` graphs, top consumers table | ⏳ Planned |
+| **11. Storage I/O Module** | v0.3.0 | Disk read/write throughput, latency, queue depth, SMART health, partition usage | ⏳ Planned |
+| **12. Network & Ping Radar** | v0.4.0 | Per-interface throughput, TCP/UDP stats, gamer ping, connection table | ⏳ Planned |
+| **13. GPU DXGI & System** | v0.5.0 | DXGI GPU usage/VRAM/temp, process GPU attribution | ⏳ Planned |
+| **14. Mini HUD Overlay** | v1.0.0 | Always-on-top overlay, hotkey toggle, customizable panels, export HTML/JSON | 🎯 **Final** |
 
 ---
 
@@ -82,24 +83,27 @@ pulse_manager/
 
 ---
 
-## 🚀 Current Status: v0.0.5
+## 🚀 Current Status: v0.0.7
 
 **Implemented:**
 - ✅ **Foundation & Infrastructure** (v0.0.1–v0.0.2): Git, Cargo, Obsidian HUD theme, background worker (500ms uptime), basic app structure
 - ✅ **i18n, Fonts, Icon, Self-Test, CI** (v0.0.3): Language switcher (UA/EN), system fonts (Segoe UI/Consolas), generated neon icon, `--self-test` (headless CI + live GUI), GitHub Actions CI, backup automation, self-diagnosis badge
 - ✅ **Memory Math Model & Ring Buffer** (v0.0.4): Pure math `MemorySnapshot` (RAM/Swap bytes, GiB/MiB, saturating cached, clamped usage %, division-by-zero guard), `MemoryHistory` ring buffer (120 points = 60s), session peaks, 6 new unit tests
 - ✅ **OS Memory Collector & Worker Integration** (v0.0.5): `sysinfo` RAM/Swap collection via `collect_memory()`, `EmptyWorkingSet` wrapper via `windows-sys` PSAPI, worker integration with `MemorySnapshot` + `MemoryHistory`, headless CI fix for OpenGL-less runners (headless self-test without `eframe::run_native`)
-- ✅ **29+ unit tests passing** (theme: 6, app: 7, core: 2, i18n: 8, memory: 6)
+- ✅ **Memory HUD Cards & 60s Chart** (v0.0.6): Dual RAM/Swap cards with traffic-light progress bars, 4 kernel mini-tiles (System Cache, Kernel Pool, Commit Charge, OS Handles/Threads), `egui_plot` dual-line neon chart (60s history), GitHub Release pipeline
+- ✅ **OS Audit & Code Review** (v0.0.7): Auto-detect Windows UI Language via `GetUserDefaultUILanguage()` (no manual switcher), fixed real SystemCache via `K32GetPerformanceInfo` (cb init + override field), 60s chart stretches to full card width (`.width(ui.available_width())`), worker optimized to `refresh_pids(&[pid])` (~35-50MB RAM vs 150MB), all UI text 100% localized via i18n (no bilingual "vinagret"), UI chrome extracted to `src/ui/chrome.rs` (< 180 lines/file)
+- ✅ **45+ unit tests passing** (theme: 6, app: 8, core: 3, i18n: 8, memory model: 6, collector: 4, chart: 1, ui: 1, integration: 1, file size: 1)
 - ✅ `cargo clippy --all-targets -- -D warnings` — zero warnings
 - ✅ Self-test: **HEADLESS CI** (`CI=true` / `GITHUB_ACTIONS=true`) — runs without `eframe::run_native`, validates live snapshot + memory history + i18n toggle; **LIVE GUI** — auto-switches tabs & lang
 - ✅ Release profile optimized (LTO=fat, strip, panic=abort)
 - ✅ GitHub Actions CI (`.github/workflows/ci.yml`) — fmt, clippy, check, test, build, self-test (headless)
+- ✅ GitHub Release pipeline (`.github/workflows/release.yml`) — triggered on `v*` tags, builds release, runs headless self-test, uploads `.exe` + `.sha256`
 
 **Running:**
 ```bash
 cargo run --release
 ```
-Opens a 1180×760 window with live uptime, self-diagnosis badge, and memory telemetry updating every 500ms.
+Opens a 1180×760 window with live uptime, self-diagnosis badge, auto-detected locale indicator, and memory telemetry updating every 500ms.
 
 ---
 

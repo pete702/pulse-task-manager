@@ -2705,7 +2705,7 @@ dependencies = [
 
 [[package]]
 name = "pulse_manager"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "chrono",
  "eframe",

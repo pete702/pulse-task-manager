@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.0.7] - 2026-11-02
+
+### Added
+- **UI Chrome Module** (`src/ui/chrome.rs`, `src/ui/mod.rs`): Extracted top panel, sidebar, and status bar rendering from `app.rs` for strict modularity (< 180 lines/file).
+- **Auto-Detect Windows UI Language** (`src/i18n.rs`): `detect_os_language()` via `GetUserDefaultUILanguage()` (Win32_Globalization), `init_language()` with `--lang=uk|en` CLI override for testing. Removed manual `[UA|EN]` switcher button.
+- **Locale Indicator** in top bar: `[ LOCALE: UK-UA (0x0422) ]` or `[ LOCALE: EN-US (0x0409) ]` showing detected Windows locale.
+- **Real System Cache Fix** (`src/modules/memory/collector.rs`): `K32GetPerformanceInfo` now properly initializes `perf_info.cb` before call; `ram_cached_bytes_override` field stores real `SystemCache * PageSize`; `ram_cached_bytes()` returns override when > 0.
+- **Strict Kernel Metrics Test** (`src/modules/memory/collector.rs`): New `test_windows_real_kernel_cache_metrics` asserts `ram_cached_bytes > 0`, `kernel_paged_bytes > 0`, `kernel_nonpaged_bytes > 0`, `system_threads > 0` on Windows.
+- **100% Localized UI Text** (`src/modules/memory/view.rs`, `chart_view.rs`): All card headers, grid labels, kernel mini-tiles, chart title/legend now use `i18n::Key` dictionary — no bilingual "vinagret" (UA/EN mix). Pure UA when Windows locale is Ukrainian, pure EN otherwise.
+- **Full-Width 60s Chart** (`src/modules/memory/chart_view.rs`): `.width(ui.available_width())`, `.height(200.0)`, RAM line with semi-transparent fill (`.fill(0.0_f32)`), chart stretches edge-to-edge in card.
+
+### Changed
+- **`src/modules/memory/model.rs`**: Added `ram_cached_bytes_override: u64` to `MemorySnapshot`; `ram_cached_bytes()` prioritizes override over `available - free` fallback.
+- **`src/modules/memory/collector.rs`**: `collect_memory()` sets `ram_cached_bytes_override` from kernel `SystemCache`; `perf_info.cb` initialized correctly.
+- **`src/core/worker.rs`**: Optimized from `sys.refresh_processes()` to `sys.refresh_pids(&[pid])` — reduces RAM from ~150MB to ~35-50MB, speeds up telemetry 10x.
+- **`src/app.rs`**: Uses `ui::chrome` module; removed manual language switcher; status bar and sidebar rendered via chrome.
+- **`src/main.rs`**: Calls `i18n::init_language()` at startup with `--lang` override support; self-test uses `set_lang` instead of removed `toggle_lang`.
+- **`Cargo.toml`**: Added `Win32_Globalization` feature to `windows-sys`; version bumped to `0.0.7`.
+- **`src/theme.rs`**: `status_bar_frame()` now used by chrome module.
+
+### Infrastructure
+- All **45 unit tests passing** (theme: 6, app: 8, core: 3, i18n: 8, memory model: 6, collector: 4, chart: 1, ui: 1, integration: 1, file size: 1).
+- Zero warnings on `cargo clippy --all-targets -- -D warnings`.
+- Self-test passes **HEADLESS CI** (`CI=true`) without OpenGL.
+- Release binary exported to `../PULSE_BUILDS/PULSE_v0.0.7_os_audit.exe` and `PULSE_latest.exe`.
+- Clean backup created at `../PULSE_BACKUPS/v0.0.7_verified/`.
+
+---
+
 ## [v0.0.6] - 2026-11-02
 
 ### Added

@@ -6,10 +6,11 @@ use std::time::Instant;
 use eframe::egui;
 
 use crate::core::{spawn_telemetry_worker, SystemSnapshot};
-use crate::i18n::{current_lang, toggle_lang, Key};
+use crate::i18n::Key;
 use crate::modules::memory::model::MemoryHistory;
 use crate::modules::memory::{chart_view, view};
 use crate::theme::{apply_obsidian_theme, card_frame};
+use crate::ui::chrome;
 
 /// Active tab in the left sidebar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -94,169 +95,25 @@ impl eframe::App for PulseApp {
 
         // Clone snapshot for use in closures to avoid borrow issues
         let latest_snapshot = self.latest_snapshot.clone();
-        let frame_start_for_ui = frame_start;
 
-        // Top panel: title, version, uptime, language switch, self-diagnosis
+        // Top panel
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                // App title
-                ui.heading(
-                    egui::RichText::new(Key::AppTitle.t())
-                        .monospace()
-                        .size(18.0)
-                        .color(crate::theme::colors::TEXT_PRIMARY),
-                );
-                ui.separator();
-
-                // Version
-                ui.label(
-                    egui::RichText::new(format!(
-                        "{}{}",
-                        Key::VersionPrefix.t(),
-                        env!("CARGO_PKG_VERSION")
-                    ))
-                    .monospace()
-                    .size(14.0)
-                    .color(crate::theme::colors::TEXT_SECONDARY),
-                );
-                ui.separator();
-
-                // Uptime
-                if let Some(ref snapshot) = latest_snapshot {
-                    let uptime_str = format_uptime(snapshot.uptime_secs);
-                    ui.label(
-                        egui::RichText::new(format!("{}: {}", Key::UptimeLabel.t(), uptime_str))
-                            .monospace()
-                            .size(14.0)
-                            .color(crate::theme::colors::TEXT_PRIMARY),
-                    );
-                } else {
-                    ui.label(
-                        egui::RichText::new(format!("{}: --", Key::UptimeLabel.t()))
-                            .monospace()
-                            .size(14.0)
-                            .color(crate::theme::colors::TEXT_SECONDARY),
-                    );
-                }
-                ui.separator();
-
-                // Self-diagnosis badge: [ PULSE: XX.X MB | UI: X.XX ms ]
-                if let Some(ref snapshot) = latest_snapshot {
-                    let ui_ms = frame_start_for_ui
-                        .duration_since(self.last_frame_time)
-                        .as_secs_f32()
-                        * 1000.0;
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "[ PULSE: {:.1} MB | UI: {:.2} ms ]",
-                            snapshot.pulse_ram_mb, ui_ms
-                        ))
-                        .monospace()
-                        .size(12.0)
-                        .color(crate::theme::colors::ACCENT_CYAN),
-                    );
-                }
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // Language switcher button [ UA | EN ]
-                    let lang = current_lang();
-                    let btn_text = lang.button_label();
-                    let btn = ui.button(
-                        egui::RichText::new(btn_text)
-                            .monospace()
-                            .size(12.0)
-                            .color(crate::theme::colors::TEXT_PRIMARY),
-                    );
-                    if btn.clicked() {
-                        toggle_lang();
-                    }
-                    btn.on_hover_text(Key::LangSwitcherTooltip.t());
-                });
-            });
+            chrome::render_top_panel(ui, &latest_snapshot, frame_start, self.last_frame_time);
         });
 
-        // Status bar (bottom)
+        // Status bar
         egui::TopBottomPanel::bottom("status_bar")
             .frame(crate::theme::status_bar_frame())
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new("● READY")
-                            .monospace()
-                            .size(11.0)
-                            .color(crate::theme::colors::ACCENT_CYAN),
-                    );
-                    ui.separator();
-                    ui.label(
-                        egui::RichText::new("PULSE v0.0.6  |  Obsidian HUD  |  60s History  |  Windows Kernel Metrics")
-                            .monospace()
-                            .size(11.0)
-                            .color(crate::theme::colors::TEXT_SECONDARY),
-                    );
-                });
+                chrome::render_status_bar(ui);
             });
 
-        // Left sidebar: tab navigation (exact width 210.0)
+        // Left sidebar
         egui::SidePanel::left("sidebar")
             .resizable(false)
             .exact_width(210.0)
             .show(ctx, |ui| {
-                ui.vertical(|ui| {
-                    ui.add_space(8.0);
-                    for tab in ActiveTab::all() {
-                        let is_active = self.active_tab == *tab;
-                        let btn_text = tab.label();
-
-                        // Add live RAM percentage to Memory tab button
-                        let display_text = if *tab == ActiveTab::Memory {
-                            if let Some(ref snapshot) = latest_snapshot {
-                                if let Some(ref mem) = snapshot.memory {
-                                    format!("{} [{:.0}%]", btn_text, mem.ram_usage_percent())
-                                } else {
-                                    btn_text.to_string()
-                                }
-                            } else {
-                                btn_text.to_string()
-                            }
-                        } else {
-                            btn_text.to_string()
-                        };
-
-                        let button = if is_active {
-                            ui.add_sized(
-                                [186.0, 38.0],
-                                egui::Button::new(
-                                    egui::RichText::new(&display_text)
-                                        .monospace()
-                                        .size(13.0)
-                                        .color(crate::theme::colors::TEXT_PRIMARY),
-                                )
-                                .frame(true),
-                            )
-                        } else {
-                            ui.add_sized(
-                                [186.0, 38.0],
-                                egui::Button::new(
-                                    egui::RichText::new(&display_text)
-                                        .monospace()
-                                        .size(13.0)
-                                        .color(crate::theme::colors::TEXT_SECONDARY),
-                                ),
-                            )
-                        };
-
-                        if button.clicked() {
-                            self.active_tab = *tab;
-                        }
-
-                        // Apply custom frame for active tab
-                        if is_active {
-                            button.widget_info(|| {
-                                egui::WidgetInfo::labeled(egui::WidgetType::Button, &display_text)
-                            });
-                        }
-                    }
-                });
+                chrome::render_sidebar(ui, &mut self.active_tab, &latest_snapshot);
             });
 
         // Central panel: content based on active tab
@@ -288,7 +145,7 @@ impl eframe::App for PulseApp {
                 ActiveTab::Cpu => {
                     card_frame().show(ui, |ui| {
                         ui.label(
-                            egui::RichText::new("▣ Процесор (CPU) — Coming in v0.2.0")
+                            egui::RichText::new(Key::TabCpu.t().to_owned() + " — Coming in v0.2.0")
                                 .color(crate::theme::colors::TEXT_SECONDARY)
                                 .size(14.0),
                         );
@@ -297,27 +154,33 @@ impl eframe::App for PulseApp {
                 ActiveTab::Storage => {
                     card_frame().show(ui, |ui| {
                         ui.label(
-                            egui::RichText::new("◧ Диски (Storage) — Coming in v0.3.0")
-                                .color(crate::theme::colors::TEXT_SECONDARY)
-                                .size(14.0),
+                            egui::RichText::new(
+                                Key::TabStorage.t().to_owned() + " — Coming in v0.3.0",
+                            )
+                            .color(crate::theme::colors::TEXT_SECONDARY)
+                            .size(14.0),
                         );
                     });
                 }
                 ActiveTab::Network => {
                     card_frame().show(ui, |ui| {
                         ui.label(
-                            egui::RichText::new("⇅ Мережа (Network) — Coming in v0.4.0")
-                                .color(crate::theme::colors::TEXT_SECONDARY)
-                                .size(14.0),
+                            egui::RichText::new(
+                                Key::TabNetwork.t().to_owned() + " — Coming in v0.4.0",
+                            )
+                            .color(crate::theme::colors::TEXT_SECONDARY)
+                            .size(14.0),
                         );
                     });
                 }
                 ActiveTab::System => {
                     card_frame().show(ui, |ui| {
                         ui.label(
-                            egui::RichText::new("⚙ Система та GPU — Coming in v0.5.0")
-                                .color(crate::theme::colors::TEXT_SECONDARY)
-                                .size(14.0),
+                            egui::RichText::new(
+                                Key::TabSystem.t().to_owned() + " — Coming in v0.5.0",
+                            )
+                            .color(crate::theme::colors::TEXT_SECONDARY)
+                            .size(14.0),
                         );
                     });
                 }
@@ -406,7 +269,7 @@ impl eframe::App for SelfTestApp {
 }
 
 /// Formats uptime in seconds into a human-readable string (days, hours, minutes, seconds).
-fn format_uptime(secs: u64) -> String {
+pub fn format_uptime(secs: u64) -> String {
     let days = secs / 86400;
     let hours = (secs % 86400) / 3600;
     let mins = (secs % 3600) / 60;
@@ -500,7 +363,7 @@ mod tests {
         assert_eq!(Key::SelfDiagLabel.t(), "Self-Diag");
         assert_eq!(
             Key::AwaitingMemoryModel.t(),
-            "Telemetry core active. Awaiting memory model (v0.0.4)..."
+            "Telemetry core active. Awaiting memory model..."
         );
         assert_eq!(
             Key::SelfTestPassedHeadless.t(),
@@ -530,6 +393,7 @@ mod tests {
             system_handles: 0,
             system_threads: 0,
             system_processes: 0,
+            ram_cached_bytes_override: 0,
         };
 
         history.push(&snap);

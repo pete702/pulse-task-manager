@@ -14,6 +14,7 @@ mod core;
 mod i18n;
 mod modules;
 mod theme;
+mod ui;
 
 /// Generates a 32x32 RGBA icon: dark background #0B0C10 with neon pulse symbol #00F0FF.
 fn generate_icon() -> Arc<egui::IconData> {
@@ -71,9 +72,18 @@ fn generate_icon() -> Arc<egui::IconData> {
 }
 
 fn main() -> eframe::Result<()> {
-    // Check for --self-test flag
+    // Parse CLI arguments
     let args: Vec<String> = env::args().collect();
     let self_test = args.iter().any(|a| a == "--self-test");
+
+    // Extract --lang=uk|en override for testing
+    let lang_override = args
+        .iter()
+        .find(|a| a.starts_with("--lang="))
+        .and_then(|a| a.strip_prefix("--lang="));
+
+    // Initialize language from OS detection (or CLI override)
+    i18n::init_language(lang_override);
 
     // Setup fonts before creating the app
     let options = eframe::NativeOptions {
@@ -229,28 +239,21 @@ fn run_headless_self_test() {
         println!("[SelfTest] WARNING: MemorySnapshot not available (collector not integrated yet)");
     }
 
-    // Test i18n toggle
+    // Test i18n set_lang
     crate::i18n::set_lang(crate::i18n::Lang::Uk);
     if crate::i18n::current_lang() != crate::i18n::Lang::Uk {
         eprintln!("[SelfTest] FAILED: i18n set_lang Uk failed");
         std::process::exit(1);
     }
-    let toggled = crate::i18n::toggle_lang();
-    if toggled != crate::i18n::Lang::En {
-        eprintln!(
-            "[SelfTest] FAILED: toggle_lang returned {:?} (expected En)",
-            toggled
-        );
-        std::process::exit(1);
-    }
+    crate::i18n::set_lang(crate::i18n::Lang::En);
     if crate::i18n::current_lang() != crate::i18n::Lang::En {
         eprintln!(
-            "[SelfTest] FAILED: current_lang after toggle is {:?} (expected En)",
+            "[SelfTest] FAILED: current_lang after set_lang En is {:?} (expected En)",
             crate::i18n::current_lang()
         );
         std::process::exit(1);
     }
-    println!("[SelfTest] i18n toggle: Uk -> En OK");
+    println!("[SelfTest] i18n set_lang: Uk -> En OK");
 
     println!("[SelfTest] SELF-TEST PASSED (HEADLESS CI)");
 }

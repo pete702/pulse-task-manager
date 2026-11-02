@@ -45,20 +45,28 @@ pub struct MemorySnapshot {
     pub system_threads: u32,
     /// System-wide process count.
     pub system_processes: u32,
+    /// Real Windows System Cache (from K32GetPerformanceInfo.SystemCache * PageSize).
+    /// When > 0, this overrides the calculated `available - free` fallback.
+    pub ram_cached_bytes_override: u64,
 }
 
 impl MemorySnapshot {
     /// Returns the system cache (Standby / Cached RAM) in bytes.
     ///
-    /// Calculated as `available - free` using **saturating subtraction**
-    /// to avoid panic if `free > available` (which can happen due to
-    /// race conditions in OS reporting).
+    /// If `ram_cached_bytes_override` is set (from K32GetPerformanceInfo on Windows),
+    /// returns that real kernel value. Otherwise falls back to calculated
+    /// `available - free` using **saturating subtraction** to avoid panic
+    /// if `free > available` (race conditions in OS reporting).
     ///
     /// # Formula
-    /// `cached = available.saturating_sub(free)`
+    /// `cached = override.or(available.saturating_sub(free))`
     #[inline]
     pub fn ram_cached_bytes(&self) -> u64 {
-        self.ram_available_bytes.saturating_sub(self.ram_free_bytes)
+        if self.ram_cached_bytes_override > 0 {
+            self.ram_cached_bytes_override
+        } else {
+            self.ram_available_bytes.saturating_sub(self.ram_free_bytes)
+        }
     }
 
     /// Converts bytes to gibibytes (GiB) as `f64`.
@@ -435,18 +443,16 @@ mod tests {
     }
 
     #[test]
-    fn test_lang_toggle_uk_en() {
-        use crate::i18n::{current_lang, set_lang, toggle_lang, Lang};
+    fn test_lang_set_uk_en() {
+        use crate::i18n::{current_lang, set_lang, Lang};
 
         set_lang(Lang::Uk);
         assert_eq!(current_lang(), Lang::Uk);
 
-        let toggled = toggle_lang();
-        assert_eq!(toggled, Lang::En);
+        set_lang(Lang::En);
         assert_eq!(current_lang(), Lang::En);
 
-        let toggled = toggle_lang();
-        assert_eq!(toggled, Lang::Uk);
+        set_lang(Lang::Uk);
         assert_eq!(current_lang(), Lang::Uk);
     }
 

@@ -121,13 +121,13 @@ windows-sys = { version = "0.52.0", features = ["Win32_System_ProcessStatus", "W
 
 ---
 
-## 6. Project Roadmap — 6 Phases to v1.0.0
+## 6. Project Roadmap — 7 Phases to v1.0.0
 
 | Phase | Versions | Focus | Status |
 |-------|----------|-------|--------|
 | **1. Foundation & Infrastructure** | v0.0.1–v0.0.3 | Git, Cargo, Obsidian HUD theme, background worker (500ms), i18n (UA/EN), system fonts, generated icon, self-test, CI, backup, self-diagnosis badge | ✅ **Done** |
-| **2. Memory Module** | v0.0.4–v0.0.6 | Pure math model (`MemorySnapshot`, `MemoryHistory` ring buffer), `sysinfo` collector, RAM/Swap cards, progress bars, `egui_plot` history, one-click cache cleanup | 🔄 **In Progress** (v0.0.4) |
-| **3. Processes Module** | v0.0.7–v0.0.9 | `ProcessEntry`, `GroupKey`, `ProcessGroup`, `sysinfo::Processes` + Windows enrichment, `egui_extras::TableBuilder` with monospace PID, grouping, search | ⏳ Planned |
+| **2. Memory Module** | v0.0.4–v0.0.7 | Pure math model (`MemorySnapshot`, `MemoryHistory` ring buffer), `sysinfo` collector, `K32GetPerformanceInfo` kernel metrics, RAM/Swap cards, progress bars, `egui_plot` history, auto-detect Windows UI Language, worker optimization (refresh_pid) | ✅ **Done** (v0.0.7) |
+| **3. Processes Module** | v0.0.8–v0.0.9 | `ProcessEntry`, `GroupKey`, `ProcessGroup`, `sysinfo::Processes` + Windows enrichment, `egui_extras::TableBuilder` with monospace PID, grouping, search | ⏳ Planned |
 | **4. CPU Module** | v0.1.0–v0.2.0 | Per-core usage, frequency, temperature (MSR), `egui_plot` graphs, top consumers table | ⏳ Planned |
 | **5. Storage I/O Module** | v0.2.0–v0.3.0 | Disk read/write throughput, latency, queue depth, SMART health, partition usage | ⏳ Planned |
 | **6. Network & GPU Module** | v0.3.0–v0.5.0 | Per-interface throughput, TCP/UDP stats, gamer ping, DXGI GPU usage/VRAM/temp | ⏳ Planned |
@@ -155,13 +155,17 @@ pulse_manager/
 │   ├── core/
 │   │   ├── mod.rs              # SystemSnapshot, mpsc channel types, spawn_telemetry_worker
 │   │   └── worker.rs           # Background thread: 500ms interval, uptime + self RAM → channel
+│   ├── ui/
+│   │   ├── mod.rs              # UI chrome exports
+│   │   └── chrome.rs           # Top panel, sidebar, status bar rendering
 │   ├── modules/
 │   │   ├── mod.rs              # Pub re-exports all modules
 │   │   ├── memory/
 │   │   │   ├── mod.rs
 │   │   │   ├── model.rs        # MemorySnapshot, MemoryHistory (pure math, no deps)
-│   │   │   ├── collector.rs    # sysinfo + windows-sys (EmptyWorkingSet)
-│   │   │   └── view.rs         # RAM/Swap cards, cleanup button, graphs
+│   │   │   ├── collector.rs    # sysinfo + windows-sys (K32GetPerformanceInfo, EmptyWorkingSet)
+│   │   │   ├── view.rs         # RAM/Swap cards, kernel mini-tiles, progress bars
+│   │   │   └── chart_view.rs   # 60s dual-line neon chart (egui_plot)
 │   │   ├── processes/
 │   │   │   ├── mod.rs
 │   │   │   ├── model.rs        # ProcessEntry, GroupKey, ProcessGroup
