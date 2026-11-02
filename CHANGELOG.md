@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Multi-Horizon Memory Chart** (`ChartWindow` in `model.rs`, switcher in `chart_view.rs`): `[ 1m | 5m | 15m ]` buttons; history ring buffer extended from 120 to 900 points (15 minutes at 1s); windowed point iterators; the plot now occupies 100% of card width (no `view_aspect`).
 - **Self Working-Set Trim** (`src/modules/memory/collector.rs`): `K32EmptyWorkingSet(GetCurrentProcess())` is called before measuring PULSE's own RSS, releasing font/OpenGL buffers and lowering the process footprint.
 - **Real UI Render Time** (`src/app.rs`): `update()` is timed with `Instant::now()` instead of `ctx.input().unstable_dt`, so the top badge reports actual render cost rather than VSync wait.
-- **Pure Ukrainian Localization** (`src/i18n.rs`, `src/modules/memory/view.rs`, `src/ui/chrome.rs`): localized RAM/Swap cards, kernel tiles (OS reserve %, paged/non-paged pools, OS commit limit), chart title, and status bar (`PULSE v0.0.8 | Моніторинг ядра Windows | Активних процесів: N`).
+- **Complete UA/EN Localization** (`src/i18n.rs`, `src/modules/memory/view.rs`, `src/ui/chrome.rs`): RAM/Swap cards, kernel tiles (OS reserve %, paged/non-paged pools, OS commit limit), chart title, and status bar are now fully translated (`PULSE v0.0.8 | Моніторинг ядра Windows | Активних процесів: N` in UA) with no mixed-language leftovers; the active language follows the Windows locale.
 
 ### Changed
 - **`src/modules/memory/model.rs`**: `HISTORY_CAPACITY` 120 → 900; added `ChartWindow { OneMin, FiveMin, FifteenMin }`, `MemoryHistory::chart_window`, `windowed_ram_points()`, `windowed_swap_points()`.
