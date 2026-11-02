@@ -7,6 +7,7 @@ use eframe::egui;
 
 use crate::core::{spawn_telemetry_worker, SystemSnapshot};
 use crate::i18n::{current_lang, toggle_lang, Key};
+use crate::modules::memory::model::MemoryHistory;
 use crate::theme::{apply_obsidian_theme, card_frame};
 
 /// Active tab in the left sidebar.
@@ -40,6 +41,8 @@ pub struct PulseApp {
     active_tab: ActiveTab,
     /// Last frame render time for UI timing.
     last_frame_time: Instant,
+    /// Memory usage history (ring buffer).
+    memory_history: MemoryHistory,
 }
 
 impl Default for PulseApp {
@@ -49,6 +52,7 @@ impl Default for PulseApp {
             latest_snapshot: None,
             active_tab: ActiveTab::Memory,
             last_frame_time: Instant::now(),
+            memory_history: MemoryHistory::new(),
         }
     }
 }
@@ -62,8 +66,18 @@ impl eframe::App for PulseApp {
 
         // Non-blocking snapshot reads from channel
         while let Ok(snapshot) = self.snapshot_rx.try_recv() {
+            // Push memory snapshot to history
+            if let Some(ref mem) = snapshot.memory {
+                self.memory_history.push(mem);
+            }
             self.latest_snapshot = Some(snapshot);
         }
+
+        // Clone snapshot for use in closures to avoid borrow issues
+        let latest_snapshot = self.latest_snapshot.clone();
+        let memory_history_len = self.memory_history.len();
+        let memory_history_peak = self.memory_history.peak_ram_percent;
+        let frame_start_for_ui = frame_start;
 
         // Top panel: title, version, uptime, language switch, self-diagnosis
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -89,7 +103,7 @@ impl eframe::App for PulseApp {
                 ui.separator();
 
                 // Uptime
-                if let Some(snapshot) = self.latest_snapshot {
+                if let Some(ref snapshot) = latest_snapshot {
                     let uptime_str = format_uptime(snapshot.uptime_secs);
                     ui.label(
                         egui::RichText::new(format!("{}: {}", Key::UptimeLabel.t(), uptime_str))
@@ -106,8 +120,8 @@ impl eframe::App for PulseApp {
                 ui.separator();
 
                 // Self-diagnosis badge: [ PULSE: XX.X MB | UI: X.XX ms ]
-                if let Some(snapshot) = self.latest_snapshot {
-                    let ui_ms = frame_start
+                if let Some(ref snapshot) = latest_snapshot {
+                    let ui_ms = frame_start_for_ui
                         .duration_since(self.last_frame_time)
                         .as_secs_f32()
                         * 1000.0;
@@ -157,7 +171,47 @@ impl eframe::App for PulseApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.add_space(16.0);
             card_frame().show(ui, |ui| {
-                ui.label(Key::AwaitingMemoryModel.t());
+                // Show memory info if available
+                if let Some(ref snapshot) = latest_snapshot {
+                    if let Some(ref mem) = snapshot.memory {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "RAM: {:.2} / {:.2} GiB ({:.1}%)",
+                                mem.ram_used_gib(),
+                                mem.ram_total_gib(),
+                                mem.ram_usage_percent()
+                            ))
+                            .monospace()
+                            .size(14.0),
+                        );
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Swap: {:.2} / {:.2} GiB ({:.1}%)",
+                                mem.swap_used_gib(),
+                                mem.swap_total_gib(),
+                                mem.swap_usage_percent()
+                            ))
+                            .monospace()
+                            .size(14.0),
+                        );
+                        ui.separator();
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Cached: {:.2} GiB | History points: {} | Peak RAM: {:.1}%",
+                                mem.ram_cached_gib(),
+                                memory_history_len,
+                                memory_history_peak
+                            ))
+                            .monospace()
+                            .size(12.0)
+                            .color(crate::theme::colors::BORDER),
+                        );
+                    } else {
+                        ui.label(Key::AwaitingMemoryModel.t());
+                    }
+                } else {
+                    ui.label(Key::AwaitingMemoryModel.t());
+                }
             });
         });
 
@@ -209,7 +263,7 @@ impl eframe::App for SelfTestApp {
 
         if self.headless {
             // Headless CI mode: just check pulse_ram_mb > 0 after first snapshot
-            if let Some(snapshot) = self.latest_snapshot {
+            if let Some(ref snapshot) = self.latest_snapshot {
                 if snapshot.pulse_ram_mb > 0.0 {
                     self.test_passed = true;
                     println!("{}", Key::SelfTestPassedHeadless.t());
@@ -222,7 +276,7 @@ impl eframe::App for SelfTestApp {
             if self.snapshot_received {
                 self.frames_rendered += 1;
                 if self.frames_rendered >= 5 {
-                    if let Some(snapshot) = self.latest_snapshot {
+                    if let Some(ref snapshot) = self.latest_snapshot {
                         if snapshot.pulse_ram_mb > 0.0 {
                             self.test_passed = true;
                             println!("{}", Key::SelfTestPassedLive.t());
@@ -333,5 +387,25 @@ mod tests {
         );
         assert_eq!(Key::SelfTestPassedLive.t(), "SELF-TEST PASSED (LIVE GUI)");
         assert_eq!(Key::SelfTestFailed.t(), "SELF-TEST FAILED");
+    }
+
+    #[test]
+    fn test_memory_history_integration() {
+        use crate::modules::memory::model::{MemoryHistory, MemorySnapshot};
+
+        let mut history = MemoryHistory::new();
+        let snap = MemorySnapshot {
+            ram_total_bytes: 16_000_000_000,
+            ram_used_bytes: 8_000_000_000,
+            ram_available_bytes: 8_000_000_000,
+            ram_free_bytes: 2_000_000_000,
+            swap_total_bytes: 0,
+            swap_used_bytes: 0,
+            swap_free_bytes: 0,
+        };
+
+        history.push(&snap);
+        assert_eq!(history.len(), 1);
+        assert!((history.peak_ram_percent - 50.0).abs() < f32::EPSILON);
     }
 }

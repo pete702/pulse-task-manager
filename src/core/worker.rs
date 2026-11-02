@@ -1,4 +1,5 @@
-//! Background telemetry worker: periodically collects uptime and self RAM usage, sends via mpsc channel.
+//! Background telemetry worker: periodically collects uptime, self RAM usage, and OS memory,
+//! sends via mpsc channel.
 
 use std::sync::mpsc;
 use std::thread;
@@ -7,12 +8,13 @@ use std::time::Duration;
 use sysinfo::{Pid, System};
 
 use crate::core::{SnapshotTx, SystemSnapshot};
+use crate::modules::memory::collector::collect_memory;
 
 /// Telemetry update interval (500 ms).
 const WORKER_INTERVAL: Duration = Duration::from_millis(500);
 
-/// Spawns a background thread that reads `System::uptime()` and current process RAM every 500ms
-/// and sends `SystemSnapshot` through the channel.
+/// Spawns a background thread that reads `System::uptime()`, current process RAM,
+/// and OS memory every 500ms and sends `SystemSnapshot` through the channel.
 /// Returns a `Receiver` for the UI thread.
 pub fn spawn() -> mpsc::Receiver<SystemSnapshot> {
     let (tx, rx): (SnapshotTx, mpsc::Receiver<SystemSnapshot>) = mpsc::channel();
@@ -35,7 +37,10 @@ pub fn spawn() -> mpsc::Receiver<SystemSnapshot> {
                 .map(|p| p.memory() as f32 / 1024.0) // Convert KB to MB
                 .unwrap_or(0.0);
 
-            let snapshot = SystemSnapshot::new(uptime, pulse_ram_mb);
+            // Collect OS memory (RAM/Swap)
+            let memory = Some(collect_memory(&mut sys));
+
+            let snapshot = SystemSnapshot::new(uptime, pulse_ram_mb, memory);
 
             // Send snapshot; if receiver is closed, terminate thread
             if tx.send(snapshot).is_err() {
@@ -70,6 +75,13 @@ mod tests {
             snapshot.pulse_ram_mb >= 0.0,
             "Pulse RAM should be non-negative"
         );
+        // Verify memory snapshot is present
+        assert!(
+            snapshot.memory.is_some(),
+            "Memory snapshot should be present"
+        );
+        let mem = snapshot.memory.unwrap();
+        assert!(mem.ram_total_bytes > 0, "RAM total should be > 0");
     }
 
     #[test]
@@ -91,5 +103,22 @@ mod tests {
         // RAM should be non-negative
         assert!(first.pulse_ram_mb >= 0.0);
         assert!(second.pulse_ram_mb >= 0.0);
+        // Both should have memory snapshots
+        assert!(first.memory.is_some());
+        assert!(second.memory.is_some());
+    }
+
+    #[test]
+    fn test_memory_snapshot_in_worker() {
+        let rx = spawn();
+        let snapshot = rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("First snapshot");
+
+        let mem = snapshot.memory.expect("Memory should be present");
+        assert!(mem.ram_total_bytes > 0);
+        assert!(mem.ram_used_bytes > 0);
+        assert!(mem.ram_usage_percent() > 0.0);
+        assert!(mem.ram_usage_percent() <= 100.0);
     }
 }

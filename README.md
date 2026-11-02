@@ -14,17 +14,23 @@
 
 ---
 
-## ✨ Key Features (Roadmap — 6 Phases to v1.0.0)
+## ✨ Key Features (Roadmap — 7 Phases to v1.0.0)
 
 | Phase | Versions | Focus | Status |
 |-------|----------|-------|--------|
-| **1. Foundation & Infrastructure** | v0.0.1–v0.0.3 | Git, Cargo, Obsidian HUD theme, background worker (500ms), i18n (UA/EN), system fonts, generated icon, self-test, CI, backup, self-diagnosis badge | ✅ **Done** |
-| **2. Memory Module** | v0.0.4–v0.0.6 | Pure math model (`MemorySnapshot`, `MemoryHistory` ring buffer), `sysinfo` collector, RAM/Swap cards, progress bars, `egui_plot` history, one-click cache cleanup | 🔄 **In Progress** (v0.0.4) |
-| **3. Processes Module** | v0.0.7–v0.0.9 | `ProcessEntry`, `GroupKey`, `ProcessGroup`, `sysinfo::Processes` + Windows enrichment, `egui_extras::TableBuilder` with monospace PID, grouping, search | ⏳ Planned |
-| **4. CPU Module** | v0.1.0–v0.2.0 | Per-core usage, frequency, temperature (MSR), `egui_plot` graphs, top consumers table | ⏳ Planned |
-| **5. Storage I/O Module** | v0.2.0–v0.3.0 | Disk read/write throughput, latency, queue depth, SMART health, partition usage | ⏳ Planned |
-| **6. Network & GPU Module** | v0.3.0–v0.5.0 | Per-interface throughput, TCP/UDP stats, gamer ping, DXGI GPU usage/VRAM/temp | ⏳ Planned |
-| **7. Mini HUD Overlay** | v0.5.0–v1.0.0 | Always-on-top overlay, hotkey toggle, customizable panels, export to HTML/JSON | 🎯 **Final Target** |
+| **1. Foundation & Infrastructure** | v0.0.1–v0.0.2 | Git, Cargo, Obsidian HUD theme, background worker (500ms uptime), basic app structure | ✅ **Done** |
+| **2. i18n, Fonts, Icon, Self-Test, CI** | v0.0.3 | Language switcher (UA/EN), system fonts (Segoe UI/Consolas), generated neon icon, `--self-test` (headless CI + live GUI), GitHub Actions CI, backup automation, self-diagnosis badge | ✅ **Done** |
+| **3. Memory Math Model & Ring Buffer** | v0.0.4 | Pure math `MemorySnapshot` (RAM/Swap bytes, GiB/MiB, saturating cached, clamped usage %, division-by-zero guard), `MemoryHistory` ring buffer (120 points = 60s), session peaks, 6 new unit tests | ✅ **Done** |
+| **4. OS Memory Collector & Worker Integration** | v0.0.5 | `sysinfo` RAM/Swap collection, `EmptyWorkingSet` via `windows-sys` PSAPI, worker integration with `MemorySnapshot` + `MemoryHistory`, headless CI fix for OpenGL-less runners | ✅ **Done** |
+| **5. Memory HUD Cards & 60s Chart** | v0.0.6 | RAM/Swap cards with `card_frame()`, progress bars with traffic-light colors, `egui_plot` dual-line chart (ring buffer), one-click cache cleanup | 🔄 **Next** |
+| **6. Process Grouping & Spike Black Box** | v0.0.7 | `ProcessEntry`, `GroupKey`, `ProcessGroup` aggregation, spike detection, persistent black box log | ⏳ Planned |
+| **7. Interactive Process Table** | v0.0.8 | `egui_extras::TableBuilder` with monospace PID, expandable groups, search/filter, per-process EmptyWorkingSet | ⏳ Planned |
+| **8. Phase 1 Release: WinAPI RAM Purge** | **v0.1.0** | Full RAM/Swap monitoring + one-click cache cleanup end-to-end, `CHANGELOG.md` + `PULSE_AI_CONTEXT.md` updated, Git tag | 🎯 **Target** |
+| **9. CPU Module** | v0.2.0 | Per-core usage, frequency, temperature (MSR), `egui_plot` graphs, top consumers table | ⏳ Planned |
+| **10. Storage I/O Module** | v0.3.0 | Disk read/write throughput, latency, queue depth, SMART health, partition usage | ⏳ Planned |
+| **11. Network & Ping Radar** | v0.4.0 | Per-interface throughput, TCP/UDP stats, gamer ping, connection table | ⏳ Planned |
+| **12. GPU DXGI & System** | v0.5.0 | DXGI GPU usage/VRAM/temp, process GPU attribution | ⏳ Planned |
+| **13. Mini HUD Overlay** | v1.0.0 | Always-on-top overlay, hotkey toggle, customizable panels, export HTML/JSON | 🎯 **Final** |
 
 ---
 
@@ -33,35 +39,35 @@
 ```
 pulse_manager/
 ├── src/
-│   ├── main.rs              # Entry point: eframe::run_native (≤35 lines)
-│   ├── app.rs               # PulseApp: state, UI panels, snapshot handling
-│   ├── theme.rs             # Obsidian HUD tokens, apply_obsidian_theme, load_color, card_frame, setup_fonts
-│   ├── i18n.rs              # Language switcher (UA/EN), translation keys
+│   ├── main.rs                      # Entry point: eframe::run_native (≤35 lines)
+│   ├── app.rs                       # PulseApp: state, UI panels, snapshot handling
+│   ├── theme.rs                     # Obsidian HUD tokens, apply_obsidian_theme, load_color, card_frame, setup_fonts
+│   ├── i18n.rs                      # Language switcher (UA/EN), translation keys
 │   ├── core/
-│   │   ├── mod.rs           # SystemSnapshot, mpsc channel types, spawn_telemetry_worker
-│   │   └── worker.rs        # Background thread: 500ms interval, uptime + self RAM → channel
+│   │   ├── mod.rs                   # SystemSnapshot (uptime + pulse_ram_mb + memory), mpsc channel types, spawn_telemetry_worker
+│   │   └── worker.rs                # Background thread: 500ms interval, uptime + self RAM + OS memory → channel
 │   ├── modules/
-│   │   ├── mod.rs           # Pub re-exports all modules
+│   │   ├── mod.rs                   # Pub re-exports all modules
 │   │   ├── memory/
-│   │   │   ├── mod.rs       # Module exports
-│   │   │   ├── model.rs     # MemorySnapshot, MemoryHistory (pure math, no deps)
-│   │   │   ├── collector.rs # sysinfo RAM/Swap, EmptyWorkingSet via windows-sys
-│   │   │   └── view.rs      # RAM/Swap cards, progress bars, egui_plot graphs, Clear Cache button
+│   │   │   ├── mod.rs               # Module exports
+│   │   │   ├── model.rs             # MemorySnapshot, MemoryHistory (pure math, no deps)
+│   │   │   ├── collector.rs         # sysinfo RAM/Swap, EmptyWorkingSet via windows-sys
+│   │   │   └── view.rs              # RAM/Swap cards, progress bars, egui_plot graphs, Clear Cache button
 │   │   ├── processes/
 │   │   │   ├── mod.rs
-│   │   │   ├── model.rs     # ProcessEntry, GroupKey, ProcessGroup
-│   │   │   ├── collector.rs # sysinfo::Processes + Windows enrichment
-│   │   │   └── view.rs      # Table, grouping, search, monospace PID
+│   │   │   ├── model.rs             # ProcessEntry, GroupKey, ProcessGroup
+│   │   │   ├── collector.rs         # sysinfo::Processes + Windows enrichment
+│   │   │   └── view.rs              # Table, grouping, search, monospace PID
 │   │   └── system/
 │   │       ├── mod.rs
-│   │       ├── model.rs     # CpuInfo, GpuInfo, DiskInfo, NetInfo
-│   │       ├── collector.rs # sysinfo collectors
-│   │       └── view.rs      # System overview panels
+│   │       ├── model.rs             # CpuInfo, GpuInfo, DiskInfo, NetInfo
+│   │       ├── collector.rs         # sysinfo collectors
+│   │       └── view.rs              # System overview panels
 │   └── utils/
 │       ├── mod.rs
-│       ├── formatting.rs    # bytes_to_human, monospace helpers
-│       └── windows_api.rs   # Wrappers for EmptyWorkingSet, PSAPI
-└── tests/                   # Integration tests (planned)
+│       ├── formatting.rs            # bytes_to_human, monospace helpers
+│       └── windows_api.rs           # Wrappers for EmptyWorkingSet, PSAPI
+└── tests/                           # Integration tests (planned)
 ```
 
 ### Core Principles
@@ -76,25 +82,24 @@ pulse_manager/
 
 ---
 
-## 🚀 Current Status: v0.0.3
+## 🚀 Current Status: v0.0.5
 
 **Implemented:**
-- ✅ Obsidian HUD theme system (`theme.rs`) with design tokens, traffic-light function, card frame, system fonts
-- ✅ Background telemetry worker (`core/worker.rs`) — 500ms interval, `System::uptime()` + self RAM via `mpsc`
-- ✅ Modular app structure (`app.rs`) — top panel (title, version, live uptime, lang switch, self-diag badge), left sidebar (180px, Memory tab), central panel (card placeholder)
-- ✅ Internationalization (`i18n.rs`) — `Lang { Uk, En }`, `[ UA | EN ]` button, type-safe keys
-- ✅ Minimal entry point (`main.rs` — 27 lines) with `#![deny(unsafe_code)]`, `windows_subsystem`, custom icon, `--self-test`
-- ✅ **23 unit tests passing** (theme: 6, app: 7, core: 2, i18n: 8)
+- ✅ **Foundation & Infrastructure** (v0.0.1–v0.0.2): Git, Cargo, Obsidian HUD theme, background worker (500ms uptime), basic app structure
+- ✅ **i18n, Fonts, Icon, Self-Test, CI** (v0.0.3): Language switcher (UA/EN), system fonts (Segoe UI/Consolas), generated neon icon, `--self-test` (headless CI + live GUI), GitHub Actions CI, backup automation, self-diagnosis badge
+- ✅ **Memory Math Model & Ring Buffer** (v0.0.4): Pure math `MemorySnapshot` (RAM/Swap bytes, GiB/MiB, saturating cached, clamped usage %, division-by-zero guard), `MemoryHistory` ring buffer (120 points = 60s), session peaks, 6 new unit tests
+- ✅ **OS Memory Collector & Worker Integration** (v0.0.5): `sysinfo` RAM/Swap collection via `collect_memory()`, `EmptyWorkingSet` wrapper via `windows-sys` PSAPI, worker integration with `MemorySnapshot` + `MemoryHistory`, headless CI fix for OpenGL-less runners (headless self-test without `eframe::run_native`)
+- ✅ **29+ unit tests passing** (theme: 6, app: 7, core: 2, i18n: 8, memory: 6)
 - ✅ `cargo clippy --all-targets -- -D warnings` — zero warnings
-- ✅ Self-test: **HEADLESS CI** (`CI=true`) and **LIVE GUI** (5 frames, auto-switch tabs/lang)
+- ✅ Self-test: **HEADLESS CI** (`CI=true` / `GITHUB_ACTIONS=true`) — runs without `eframe::run_native`, validates live snapshot + memory history + i18n toggle; **LIVE GUI** — auto-switches tabs & lang
 - ✅ Release profile optimized (LTO=fat, strip, panic=abort)
-- ✅ GitHub Actions CI (`.github/workflows/ci.yml`)
+- ✅ GitHub Actions CI (`.github/workflows/ci.yml`) — fmt, clippy, check, test, build, self-test (headless)
 
 **Running:**
 ```bash
 cargo run --release
 ```
-Opens a 1180×760 window with live uptime updating every 500ms.
+Opens a 1180×760 window with live uptime, self-diagnosis badge, and memory telemetry updating every 500ms.
 
 ---
 

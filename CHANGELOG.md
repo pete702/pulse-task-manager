@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.5] - 2026-11-02
+
+### Added
+- **Memory Module — OS Collector** (`src/modules/memory/collector.rs`): Real OS memory collection via `sysinfo`:
+  - `collect_memory(sys)`: Refreshes and maps `sys.total_memory()`, `used_memory()`, `available_memory()`, `free_memory()`, `total_swap()`, `used_swap()`, `free_swap()` to `MemorySnapshot`.
+  - `trim_working_set()`: Placeholder for Windows `EmptyWorkingSet` via `windows-sys` PSAPI (to be implemented in v0.0.6).
+  - **3 new unit tests**: live OS collection (`ram_total > 0`, `ram_usage > 0`), field population validation, accounting consistency (used + free + cached ≈ total within 1 MiB).
+- **Worker Integration** (`src/core/worker.rs`): Background thread now collects OS memory every 500ms via `collect_memory()` and includes `MemorySnapshot` in `SystemSnapshot::memory`.
+- **App Integration** (`src/app.rs`): `PulseApp` now holds `MemoryHistory` ring buffer; pushes each `MemorySnapshot` to history on receipt; central panel displays live RAM/Swap GiB, usage %, cached GiB, history points count, and session peak RAM %.
+- **Headless CI Fix** (`src/main.rs`): Self-test now detects CI (`CI=true` or `GITHUB_ACTIONS=true`) and runs **fully headless without `eframe::run_native`** (no OpenGL required). Falls back to headless if eframe fails locally. Validates: live snapshot, `pulse_ram_mb > 0`, `MemorySnapshot` fields, `MemoryHistory` push/peaks, i18n toggle `Uk` ↔ `En`.
+- **GitHub Actions CI** (`.github/workflows/ci.yml`): Self-test runs headless on `windows-latest` without GPU.
+
+### Changed
+- **`src/core/mod.rs`**: `SystemSnapshot` now includes `memory: Option<MemorySnapshot>`; added `minimal()` constructor for tests.
+- **`src/core/worker.rs`**: Collects OS memory via `collect_memory()` every 500ms; sends full `SystemSnapshot` with memory.
+- **`src/app.rs`**: Added `memory_history: MemoryHistory`; pushes memory on each snapshot; central panel displays live RAM/Swap GiB, usage %, cached, history count, peak.
+- **`src/main.rs`**: Self-test detects `CI` or `GITHUB_ACTIONS` env vars → runs `run_headless_self_test()` without eframe; fallback to headless on eframe error (e.g., no OpenGL).
+- **`Cargo.toml`**: Version bumped to `0.0.5`.
+
+### Infrastructure
+- All **34 unit tests passing** (theme: 6, app: 8, core: 3, i18n: 8, memory model: 6, memory collector: 3, integration: 1).
+- Zero warnings on `cargo clippy --all-targets -- -D warnings`.
+- Self-test passes **HEADLESS CI** (`CI=true`) without OpenGL, and **LIVE GUI** (auto-switches tabs & lang).
+- Release binary exported to `../PULSE_BUILDS/pulse_v0.0.5.exe` and `PULSE_LATEST.exe`.
+- Clean backup created at `../PULSE_BACKUPS/v0.0.5_verified/`.
+
+---
+
 ## [v0.0.4] - 2026-11-02
 
 ### Added
@@ -102,26 +130,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Planned for v0.0.4
-- **Memory Module — Model** (`src/modules/memory/model.rs`): `PhysicalMemory`, `SwapMemory`, `CacheCleaner` structs with English doc-comments, unit tests.
-
-### Planned for v0.0.5
-- **Memory Module — Collector** (`src/modules/memory/collector.rs`): `sysinfo` integration for RAM/Swap, `EmptyWorkingSet` wrapper via `windows-sys`.
-
 ### Planned for v0.0.6
-- **Memory Module — View** (`src/modules/memory/view.rs`): RAM/Swap cards with `card_frame()`, progress bars, `%` with `load_color()`, `egui_plot` history graphs, "Clear Cache" button.
+- **Memory Module — View** (`src/modules/memory/view.rs`): RAM/Swap cards with `card_frame()`, progress bars with traffic-light colors, `egui_plot` dual-line chart (ring buffer history), "Clear Cache" button (EmptyWorkingSet via windows-sys).
 
 ### Planned for v0.0.7
-- **Processes Module — Model** (`src/modules/processes/model.rs`): `ProcessEntry`, `GroupKey`, `ProcessGroup`.
+- **Processes Module — Model** (`src/modules/processes/model.rs`): `ProcessEntry`, `GroupKey`, `ProcessGroup` aggregation.
 
 ### Planned for v0.0.8
 - **Processes Module — Collector** (`src/modules/processes/collector.rs`): `sysinfo::Processes` snapshot + Windows enrichment (exe path, session, cmdline).
 
 ### Planned for v0.0.9
-- **Processes Module — View** (`src/modules/processes/view.rs`): `egui_extras::TableBuilder` with monospace PID, grouping, search/filter.
+- **Processes Module — View** (`src/modules/processes/view.rs`): `egui_extras::TableBuilder` with monospace PID, expandable groups, search/filter.
 
-### Planned for v0.1.0 — Memory Release
-- Integration of all Memory module components.
-- End-to-end test: RAM/Swap monitoring + cache cleanup working.
+### Planned for v0.1.0 — Phase 1 Release: WinAPI RAM Purge
+- Full RAM/Swap monitoring + one-click cache cleanup end-to-end.
 - `CHANGELOG.md` + `PULSE_AI_CONTEXT.md` updated.
 - Git tag `v0.1.0`.
+
+### Planned for v0.2.0 — CPU Module
+- Per-core usage, frequency, temperature (MSR), `egui_plot` graphs, top consumers table.
+
+### Planned for v0.3.0 — Storage I/O Module
+- Disk read/write throughput, latency, queue depth, SMART health, partition usage.
+
+### Planned for v0.4.0 — Network & Ping Radar
+- Per-interface throughput, TCP/UDP stats, gamer ping, connection table.
+
+### Planned for v0.5.0 — GPU DXGI & System
+- DXGI GPU usage/VRAM/temp, process GPU attribution.
+
+### Planned for v1.0.0 — Mini HUD Overlay
+- Always-on-top overlay, hotkey toggle, customizable panels, export HTML/JSON.
