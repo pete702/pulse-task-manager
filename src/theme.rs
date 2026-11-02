@@ -1,44 +1,44 @@
-//! Тема "Obsidian HUD" для PULSE.
-//! Містить дизайн-токени, функцію застосування теми, світлофор навантаження та Frame для карток.
+//! "Obsidian HUD" theme for PULSE.
+//! Contains design tokens, theme application function, traffic-light load color, and card Frame.
 
 use eframe::egui;
 
-/// Кольори теми Obsidian HUD (підтримують специфікацію ARCHITECTURE.md).
+/// Obsidian HUD theme color tokens (per ARCHITECTURE.md specification).
 pub mod colors {
     use eframe::egui::Color32;
 
-    /// Фон головного вікна: #0B0C10
+    /// Main window background: #0B0C10
     pub const BG_WINDOW: Color32 = Color32::from_rgb(0x0B, 0x0C, 0x10);
-    /// Фон карток/панелей: #12141C
+    /// Card/panel background: #12141C
     pub const BG_CARD: Color32 = Color32::from_rgb(0x12, 0x14, 0x1C);
-    /// Рамки/бордери: #1F2330
+    /// Borders/dividers: #1F2330
     pub const BORDER: Color32 = Color32::from_rgb(0x1F, 0x23, 0x30);
-    /// Hover стан віджетів: #1A1E2E
+    /// Widget hover state: #1A1E2E
     pub const HOVER: Color32 = Color32::from_rgb(0x1A, 0x1E, 0x2E);
-    /// Active стан віджетів: #1F2330
+    /// Widget active state: #1F2330
     pub const ACTIVE: Color32 = Color32::from_rgb(0x1F, 0x23, 0x30);
-    /// Заокруглення кутів: 6.0
+    /// Corner radius: 6.0
     pub const RADIUS: f32 = 6.0;
-    /// Товщина рамки: 1.0
+    /// Border width: 1.0
     pub const BORDER_WIDTH: f32 = 1.0;
 }
 
-/// Світлофор навантаження (Traffic Light) — повертає колір за відсотком завантаження.
-/// <60% — ціан (#00F0FF), 60-85% — бурштиновий (#FFB800), ≥85% — червоний неон (#FF2A54).
+/// Traffic-light load color — returns color based on load percentage.
+/// <60% — cyan (#00F0FF), 60-85% — amber (#FFB800), ≥85% — neon red (#FF2A54).
 #[allow(dead_code)]
 #[inline]
 pub fn load_color(percent: f32) -> egui::Color32 {
     if percent < 60.0 {
-        egui::Color32::from_rgb(0x00, 0xF0, 0xFF) // Ціан
+        egui::Color32::from_rgb(0x00, 0xF0, 0xFF) // Cyan
     } else if percent < 85.0 {
-        egui::Color32::from_rgb(0xFF, 0xB8, 0x00) // Бурштиновий
+        egui::Color32::from_rgb(0xFF, 0xB8, 0x00) // Amber
     } else {
-        egui::Color32::from_rgb(0xFF, 0x2A, 0x54) // Червоний неон
+        egui::Color32::from_rgb(0xFF, 0x2A, 0x54) // Neon Red
     }
 }
 
-/// Застосовує тему "Obsidian HUD" до контексту egui.
-/// Встановлює кольори, заокруглення, шрифти (моноширинний для цифр).
+/// Applies the "Obsidian HUD" theme to the egui context.
+/// Sets colors, rounding, fonts (monospace for numbers).
 pub fn apply_obsidian_theme(ctx: &egui::Context) {
     let mut style = (*ctx.style()).clone();
 
@@ -81,8 +81,8 @@ pub fn apply_obsidian_theme(ctx: &egui::Context) {
     ctx.set_style(style);
 }
 
-/// Повертає `egui::Frame` для карток у стилі Obsidian HUD.
-/// Фон: #12141C, Рамка: 1px #1F2330, Заокруглення: 6.0, Внутрішній відступ: 12.0.
+/// Returns an `egui::Frame` for cards in Obsidian HUD style.
+/// Background: #12141C, Border: 1px #1F2330, Radius: 6.0, Inner margin: 12.0.
 pub fn card_frame() -> egui::Frame {
     egui::Frame::none()
         .fill(colors::BG_CARD)

@@ -1,31 +1,31 @@
-//! Ядро телеметрії PULSE: фоновий робітник, снепшоти системи, канали зв'язку.
+//! PULSE telemetry core: background worker, system snapshots, communication channels.
 
 pub mod worker;
 
 use std::sync::mpsc;
 
-/// Снепшот стану системи, що передається з фонового потоку в UI.
-/// Поки містить лише uptime; у v0.0.3+ розшириться метриками пам'яті/CPU.
+/// System state snapshot sent from background thread to UI.
+/// Currently contains only uptime; will be extended with memory/CPU metrics in v0.0.3+.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SystemSnapshot {
-    /// Час роботи системи у секундах (від `sysinfo::System::uptime()`).
+    /// System uptime in seconds (from `sysinfo::System::uptime()`).
     pub uptime_secs: u64,
 }
 
 impl SystemSnapshot {
-    /// Створює новий снепшот із заданого uptime.
+    /// Creates a new snapshot with the given uptime.
     #[inline]
     pub fn new(uptime_secs: u64) -> Self {
         Self { uptime_secs }
     }
 }
 
-/// Тип каналу для передачі снепшотів: `Sender` у фоновому потоці, `Receiver` у UI.
+/// Channel type for snapshot transmission: `Sender` in background thread, `Receiver` in UI.
 pub type SnapshotTx = mpsc::Sender<SystemSnapshot>;
 pub type SnapshotRx = mpsc::Receiver<SystemSnapshot>;
 
-/// Запускає фоновий потік збору телеметрії.
-/// Повертає `Receiver` для читання снепшотів у головному потоці.
+/// Spawns the background telemetry worker thread.
+/// Returns a `Receiver` for reading snapshots in the main thread.
 pub fn spawn_telemetry_worker() -> SnapshotRx {
     worker::spawn()
 }

@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **README.md**: Bilingual documentation (Ukrainian / English) with project description, features, architecture overview, and run instructions
 - **ARCHITECTURE.md**: Immutable laws of the project:
   - Module structure (≤150 lines/file, model/collector/view separation)
-  - Documentation standard (Ukrainian doc-comments for all public API)
+  - Documentation standard (English doc-comments for all public API)
   - Pinned dependency versions (eframe/egui 0.27.2, sysinfo 0.30.12, windows-sys 0.52.0)
   - "Obsidian HUD" design tokens (colors, radius, monospace requirement, traffic-light load colors)
   - Definition of Done (5 mandatory steps per version)
@@ -52,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned for v0.0.3
-- **Memory Module — Model** (`src/modules/memory/model.rs`): `PhysicalMemory`, `SwapMemory`, `CacheCleaner` structs with Ukrainian doc-comments, unit tests.
+- **Memory Module — Model** (`src/modules/memory/model.rs`): `PhysicalMemory`, `SwapMemory`, `CacheCleaner` structs with English doc-comments, unit tests.
 
 ### Planned for v0.0.4
 - **Memory Module — Collector** (`src/modules/memory/collector.rs`): `sysinfo` integration for RAM/Swap, `EmptyWorkingSet` wrapper via `windows-sys`.

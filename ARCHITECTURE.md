@@ -1,55 +1,55 @@
-# ARCHITECTURE.md — Незмінні Закони Проекту PULSE
+# ARCHITECTURE.md — PULSE Project Immutable Laws
 
-> Цей файл визначає **конституцію** кодової бази. Будь-яке відхилення вимагає явного рішення архітектора та оновлення цього документа.
+> This file defines the **constitution** of the codebase. Any deviation requires an explicit architect decision and an update to this document.
 
 ---
 
-## 1. Модульність (Module Boundaries)
+## 1. Modularity (Module Boundaries)
 
-| Правило | Значення |
-|---------|----------|
-| **Макс. рядків у файлі** | **150** (жорсткий ліміт) |
-| **Структура модуля** | `src/modules/<name>/` з обов'язковим подилом: |
-| | • `model.rs` — дані, чиста логіка, **unit-тести** (`#[cfg(test)]`) |
-| | • `collector.rs` — збір даних з ОС (Windows API, `sysinfo`) |
+| Rule | Value |
+|------|-------|
+| **Max lines per file** | **150** (hard limit) |
+| **Module structure** | `src/modules/<name>/` with mandatory split: |
+| | • `model.rs` — data, pure logic, **unit tests** (`#[cfg(test)]`) |
+| | • `collector.rs` — OS data collection (Windows API, `sysinfo`) |
 | | • `view.rs` — UI (egui/eframe) |
-| **Заборона** | Мішати логіку збору даних з UI, виносити бізнес-логіку у `view.rs` |
-| **Публічний API модуля** | Експортується **тільки** через `mod.rs` модуля (`pub use model::*; pub use collector::*; pub use view::*;`) |
+| **Forbidden** | Mixing collection logic with UI, moving business logic into `view.rs` |
+| **Public module API** | Exported **only** via module's `mod.rs` (`pub use model::*; pub use collector::*; pub use view::*;`) |
 
-> **Чому 150 рядків?** Це гарантує: читабельність за 30 сек, легкий code review, ізольовані юніт-тести, відсутність "god files".
+> **Why 150 lines?** Guarantees: 30-second readability, easy code review, isolated unit tests, no "god files".
 
 ---
 
-## 2. Документація та Коментарі (Documentation Standard)
+## 2. Documentation & Comments (Documentation Standard)
 
-| Елемент | Вимога |
-|---------|--------|
-| **Публічні структури** | `///` українською — призначення, інваріанти, приклад використання |
-| **Публічні поля** | `///` — семантика, одиниці виміру, допустимі діапазони |
-| **Публічні функції/методи** | `///` — контракт: що робить, аргументи, повернення, помилки, side-effects |
-| **Приватні елементи** | За бажанням, але **обов'язково** для складної логіки |
-| **Мова** | **Тільки українська** для doc-коментарів (`///`). Кодові коментарі (`//`) — допускаються англійською. |
+| Element | Requirement |
+|---------|-------------|
+| **Public structs** | `///` in English — purpose, invariants, usage example |
+| **Public fields** | `///` — semantics, units, valid ranges |
+| **Public functions/methods** | `///` — contract: what it does, arguments, return, errors, side-effects |
+| **Private elements** | Optional, but **required** for complex logic |
+| **Language** | **English only** for doc-comments (`///`). Code comments (`//`) — English permitted. |
 
-> **Приклад:**
+> **Example:**
 > ```rust
-> /// Физична пам'ять системи: загальний обсяг, доступний, використовуваний.
-> /// Усі значення — у **байтах**.
+> /// System physical memory: total, available, used.
+> /// All values in **bytes**.
 > #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 > pub struct PhysicalMemory {
->     /// Загальний обсяг ОЗП (bytes).
+>     /// Total physical RAM (bytes).
 >     pub total: u64,
->     /// Доступний для виділення без свопінгу (bytes).
+>     /// Available for allocation without swapping (bytes).
 >     pub available: u64,
->     /// Поточне використання (bytes).
+>     /// Current usage (bytes).
 >     pub used: u64,
 > }
 > ```
 
 ---
 
-## 3. Фіксовані Версії Крейтів (Pinned Dependencies)
+## 3. Pinned Dependencies
 
-> **ЗАБОРОНЯЄТЬСЯ** використовувати `^`, `~`, `*` або `latest`. Версії **жорстко фіксовані** для 100% повторюваності збирання та сумісності API.
+> **FORBIDDEN** to use `^`, `~`, `*`, or `latest`. Versions are **hard-pinned** for 100% reproducible builds and API compatibility.
 
 ```toml
 [dependencies]
@@ -61,74 +61,74 @@ sysinfo = "0.30.12"
 windows-sys = { version = "0.52.0", features = ["Win32_System_ProcessStatus", "Win32_System_Threading", "Win32_Foundation"] }
 ```
 
-| Крейт | Версія | Призначення |
-|-------|--------|-------------|
-| `eframe` | 0.27.2 | Нативний фреймворк для egui (window, event loop, wgpu) |
+| Crate | Version | Purpose |
+|-------|---------|---------|
+| `eframe` | 0.27.2 | Native egui framework (window, event loop, wgpu) |
 | `egui` | 0.27.2 | Immediate-mode GUI |
-| `egui_plot` | 0.27.2 | Графіки завантаження CPU/RAM/GPU |
+| `egui_plot` | 0.27.2 | Real-time graphs (CPU/RAM/GPU load) |
 | `egui_extras` | 0.27.2 | Table, Strip, Image, RetainedImage |
-| `sysinfo` | 0.30.12 | Крос-платформний збір системної інфо (CPU, RAM, Disks, Processes) |
-| `windows-sys` | 0.52.0 | Прямі Windows API (PSAPI, Threading, Foundation) для EmptyWorkingSet, точніших метрик |
+| `sysinfo` | 0.30.12 | Cross-platform system info (CPU, RAM, Disks, Processes) |
+| `windows-sys` | 0.52.0 | Direct Windows API (PSAPI, Threading, Foundation) for EmptyWorkingSet, precise metrics |
 
-> **Оновлення версій** — тільки через ARCHITECTURE.md + CHANGELOG.md + тестування `cargo check` / `cargo test`.
-
----
-
-## 4. Дизайн-система "Obsidian HUD" (Design Tokens)
-
-| Token | Значення | Застосування |
-|-------|----------|--------------|
-| `BG_WINDOW` | `#0B0C10` | Фон головного вікна (`CentralPanel`, `SidePanel`) |
-| `BG_CARD` | `#12141C` | Фон карток, панелей процесів, графіків |
-| `BORDER` | `#1F2330` | Рамки карток, роздільники таблиць (1px) |
-| `RADIUS` | `6.0` | Заокруглення `CornerRadius::same(6.0)` |
-| `MONO_FONT` | `FontId::monospace(size)` | **Усі цифри**: MB, GB, %, PID, Hz, °C — **тільки моноширинний** |
-
-### Світлофор Навантаження (Traffic Light)
-
-| Діапазон | Колор | Hex | Назва |
-|----------|-------|-----|-------|
-| `< 60%` | ![#00F0FF](https://via.placeholder.com/10/00F0FF/000000?text=+) | `#00F0FF` | **Ціан (Cyan)** — норма |
-| `60–85%` | ![#FFB800](https://via.placeholder.com/10/FFB800/000000?text=+) | `#FFB800` | **Бурштиновий (Amber)** — попередження |
-| `≥ 85%` | ![#FF2A54](https://via.placeholder.com/10/FF2A54/000000?text=+) | `#FF2A54` | **Червоний неон (Neon Red)** — критично |
-
-> **Правило**: колір визначається **поточним відсотком** ресурсу (RAM, CPU, GPU, Disk). Застосовується до: тексту відсотка, наповнення прогрес-бару, точок на графіках.
+> **Version updates** — only via ARCHITECTURE.md + CHANGELOG.md + `cargo check` / `cargo test` validation.
 
 ---
 
-## 5. Definition of Done (DoD) — Правило Завершення Кожного Кроку
+## 4. "Obsidian HUD" Design System (Design Tokens)
 
-> **Агент ЗОБОВ'ЯЗАНИЙ** виконати **5 дій** на завершення кожного кроку (версії):
+| Token | Value | Application |
+|-------|-------|-------------|
+| `BG_WINDOW` | `#0B0C10` | Main window background (`CentralPanel`, `SidePanel`) |
+| `BG_CARD` | `#12141C` | Card/panel background (process lists, graphs) |
+| `BORDER` | `#1F2330` | Card borders, table dividers (1px) |
+| `RADIUS` | `6.0` | Corner rounding `CornerRadius::same(6.0)` |
+| `MONO_FONT` | `FontId::monospace(size)` | **All numbers**: MB, GB, %, PID, Hz, °C — **monospace only** |
 
-### 5.1. Якість коду
-- `cargo check` — **0 помилок компіляції**
-- `cargo test` — **усі тести проходять** (unit + integration, якщо є)
+### Traffic-Light Load Colors
 
-### 5.2. Версіонування
-- Оновити `version` у `Cargo.toml` (SemVer: `MAJOR.MINOR.PATCH`)
+| Range | Color | Hex | Name |
+|-------|-------|-----|------|
+| `< 60%` | ![#00F0FF](https://via.placeholder.com/10/00F0FF/000000?text=+) | `#00F0FF` | **Cyan** — normal |
+| `60–85%` | ![#FFB800](https://via.placeholder.com/10/FFB800/000000?text=+) | `#FFB800` | **Amber** — warning |
+| `≥ 85%` | ![#FF2A54](https://via.placeholder.com/10/FF2A54/000000?text=+) | `#FF2A54` | **Neon Red** — critical |
 
-### 5.3. Офіційний CHANGELOG.md (всередині репозиторію)
-- Додати запис про нову версію згідно [Keep a Changelog](https://keepachangelog.com/):
+> **Rule:** Color is determined by **current percentage** of resource (RAM, CPU, GPU, Disk). Applied to: percentage text, progress bar fill, graph points.
+
+---
+
+## 5. Definition of Done (DoD) — Per-Version Completion Rule
+
+> **The agent MUST perform 5 actions** on every version completion:
+
+### 5.1. Code Quality
+- `cargo check` — **0 compilation errors**
+- `cargo test` — **all tests pass** (unit + integration, if any)
+
+### 5.2. Versioning
+- Update `version` in `Cargo.toml` (SemVer: `MAJOR.MINOR.PATCH`)
+
+### 5.3. Official CHANGELOG.md (inside repository)
+- Add entry per [Keep a Changelog](https://keepachangelog.com/):
   - `## [vX.Y.Z] - YYYY-MM-DD`
   - `### Added / Changed / Fixed / Removed`
 
-### 5.4. Зовнішня Інженерна Історія — `../PULSE_AI_CONTEXT.md`
-> **СУВОРЕ ПРАВИЛО**: **Ніколи не стирати старі записи**. Паспорт проекту оновлюється зверху, хронологічна історія дописується знизу.
+### 5.4. External Engineering History — `../PULSE_AI_CONTEXT.md`
+> **STRICT RULE:** **Never delete old entries**. Project passport updated at top; chronological history appended at bottom.
 
-Структура запису версії:
-1. **Які файли створено/змінено** і що саме реалізовано
-2. **ЖУРНАЛ ПОМИЛОК ТА ВИПРАВЛЕНЬ (Bug & Fix Log)**: детально — помилки компіляції/тестів, причина, точний спосіб виправлення (якщо немає — `"Скомпільовано з першої спроби без помилок"`)
-3. **План на наступну версію**
+Version entry structure:
+1. **Files created/modified** and what was implemented
+2. **BUG & FIX LOG**: detailed compilation/test errors, root cause, exact fix (or "Compiled first try without errors")
+3. **Next version plan**
 
-### 5.5. Git-коміт
+### 5.5. Git Commit
 ```bash
 git add .
-git commit -m "vX.Y.Z: короткий опис змін"
+git commit -m "vX.Y.Z: short description"
 ```
 
 ---
 
-## 6. Сруктура Проекту (Reference Tree)
+## 6. Project Structure (Reference Tree)
 
 ```
 pulse_manager/
@@ -168,22 +168,22 @@ pulse_manager/
 
 ---
 
-## 7. Заборонені Патерни (Anti-Patterns)
+## 7. Forbidden Patterns (Anti-Patterns)
 
-| Патерн | Чому заборонено | Альтернатива |
-|--------|-----------------|--------------|
-| `unwrap()` / `expect()` у продакшн-коді | Паніка = краш UI | `Result` + `?` / `tracing::error!` + fallback |
-| Глобальні `static mut` / `lazy_static` | Небезпечно, важко тестувати | Dependency Injection через `App` state |
-| Блокуючі виклики в UI потоці | Заморожування кадру (jank) | `tokio::task::spawn_blocking` / rayon / channels |
-| Хардкод кольорів/розмірів у `view.rs` | Несумісність з темою | `theme.rs` токени + `Theme::apply(&mut ctx)` |
-| Модуль без `model.rs`/`collector.rs`/`view.rs` | Порушення ізоляції відповідальності | Створити три файли або об'єднати з іншим модулем |
+| Pattern | Why Forbidden | Alternative |
+|---------|---------------|-------------|
+| `unwrap()` / `expect()` in production code | Panic = UI crash | `Result` + `?` / `tracing::error!` + fallback |
+| Global `static mut` / `lazy_static` | Unsafe, hard to test | Dependency Injection via `App` state |
+| Blocking calls in UI thread | Frame freeze (jank) | `tokio::task::spawn_blocking` / rayon / channels |
+| Hardcoded colors/sizes in `view.rs` | Theme inconsistency | `theme.rs` tokens + `Theme::apply(&mut ctx)` |
+| Module without `model.rs`/`collector.rs`/`view.rs` | Violates separation of concerns | Create three files or merge with another module |
 
 ---
 
-## 8. CI/CD Gates (Перевірки перед Push)
+## 8. CI/CD Gates (Pre-Push Checks)
 
 ```yaml
-# .github/workflows/ci.yml (план)
+# .github/workflows/ci.yml (planned)
 - cargo fmt --check
 - cargo clippy -- -D warnings
 - cargo check --all-targets
@@ -191,9 +191,9 @@ pulse_manager/
 - cargo build --release
 ```
 
-> Усі гейти **обов'язкові**. Merge без зелених чеків — заборонено.
+> All gates **mandatory**. Merge without green checks — forbidden.
 
 ---
 
-**Версія документа:** `v0.0.1` (синхронізовано з `Cargo.toml`)
-**Останнє оновлення:** 2026-11-02
+**Document Version:** `v0.0.2` (synced with `Cargo.toml`)
+**Last Updated:** 2026-11-02

@@ -1,4 +1,4 @@
-//! Фоновий робітник телеметрії: періодично збирає uptime та надсилає через mpsc канал.
+//! Background telemetry worker: periodically collects uptime and sends via mpsc channel.
 
 use std::sync::mpsc;
 use std::thread;
@@ -8,25 +8,25 @@ use sysinfo::System;
 
 use crate::core::{SnapshotTx, SystemSnapshot};
 
-/// Інтервал оновлення телеметрії (500 мс).
+/// Telemetry update interval (500 ms).
 const WORKER_INTERVAL: Duration = Duration::from_millis(500);
 
-/// Запускає фоновий потік, який кожні 500 мс читає `System::uptime()`
-/// і надсилає `SystemSnapshot` через канал.
-/// Повертає `Receiver` для UI потоку.
+/// Spawns a background thread that reads `System::uptime()` every 500ms
+/// and sends `SystemSnapshot` through the channel.
+/// Returns a `Receiver` for the UI thread.
 pub fn spawn() -> mpsc::Receiver<SystemSnapshot> {
     let (tx, rx): (SnapshotTx, mpsc::Receiver<SystemSnapshot>) = mpsc::channel();
 
     thread::spawn(move || {
         let mut sys = System::new_all();
-        // Перша ініціалізація
+        // Initial refresh
         sys.refresh_all();
 
         loop {
             let uptime = System::uptime();
             let snapshot = SystemSnapshot::new(uptime);
 
-            // Надсилаємо снепшот; якщо receiver закритий — завершуємо потік
+            // Send snapshot; if receiver is closed, terminate thread
             if tx.send(snapshot).is_err() {
                 break;
             }
@@ -47,12 +47,12 @@ mod tests {
     fn test_worker_sends_first_snapshot() {
         let rx = spawn();
 
-        // Чекаємо перший снепшот (має прийти швидко)
+        // Wait for first snapshot (should arrive quickly)
         let snapshot = rx
             .recv_timeout(Duration::from_secs(2))
             .expect("Worker should send first snapshot within 2 seconds");
 
-        // Перевіряємо, що uptime >= 0 (система працює)
+        // Verify uptime > 0 (system is running)
         assert!(snapshot.uptime_secs > 0, "Uptime should be positive");
     }
 
@@ -67,7 +67,7 @@ mod tests {
             .recv_timeout(Duration::from_secs(2))
             .expect("Second snapshot");
 
-        // Другий снепшот має бути пізніше (або рівний, якщо дуже швидко)
+        // Second snapshot should be later (or equal if very fast)
         assert!(
             second.uptime_secs >= first.uptime_secs,
             "Uptime should not decrease"
