@@ -25,7 +25,7 @@ debug = true
 
 [dependencies]
 # =============================================================================
-# GUI FRAMEWORK (eframe/egui 0.27.2 — ПІДПИНЕНО ЖОРСТКО)
+# GUI FRAMEWORK (eframe/egui 0.27.2 - PINNED EXACTLY)
 # =============================================================================
 eframe = "0.27.2"
 egui = "0.27.2"
@@ -33,12 +33,12 @@ egui_plot = "0.27.2"
 egui_extras = "0.27.2"
 
 # =============================================================================
-# SYSTEM INTELLIGENCE (sysinfo 0.30.12 — ПІДПИНЕНО ЖОРСТКО)
+# SYSTEM INTELLIGENCE (sysinfo 0.30.12 - PINNED EXACTLY)
 # =============================================================================
 sysinfo = "0.30.12"
 
 # =============================================================================
-# WINDOWS NATIVE API (windows-sys 0.52.0 — ПІДПИНЕНО ЖОРСТКО)
+# WINDOWS NATIVE API (windows-sys 0.52.0 - PINNED EXACTLY)
 # Features: ProcessStatus (PSAPI), Threading, Foundation
 # =============================================================================
 windows-sys = { version = "0.52.0", features = ["Win32_System_ProcessStatus", "Win32_System_Threading", "Win32_Foundation", "Win32_Globalization"] }
@@ -46,17 +46,17 @@ windows-sys = { version = "0.52.0", features = ["Win32_System_ProcessStatus", "W
 # =============================================================================
 # UTILITIES
 # =============================================================================
-# Системний час / форматування
+# System time / formatting
 chrono = "0.4.38"
-# Серіалізація для налаштувань/конфігу
+# Serialization for settings/config
 serde = { version = "1.0.208", features = ["derive"] }
 serde_json = "1.0.123"
-# Логування
+# Logging
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "fmt"] }
-# Асинхронний рантайм для фонових збору даних
+# Async runtime for background data collection
 tokio = { version = "1.40.1", features = ["rt-multi-thread", "macros", "sync", "time"] }
-# Паралельні обчислення (Rayon для важких обробок процесів)
+# Parallel computation (Rayon for heavy process processing)
 rayon = "1.10.0"
 
 [dev-dependencies]

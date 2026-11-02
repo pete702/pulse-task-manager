@@ -249,7 +249,7 @@ impl MemorySnapshot {
     }
 }
 
-/// Ring buffer (кільцевий буфер) for memory usage history.
+/// Ring buffer for memory usage history.
 ///
 /// Stores up to `HISTORY_CAPACITY` (900) data points representing
 /// RAM and Swap usage percentages. At 1s interval this covers

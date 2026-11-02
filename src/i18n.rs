@@ -1,11 +1,11 @@
-//! Internationalization (i18n) for PULSE: auto-detect Windows UI language (UA/EN).
+//! Internationalization (i18n) for PULSE: detects the Windows UI language.
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
 /// Supported interface languages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Lang {
-    /// Ukrainian (default for owner).
+    /// Ukrainian interface language.
     #[default]
     Uk,
     /// English (for GitHub/international).

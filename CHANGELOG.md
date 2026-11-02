@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Multi-Horizon Memory Chart** (`ChartWindow` in `model.rs`, switcher in `chart_view.rs`): `[ 1m | 5m | 15m ]` buttons; history ring buffer extended from 120 to 900 points (15 minutes at 1s); windowed point iterators; the plot now occupies 100% of card width (no `view_aspect`).
 - **Self Working-Set Trim** (`src/modules/memory/collector.rs`): `K32EmptyWorkingSet(GetCurrentProcess())` is called before measuring PULSE's own RSS, releasing font/OpenGL buffers and lowering the process footprint.
 - **Real UI Render Time** (`src/app.rs`): `update()` is timed with `Instant::now()` instead of `ctx.input().unstable_dt`, so the top badge reports actual render cost rather than VSync wait.
-- **Complete UA/EN Localization** (`src/i18n.rs`, `src/modules/memory/view.rs`, `src/ui/chrome.rs`): RAM/Swap cards, kernel tiles (OS reserve %, paged/non-paged pools, OS commit limit), chart title, and status bar are now fully translated (`PULSE v0.0.8 | Моніторинг ядра Windows | Активних процесів: N` in UA) with no mixed-language leftovers; the active language follows the Windows locale.
+- **Complete Localization** (`src/i18n.rs`, `src/modules/memory/view.rs`, `src/ui/chrome.rs`): RAM/Swap cards, kernel tiles (OS reserve %, paged/non-paged pools, OS commit limit), chart title, and status bar are fully translated with no mixed-language leftovers; the active language follows the Windows locale.
 
 ### Changed
 - **`src/modules/memory/model.rs`**: `HISTORY_CAPACITY` 120 → 900; added `ChartWindow { OneMin, FiveMin, FifteenMin }`, `MemoryHistory::chart_window`, `windowed_ram_points()`, `windowed_swap_points()`.
@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Locale Indicator** in top bar: `[ LOCALE: UK-UA (0x0422) ]` or `[ LOCALE: EN-US (0x0409) ]` showing detected Windows locale.
 - **Real System Cache Fix** (`src/modules/memory/collector.rs`): `K32GetPerformanceInfo` now properly initializes `perf_info.cb` before call; `ram_cached_bytes_override` field stores real `SystemCache * PageSize`; `ram_cached_bytes()` returns override when > 0.
 - **Strict Kernel Metrics Test** (`src/modules/memory/collector.rs`): New `test_windows_real_kernel_cache_metrics` asserts `ram_cached_bytes > 0`, `kernel_paged_bytes > 0`, `kernel_nonpaged_bytes > 0`, `system_threads > 0` on Windows.
-- **100% Localized UI Text** (`src/modules/memory/view.rs`, `chart_view.rs`): All card headers, grid labels, kernel mini-tiles, chart title/legend now use `i18n::Key` dictionary — no bilingual "vinagret" (UA/EN mix). Pure UA when Windows locale is Ukrainian, pure EN otherwise.
+- **100% Localized UI Text** (`src/modules/memory/view.rs`, `chart_view.rs`): All card headers, grid labels, kernel mini-tiles, chart title/legend now use `i18n::Key` dictionary — no mixed-language leftovers. The UI is fully translated for the detected Windows locale.
 - **Full-Width 60s Chart** (`src/modules/memory/chart_view.rs`): `.width(ui.available_width())`, `.height(200.0)`, RAM line with semi-transparent fill (`.fill(0.0_f32)`), chart stretches edge-to-edge in card.
 
 ### Changed
@@ -139,7 +139,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`src/main.rs`**: Added `mod modules;` declaration to include memory module.
 - **`src/modules/memory/mod.rs`**: Created with `pub mod model;`.
 - **`Cargo.toml`**: Version bumped to `0.0.4`.
-- **`README.md`**, **`ARCHITECTURE.md`**, **`../PULSE_UA_MANUAL.md`**: Updated roadmap to 7 phases (v0.0.1–v1.0.0), added Iron Testing Standard (min 3–5 tests/step, i18n Uk/En, self-test auto-switch tabs/lang), updated DoD to 8 rules.
+- **`README.md`**, **`ARCHITECTURE.md`**, **`../PULSE_UA_MANUAL.md`**: Updated roadmap to 7 phases (v0.0.1–v1.0.0), added Iron Testing Standard (min 3–5 tests/step, i18n coverage, self-test auto-switch tabs/lang), updated DoD to 8 rules.
 
 ### Infrastructure
 - All **29 unit tests passing** (theme: 6, app: 7, core: 2, i18n: 8, memory: 6).
@@ -153,7 +153,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [v0.0.3] - 2026-11-02
 
 ### Added
-- **Internationalization (i18n)** (`src/i18n.rs`): `Lang { Uk, En }` with type-safe translation keys for all UI elements and unit tests for both languages. The original `[ UA | EN ]` toggle was **removed in v0.0.7** — the language is now auto-detected from Windows.
+- **Internationalization (i18n)** (`src/i18n.rs`): `Lang` enum with type-safe translation keys for all UI elements and unit tests for both languages. The original manual toggle was **removed in v0.0.7** — the language is now auto-detected from Windows.
 - **System Fonts** (`src/theme.rs::setup_fonts`): Loads Segoe UI (proportional) and Consolas (monospace) from `C:\Windows\Fonts\` with safe fallback to egui defaults.
 - **Application Icon**: Programmatically generated 32x32 RGBA icon — dark `#0B0C10` background with neon cyan `#00F0FF` pulse wave symbol.
 - **Self-Diagnosis Badge**: Top-right corner shows `[ PULSE: XX.X MB | UI: X.XX ms ]` — live process RAM and frame render time (monospace).
@@ -165,8 +165,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`src/main.rs`**: Added `#![deny(unsafe_code)]`, `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`, viewport 1180x760 (min 950x620), custom icon, `--self-test` argument parsing.
 - **`src/core/mod.rs`**: `SystemSnapshot` extended with `pulse_ram_mb: f32` (self process RAM in MB).
 - **`src/core/worker.rs`**: Worker now collects `pulse_ram_mb` through `sysinfo::Process::memory()` every 500ms. Unit tests updated.
-- **`src/app.rs`**: Self-diagnosis badge, `request_repaint_after(500ms)` for economical updates. `SelfTestApp` for automated testing. `ActiveTab::label()` now uses i18n. **7 unit tests** (dodano i18n keys, tab labels UK/EN).
-- **`src/theme.rs`**: Added `setup_fonts(ctx)` — завантажує Segoe UI (Proportional) та Consolas (Monospace) з `C:\Windows\Fonts\` з фолбеком на egui defaults. Використовуються лише геометричні Unicode символи (◈, ▣, ⚡, ▲, ▼, ●).
+- **`src/app.rs`**: Self-diagnosis badge, `request_repaint_after(500ms)` for economical updates. `SelfTestApp` for automated testing. `ActiveTab::label()` now uses i18n. **7 unit tests** (added i18n keys, tab labels).
+- **`src/theme.rs`**: Added `setup_fonts(ctx)` — loads Segoe UI (Proportional) and Consolas (Monospace) from `C:\Windows\Fonts\` with a fallback to egui defaults. Only geometric Unicode symbols are used (◈, ▣, ⚡, ▲, ▼, ●).
 - **`Cargo.toml`**: Version bumped to `0.0.3`.
 
 ### Infrastructure
