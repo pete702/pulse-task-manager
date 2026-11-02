@@ -8,25 +8,44 @@ use eframe::egui;
 use crate::core::{spawn_telemetry_worker, SystemSnapshot};
 use crate::i18n::{current_lang, toggle_lang, Key};
 use crate::modules::memory::model::MemoryHistory;
+use crate::modules::memory::{chart_view, view};
 use crate::theme::{apply_obsidian_theme, card_frame};
 
 /// Active tab in the left sidebar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActiveTab {
-    /// Memory tab (only one for now).
+    /// Memory tab.
     Memory,
+    /// CPU tab.
+    Cpu,
+    /// Storage tab.
+    Storage,
+    /// Network tab.
+    Network,
+    /// System tab.
+    System,
 }
 
 impl ActiveTab {
     /// Returns all available tabs.
     pub const fn all() -> &'static [ActiveTab] {
-        &[ActiveTab::Memory]
+        &[
+            ActiveTab::Memory,
+            ActiveTab::Cpu,
+            ActiveTab::Storage,
+            ActiveTab::Network,
+            ActiveTab::System,
+        ]
     }
 
     /// Button label for the tab (localized).
     pub fn label(self) -> &'static str {
         match self {
             ActiveTab::Memory => Key::TabMemory.t(),
+            ActiveTab::Cpu => Key::TabCpu.t(),
+            ActiveTab::Storage => Key::TabStorage.t(),
+            ActiveTab::Network => Key::TabNetwork.t(),
+            ActiveTab::System => Key::TabSystem.t(),
         }
     }
 }
@@ -75,8 +94,6 @@ impl eframe::App for PulseApp {
 
         // Clone snapshot for use in closures to avoid borrow issues
         let latest_snapshot = self.latest_snapshot.clone();
-        let memory_history_len = self.memory_history.len();
-        let memory_history_peak = self.memory_history.peak_ram_percent;
         let frame_start_for_ui = frame_start;
 
         // Top panel: title, version, uptime, language switch, self-diagnosis
@@ -86,7 +103,8 @@ impl eframe::App for PulseApp {
                 ui.heading(
                     egui::RichText::new(Key::AppTitle.t())
                         .monospace()
-                        .size(18.0),
+                        .size(18.0)
+                        .color(crate::theme::colors::TEXT_PRIMARY),
                 );
                 ui.separator();
 
@@ -98,7 +116,8 @@ impl eframe::App for PulseApp {
                         env!("CARGO_PKG_VERSION")
                     ))
                     .monospace()
-                    .size(14.0),
+                    .size(14.0)
+                    .color(crate::theme::colors::TEXT_SECONDARY),
                 );
                 ui.separator();
 
@@ -108,13 +127,15 @@ impl eframe::App for PulseApp {
                     ui.label(
                         egui::RichText::new(format!("{}: {}", Key::UptimeLabel.t(), uptime_str))
                             .monospace()
-                            .size(14.0),
+                            .size(14.0)
+                            .color(crate::theme::colors::TEXT_PRIMARY),
                     );
                 } else {
                     ui.label(
                         egui::RichText::new(format!("{}: --", Key::UptimeLabel.t()))
                             .monospace()
-                            .size(14.0),
+                            .size(14.0)
+                            .color(crate::theme::colors::TEXT_SECONDARY),
                     );
                 }
                 ui.separator();
@@ -132,7 +153,7 @@ impl eframe::App for PulseApp {
                         ))
                         .monospace()
                         .size(12.0)
-                        .color(crate::theme::colors::BORDER),
+                        .color(crate::theme::colors::ACCENT_CYAN),
                     );
                 }
 
@@ -140,7 +161,12 @@ impl eframe::App for PulseApp {
                     // Language switcher button [ UA | EN ]
                     let lang = current_lang();
                     let btn_text = lang.button_label();
-                    let btn = ui.button(egui::RichText::new(btn_text).monospace().size(12.0));
+                    let btn = ui.button(
+                        egui::RichText::new(btn_text)
+                            .monospace()
+                            .size(12.0)
+                            .color(crate::theme::colors::TEXT_PRIMARY),
+                    );
                     if btn.clicked() {
                         toggle_lang();
                     }
@@ -149,19 +175,85 @@ impl eframe::App for PulseApp {
             });
         });
 
-        // Left sidebar: tab navigation
+        // Status bar (bottom)
+        egui::TopBottomPanel::bottom("status_bar")
+            .frame(crate::theme::status_bar_frame())
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("● READY")
+                            .monospace()
+                            .size(11.0)
+                            .color(crate::theme::colors::ACCENT_CYAN),
+                    );
+                    ui.separator();
+                    ui.label(
+                        egui::RichText::new("PULSE v0.0.6  |  Obsidian HUD  |  60s History  |  Windows Kernel Metrics")
+                            .monospace()
+                            .size(11.0)
+                            .color(crate::theme::colors::TEXT_SECONDARY),
+                    );
+                });
+            });
+
+        // Left sidebar: tab navigation (exact width 210.0)
         egui::SidePanel::left("sidebar")
             .resizable(false)
-            .min_width(180.0)
-            .max_width(180.0)
+            .exact_width(210.0)
             .show(ctx, |ui| {
                 ui.vertical(|ui| {
                     ui.add_space(8.0);
                     for tab in ActiveTab::all() {
                         let is_active = self.active_tab == *tab;
-                        let btn = ui.selectable_label(is_active, tab.label());
-                        if btn.clicked() {
+                        let btn_text = tab.label();
+
+                        // Add live RAM percentage to Memory tab button
+                        let display_text = if *tab == ActiveTab::Memory {
+                            if let Some(ref snapshot) = latest_snapshot {
+                                if let Some(ref mem) = snapshot.memory {
+                                    format!("{} [{:.0}%]", btn_text, mem.ram_usage_percent())
+                                } else {
+                                    btn_text.to_string()
+                                }
+                            } else {
+                                btn_text.to_string()
+                            }
+                        } else {
+                            btn_text.to_string()
+                        };
+
+                        let button = if is_active {
+                            ui.add_sized(
+                                [186.0, 38.0],
+                                egui::Button::new(
+                                    egui::RichText::new(&display_text)
+                                        .monospace()
+                                        .size(13.0)
+                                        .color(crate::theme::colors::TEXT_PRIMARY),
+                                )
+                                .frame(true),
+                            )
+                        } else {
+                            ui.add_sized(
+                                [186.0, 38.0],
+                                egui::Button::new(
+                                    egui::RichText::new(&display_text)
+                                        .monospace()
+                                        .size(13.0)
+                                        .color(crate::theme::colors::TEXT_SECONDARY),
+                                ),
+                            )
+                        };
+
+                        if button.clicked() {
                             self.active_tab = *tab;
+                        }
+
+                        // Apply custom frame for active tab
+                        if is_active {
+                            button.widget_info(|| {
+                                egui::WidgetInfo::labeled(egui::WidgetType::Button, &display_text)
+                            });
                         }
                     }
                 });
@@ -170,49 +262,66 @@ impl eframe::App for PulseApp {
         // Central panel: content based on active tab
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.add_space(16.0);
-            card_frame().show(ui, |ui| {
-                // Show memory info if available
-                if let Some(ref snapshot) = latest_snapshot {
-                    if let Some(ref mem) = snapshot.memory {
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "RAM: {:.2} / {:.2} GiB ({:.1}%)",
-                                mem.ram_used_gib(),
-                                mem.ram_total_gib(),
-                                mem.ram_usage_percent()
-                            ))
-                            .monospace()
-                            .size(14.0),
-                        );
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "Swap: {:.2} / {:.2} GiB ({:.1}%)",
-                                mem.swap_used_gib(),
-                                mem.swap_total_gib(),
-                                mem.swap_usage_percent()
-                            ))
-                            .monospace()
-                            .size(14.0),
-                        );
-                        ui.separator();
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "Cached: {:.2} GiB | History points: {} | Peak RAM: {:.1}%",
-                                mem.ram_cached_gib(),
-                                memory_history_len,
-                                memory_history_peak
-                            ))
-                            .monospace()
-                            .size(12.0)
-                            .color(crate::theme::colors::BORDER),
-                        );
+
+            match self.active_tab {
+                ActiveTab::Memory => {
+                    if let Some(ref snapshot) = latest_snapshot {
+                        if let Some(ref mem) = snapshot.memory {
+                            view::render_memory_cards(ui, mem, &self.memory_history);
+                            ui.add_space(12.0);
+                            chart_view::render_memory_chart(ui, &self.memory_history);
+                        } else {
+                            ui.label(
+                                egui::RichText::new(Key::AwaitingMemoryModel.t())
+                                    .color(crate::theme::colors::TEXT_SECONDARY)
+                                    .size(14.0),
+                            );
+                        }
                     } else {
-                        ui.label(Key::AwaitingMemoryModel.t());
+                        ui.label(
+                            egui::RichText::new(Key::AwaitingMemoryModel.t())
+                                .color(crate::theme::colors::TEXT_SECONDARY)
+                                .size(14.0),
+                        );
                     }
-                } else {
-                    ui.label(Key::AwaitingMemoryModel.t());
                 }
-            });
+                ActiveTab::Cpu => {
+                    card_frame().show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new("▣ Процесор (CPU) — Coming in v0.2.0")
+                                .color(crate::theme::colors::TEXT_SECONDARY)
+                                .size(14.0),
+                        );
+                    });
+                }
+                ActiveTab::Storage => {
+                    card_frame().show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new("◧ Диски (Storage) — Coming in v0.3.0")
+                                .color(crate::theme::colors::TEXT_SECONDARY)
+                                .size(14.0),
+                        );
+                    });
+                }
+                ActiveTab::Network => {
+                    card_frame().show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new("⇅ Мережа (Network) — Coming in v0.4.0")
+                                .color(crate::theme::colors::TEXT_SECONDARY)
+                                .size(14.0),
+                        );
+                    });
+                }
+                ActiveTab::System => {
+                    card_frame().show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new("⚙ Система та GPU — Coming in v0.5.0")
+                                .color(crate::theme::colors::TEXT_SECONDARY)
+                                .size(14.0),
+                        );
+                    });
+                }
+            }
         });
 
         // Update last frame time
@@ -354,20 +463,32 @@ mod tests {
     #[test]
     fn test_active_tab_all() {
         let tabs = ActiveTab::all();
-        assert_eq!(tabs.len(), 1);
+        assert_eq!(tabs.len(), 5);
         assert_eq!(tabs[0], ActiveTab::Memory);
+        assert_eq!(tabs[1], ActiveTab::Cpu);
+        assert_eq!(tabs[2], ActiveTab::Storage);
+        assert_eq!(tabs[3], ActiveTab::Network);
+        assert_eq!(tabs[4], ActiveTab::System);
     }
 
     #[test]
     fn test_active_tab_label_uk() {
         set_lang(Lang::Uk);
-        assert_eq!(ActiveTab::Memory.label(), "🧠 Пам'ять");
+        assert_eq!(ActiveTab::Memory.label(), "◈ Пам'ять (RAM)");
+        assert_eq!(ActiveTab::Cpu.label(), "▣ Процесор (CPU)");
+        assert_eq!(ActiveTab::Storage.label(), "◧ Диски (Storage)");
+        assert_eq!(ActiveTab::Network.label(), "⇅ Мережа (Network)");
+        assert_eq!(ActiveTab::System.label(), "⚙ Система та GPU");
     }
 
     #[test]
     fn test_active_tab_label_en() {
         set_lang(Lang::En);
-        assert_eq!(ActiveTab::Memory.label(), "🧠 Memory");
+        assert_eq!(ActiveTab::Memory.label(), "◈ Memory (RAM)");
+        assert_eq!(ActiveTab::Cpu.label(), "▣ Processor (CPU)");
+        assert_eq!(ActiveTab::Storage.label(), "◧ Storage (Disks)");
+        assert_eq!(ActiveTab::Network.label(), "⇅ Network & Ping");
+        assert_eq!(ActiveTab::System.label(), "⚙ System & GPU");
     }
 
     #[test]
@@ -402,10 +523,27 @@ mod tests {
             swap_total_bytes: 0,
             swap_used_bytes: 0,
             swap_free_bytes: 0,
+            commit_total_bytes: 0,
+            commit_limit_bytes: 0,
+            kernel_paged_bytes: 0,
+            kernel_nonpaged_bytes: 0,
+            system_handles: 0,
+            system_threads: 0,
+            system_processes: 0,
         };
 
         history.push(&snap);
         assert_eq!(history.len(), 1);
         assert!((history.peak_ram_percent - 50.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_all_tabs_present_in_sidebar() {
+        let tabs = ActiveTab::all();
+        assert_eq!(
+            tabs.len(),
+            5,
+            "Should have 5 tabs: Memory, CPU, Storage, Network, System"
+        );
     }
 }

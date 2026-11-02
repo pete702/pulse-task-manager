@@ -34,7 +34,7 @@ pub fn spawn() -> mpsc::Receiver<SystemSnapshot> {
             sys.refresh_processes();
             let pulse_ram_mb = sys
                 .process(pid)
-                .map(|p| p.memory() as f32 / 1024.0) // Convert KB to MB
+                .map(|p| p.memory() as f32 / (1024.0 * 1024.0)) // Convert bytes to MB
                 .unwrap_or(0.0);
 
             // Collect OS memory (RAM/Swap)

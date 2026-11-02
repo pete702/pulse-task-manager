@@ -80,10 +80,14 @@ pub enum Key {
     SelfDiagLabel,
     LangSwitcherTooltip,
 
-    // Sidebar
+    // Sidebar tabs
     TabMemory,
+    TabCpu,
+    TabStorage,
+    TabNetwork,
+    TabSystem,
 
-    // Central panel (placeholder)
+    // Central panel
     AwaitingMemoryModel,
 
     // Self-test
@@ -91,7 +95,7 @@ pub enum Key {
     SelfTestPassedLive,
     SelfTestFailed,
 
-    // Memory module (future)
+    // Memory module
     MemoryTotal,
     MemoryAvailable,
     MemoryUsed,
@@ -138,9 +142,21 @@ impl Lang {
             (Lang::Uk, Key::LangSwitcherTooltip) => "Перемкнути мову інтерфейсу",
             (Lang::En, Key::LangSwitcherTooltip) => "Switch interface language",
 
-            // Sidebar
-            (Lang::Uk, Key::TabMemory) => "🧠 Пам'ять",
-            (Lang::En, Key::TabMemory) => "🧠 Memory",
+            // Sidebar tabs (geometric Unicode symbols, no emoji)
+            (Lang::Uk, Key::TabMemory) => "◈ Пам'ять (RAM)",
+            (Lang::En, Key::TabMemory) => "◈ Memory (RAM)",
+
+            (Lang::Uk, Key::TabCpu) => "▣ Процесор (CPU)",
+            (Lang::En, Key::TabCpu) => "▣ Processor (CPU)",
+
+            (Lang::Uk, Key::TabStorage) => "◧ Диски (Storage)",
+            (Lang::En, Key::TabStorage) => "◧ Storage (Disks)",
+
+            (Lang::Uk, Key::TabNetwork) => "⇅ Мережа (Network)",
+            (Lang::En, Key::TabNetwork) => "⇅ Network & Ping",
+
+            (Lang::Uk, Key::TabSystem) => "⚙ Система та GPU",
+            (Lang::En, Key::TabSystem) => "⚙ System & GPU",
 
             // Central panel
             (Lang::Uk, Key::AwaitingMemoryModel) => {
@@ -160,7 +176,7 @@ impl Lang {
             (Lang::Uk, Key::SelfTestFailed) => "SELF-TEST FAILED",
             (Lang::En, Key::SelfTestFailed) => "SELF-TEST FAILED",
 
-            // Memory module (future)
+            // Memory module
             (Lang::Uk, Key::MemoryTotal) => "Всього RAM",
             (Lang::En, Key::MemoryTotal) => "Total RAM",
 
@@ -230,7 +246,11 @@ mod tests {
     fn test_key_translation_uk() {
         set_lang(Lang::Uk);
         assert_eq!(Key::AppTitle.t(), "⚡ PULSE // TELEMETRY");
-        assert_eq!(Key::TabMemory.t(), "🧠 Пам'ять");
+        assert_eq!(Key::TabMemory.t(), "◈ Пам'ять (RAM)");
+        assert_eq!(Key::TabCpu.t(), "▣ Процесор (CPU)");
+        assert_eq!(Key::TabStorage.t(), "◧ Диски (Storage)");
+        assert_eq!(Key::TabNetwork.t(), "⇅ Мережа (Network)");
+        assert_eq!(Key::TabSystem.t(), "⚙ Система та GPU");
         assert_eq!(Key::UptimeLabel.t(), "Uptime");
         assert_eq!(
             Key::AwaitingMemoryModel.t(),
@@ -242,7 +262,11 @@ mod tests {
     fn test_key_translation_en() {
         set_lang(Lang::En);
         assert_eq!(Key::AppTitle.t(), "⚡ PULSE // TELEMETRY");
-        assert_eq!(Key::TabMemory.t(), "🧠 Memory");
+        assert_eq!(Key::TabMemory.t(), "◈ Memory (RAM)");
+        assert_eq!(Key::TabCpu.t(), "▣ Processor (CPU)");
+        assert_eq!(Key::TabStorage.t(), "◧ Storage (Disks)");
+        assert_eq!(Key::TabNetwork.t(), "⇅ Network & Ping");
+        assert_eq!(Key::TabSystem.t(), "⚙ System & GPU");
         assert_eq!(Key::UptimeLabel.t(), "Uptime");
         assert_eq!(
             Key::AwaitingMemoryModel.t(),
@@ -265,5 +289,11 @@ mod tests {
         );
         assert_eq!(Key::SelfTestPassedLive.t(), "SELF-TEST PASSED (LIVE GUI)");
         assert_eq!(Key::SelfTestFailed.t(), "SELF-TEST FAILED");
+    }
+
+    #[test]
+    fn test_tab_labels() {
+        assert_eq!(Lang::Uk.button_label(), "[ UA | EN ]");
+        assert_eq!(Lang::En.button_label(), "[ EN | UA ]");
     }
 }

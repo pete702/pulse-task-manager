@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run Clippy (deny warnings)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run cargo check
+        run: cargo check --all-targets
+
+      - name: Run unit tests
+        run: cargo test --all-targets
+
+      - name: Build release
+        run: cargo build --release --locked
+
+      - name: Run self-test (headless)
+        run: cargo run --release --locked -- --self-test
+        env:
+          CI: true
+
+      - name: Prepare release artifacts
+        id: artifacts
+        run: |
+          $version = "${{ github.ref_name }}"
+          $exe_name = "PULSE_${version}_windows_x64.exe"
+          Copy-Item "target/release/pulse_manager.exe" "$exe_name"
+          $sha256 = (Get-FileHash "$exe_name" -Algorithm SHA256).Hash.ToLower()
+          "$sha256  $exe_name" | Out-File -Encoding ASCII "$exe_name.sha256"
+          echo "exe_name=$exe_name" >> $env:GITHUB_OUTPUT
+          echo "sha256=$sha256" >> $env:GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "PULSE ${{ github.ref_name }}"
+          body: |
+            ## PULSE ${{ github.ref_name }} - Windows x64 Release
+
+            ### Download
+            - **PULSE_${{ github.ref_name }}_windows_x64.exe** — Portable standalone executable
+
+            ### Verification
+            ```
+            sha256sum -c PULSE_${{ github.ref_name }}_windows_x64.exe.sha256
+            ```
+
+            ### Changes
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+
+            ### Requirements
+            - Windows 10/11 (x64)
+            - No additional dependencies (standalone)
+
+          files: |
+            ${{ steps.artifacts.outputs.exe_name }}
+            ${{ steps.artifacts.outputs.exe_name }}.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

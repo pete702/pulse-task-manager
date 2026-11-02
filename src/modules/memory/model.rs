@@ -29,6 +29,22 @@ pub struct MemorySnapshot {
     pub swap_used_bytes: u64,
     /// Free swap in bytes.
     pub swap_free_bytes: u64,
+
+    // ===== v0.0.6: Windows Kernel Metrics (from K32GetPerformanceInfo) =====
+    /// Total commit charge (pages committed) in bytes.
+    pub commit_total_bytes: u64,
+    /// Commit limit (max commit charge) in bytes.
+    pub commit_limit_bytes: u64,
+    /// Kernel paged pool in bytes.
+    pub kernel_paged_bytes: u64,
+    /// Kernel non-paged pool in bytes.
+    pub kernel_nonpaged_bytes: u64,
+    /// System-wide handle count.
+    pub system_handles: u32,
+    /// System-wide thread count.
+    pub system_threads: u32,
+    /// System-wide process count.
+    pub system_processes: u32,
 }
 
 impl MemorySnapshot {
@@ -88,6 +104,19 @@ impl MemorySnapshot {
         pct.clamp(0.0, 100.0) as f32
     }
 
+    /// Returns Commit usage as percentage, clamped to `[0.0, 100.0]`.
+    ///
+    /// Returns `0.0` if `commit_limit_bytes == 0`.
+    #[allow(dead_code)]
+    #[inline]
+    pub fn commit_usage_percent(&self) -> f32 {
+        if self.commit_limit_bytes == 0 {
+            return 0.0;
+        }
+        let pct = (self.commit_total_bytes as f64 / self.commit_limit_bytes as f64) * 100.0;
+        pct.clamp(0.0, 100.0) as f32
+    }
+
     /// Returns RAM total in GiB.
     #[allow(dead_code)]
     #[inline]
@@ -135,6 +164,41 @@ impl MemorySnapshot {
     #[inline]
     pub fn swap_free_gib(&self) -> f64 {
         Self::bytes_to_gib(self.swap_free_bytes)
+    }
+
+    /// Returns Commit total in GiB.
+    #[allow(dead_code)]
+    #[inline]
+    pub fn commit_total_gib(&self) -> f64 {
+        Self::bytes_to_gib(self.commit_total_bytes)
+    }
+
+    /// Returns Commit limit in GiB.
+    #[allow(dead_code)]
+    #[inline]
+    pub fn commit_limit_gib(&self) -> f64 {
+        Self::bytes_to_gib(self.commit_limit_bytes)
+    }
+
+    /// Returns Kernel paged pool in MiB.
+    #[allow(dead_code)]
+    #[inline]
+    pub fn kernel_paged_mib(&self) -> f64 {
+        Self::bytes_to_mib(self.kernel_paged_bytes)
+    }
+
+    /// Returns Kernel non-paged pool in MiB.
+    #[allow(dead_code)]
+    #[inline]
+    pub fn kernel_nonpaged_mib(&self) -> f64 {
+        Self::bytes_to_mib(self.kernel_nonpaged_bytes)
+    }
+
+    /// Returns total kernel pool (paged + non-paged) in MiB.
+    #[allow(dead_code)]
+    #[inline]
+    pub fn kernel_total_mib(&self) -> f64 {
+        Self::bytes_to_mib(self.kernel_paged_bytes + self.kernel_nonpaged_bytes)
     }
 }
 
@@ -264,6 +328,23 @@ mod tests {
     }
 
     #[test]
+    fn test_commit_division_by_zero_guard() {
+        let snap = MemorySnapshot {
+            commit_limit_bytes: 0,
+            commit_total_bytes: 100,
+            ..Default::default()
+        };
+        assert_eq!(snap.commit_usage_percent(), 0.0);
+
+        let snap2 = MemorySnapshot {
+            commit_limit_bytes: 1000,
+            commit_total_bytes: 500,
+            ..Default::default()
+        };
+        assert!((snap2.commit_usage_percent() - 50.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
     fn test_ram_cached_bytes_saturating_sub() {
         // Normal case: available > free
         let snap = MemorySnapshot {
@@ -367,5 +448,22 @@ mod tests {
         let toggled = toggle_lang();
         assert_eq!(toggled, Lang::Uk);
         assert_eq!(current_lang(), Lang::Uk);
+    }
+
+    #[test]
+    fn test_commit_usage_percent() {
+        let snap = MemorySnapshot {
+            commit_total_bytes: 5_000_000_000,
+            commit_limit_bytes: 10_000_000_000,
+            ..Default::default()
+        };
+        assert!((snap.commit_usage_percent() - 50.0).abs() < f32::EPSILON);
+
+        let snap2 = MemorySnapshot {
+            commit_total_bytes: 12_000_000_000,
+            commit_limit_bytes: 10_000_000_000,
+            ..Default::default()
+        };
+        assert_eq!(snap2.commit_usage_percent(), 100.0);
     }
 }

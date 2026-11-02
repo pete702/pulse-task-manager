@@ -1,7 +1,6 @@
-//! Memory module for PULSE: pure math model, sysinfo collector, and egui view.
+//! Memory module for PULSE: pure math model, sysinfo collector, HUD view, and 60s chart.
 
+pub mod chart_view;
 pub mod collector;
 pub mod model;
-
-// View will be added in future versions
-// pub mod view;
+pub mod view;

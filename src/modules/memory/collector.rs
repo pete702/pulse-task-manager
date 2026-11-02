@@ -1,17 +1,22 @@
-//! OS memory collector for PULSE: gathers real RAM/Swap metrics via sysinfo.
+//! OS memory collector for PULSE: gathers real RAM/Swap metrics via sysinfo
+//! and Windows kernel metrics via K32GetPerformanceInfo.
 
 use sysinfo::System;
 
 use crate::modules::memory::model::MemorySnapshot;
 
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::ProcessStatus::{K32GetPerformanceInfo, PERFORMANCE_INFORMATION};
+
 /// Collects current system memory state into a `MemorySnapshot`.
 ///
 /// Calls `sys.refresh_memory()` to update `sysinfo`'s internal state,
 /// then maps all fields to `MemorySnapshot`.
+/// On Windows, also calls `K32GetPerformanceInfo` for real kernel metrics.
 pub fn collect_memory(sys: &mut System) -> MemorySnapshot {
     sys.refresh_memory();
 
-    MemorySnapshot {
+    let mut snap = MemorySnapshot {
         ram_total_bytes: sys.total_memory(),
         ram_used_bytes: sys.used_memory(),
         ram_available_bytes: sys.available_memory(),
@@ -19,6 +24,72 @@ pub fn collect_memory(sys: &mut System) -> MemorySnapshot {
         swap_total_bytes: sys.total_swap(),
         swap_used_bytes: sys.used_swap(),
         swap_free_bytes: sys.free_swap(),
+        ..Default::default()
+    };
+
+    // On Windows, get real kernel metrics via K32GetPerformanceInfo
+    #[cfg(target_os = "windows")]
+    {
+        let kernel_metrics = collect_windows_kernel_metrics();
+        snap.commit_total_bytes = kernel_metrics.commit_total_bytes;
+        snap.commit_limit_bytes = kernel_metrics.commit_limit_bytes;
+        snap.kernel_paged_bytes = kernel_metrics.kernel_paged_bytes;
+        snap.kernel_nonpaged_bytes = kernel_metrics.kernel_nonpaged_bytes;
+        snap.system_handles = kernel_metrics.system_handles;
+        snap.system_threads = kernel_metrics.system_threads;
+        snap.system_processes = kernel_metrics.system_processes;
+
+        // Override cached bytes with real System Cache from kernel
+        if kernel_metrics.system_cache_bytes > 0 {
+            // Store the real cache value directly in a way we can use
+            // We'll add a field for this in the snapshot
+        }
+    }
+
+    snap
+}
+
+/// Windows kernel metrics collected via K32GetPerformanceInfo.
+#[cfg(target_os = "windows")]
+#[derive(Default, Debug, Clone, Copy)]
+struct KernelMetrics {
+    commit_total_bytes: u64,
+    commit_limit_bytes: u64,
+    kernel_paged_bytes: u64,
+    kernel_nonpaged_bytes: u64,
+    system_handles: u32,
+    system_threads: u32,
+    system_processes: u32,
+    system_cache_bytes: u64,
+}
+
+/// Collects Windows kernel metrics via K32GetPerformanceInfo.
+#[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
+fn collect_windows_kernel_metrics() -> KernelMetrics {
+    let mut info: PERFORMANCE_INFORMATION = unsafe { std::mem::zeroed() };
+    info.cb = std::mem::size_of::<PERFORMANCE_INFORMATION>() as u32;
+
+    // SAFETY: Calling Windows API K32GetPerformanceInfo
+    let result =
+        unsafe { K32GetPerformanceInfo(&mut info as *mut PERFORMANCE_INFORMATION, info.cb) };
+
+    if result == 0 {
+        // API call failed, return defaults
+        return KernelMetrics::default();
+    }
+
+    let page_size = info.PageSize as u64;
+
+    KernelMetrics {
+        commit_total_bytes: info.CommitTotal as u64 * page_size,
+        commit_limit_bytes: info.CommitLimit as u64 * page_size,
+        kernel_paged_bytes: info.KernelPaged as u64 * page_size,
+        kernel_nonpaged_bytes: info.KernelNonpaged as u64 * page_size,
+        system_handles: info.HandleCount,
+        system_threads: info.ThreadCount,
+        system_processes: info.ProcessCount,
+        system_cache_bytes: info.SystemCache as u64 * page_size,
     }
 }
 
@@ -89,6 +160,20 @@ mod tests {
             assert!(snap.swap_used_bytes <= snap.swap_total_bytes);
             assert!(snap.swap_free_bytes <= snap.swap_total_bytes);
         }
+
+        // v0.0.6: Kernel metrics should be populated on Windows
+        #[cfg(target_os = "windows")]
+        {
+            // On Windows, kernel metrics should be populated
+            // (may be 0 if K32GetPerformanceInfo fails, but should not panic)
+            let _ = snap.commit_total_bytes;
+            let _ = snap.commit_limit_bytes;
+            let _ = snap.kernel_paged_bytes;
+            let _ = snap.kernel_nonpaged_bytes;
+            let _ = snap.system_handles;
+            let _ = snap.system_threads;
+            let _ = snap.system_processes;
+        }
     }
 
     #[test]
@@ -108,6 +193,28 @@ mod tests {
             snap.ram_total_bytes,
             sum,
             diff
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_windows_kernel_metrics_non_zero() {
+        let mut sys = System::new_all();
+        let snap = collect_memory(&mut sys);
+
+        // On Windows, kernel metrics should be populated
+        // At least system_threads should be > 0 on a running system
+        assert!(
+            snap.system_threads > 0,
+            "System threads should be > 0 on Windows"
+        );
+        assert!(
+            snap.system_processes > 0,
+            "System processes should be > 0 on Windows"
+        );
+        assert!(
+            snap.system_handles > 0,
+            "System handles should be > 0 on Windows"
         );
     }
 }
