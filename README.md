@@ -14,20 +14,17 @@
 
 ---
 
-## ✨ Key Features (Roadmap)
+## ✨ Key Features (Roadmap — 6 Phases to v1.0.0)
 
-| Phase | Version | Feature | Status |
-|-------|---------|---------|--------|
-| **Foundation** | v0.0.1–v0.0.2 | Project scaffold, Git, Obsidian HUD theme, background telemetry worker (500ms uptime), modular app structure, 13 unit tests | ✅ **Done** |
-| **Memory — Model** | v0.0.3 | `PhysicalMemory`, `SwapMemory`, `CacheCleaner` structs with unit tests | 🔄 **Next** |
-| **Memory — Collector** | v0.0.4 | `sysinfo` RAM/Swap collection, `EmptyWorkingSet` via `windows-sys` | ⏳ Planned |
-| **Memory — View** | v0.0.5 | RAM/Swap cards, progress bars with traffic-light colors, `egui_plot` history graphs, "Clear Cache" button | ⏳ Planned |
-| **Processes — Model** | v0.0.6 | `ProcessEntry`, `GroupKey`, `ProcessGroup` aggregation | ⏳ Planned |
-| **Processes — Collector** | v0.0.7 | `sysinfo::Processes` + Windows enrichment (exe path, session, cmdline) | ⏳ Planned |
-| **Processes — View** | v0.0.8 | `egui_extras::TableBuilder` with monospace PID, grouping, search/filter | ⏳ Planned |
-| **Memory Release** | **v0.1.0** | **Full RAM/Swap monitoring + one-click cache cleanup working end-to-end** | 🎯 **Target** |
-| **System Module** | v0.2.0–v0.3.0 | CPU/GPU/Disk/Network overview panels | ⏳ Planned |
-| **Polish & v1.0.0** | v0.9.0–v1.0.0 | Settings, autostart, CI/CD, production release | ⏳ Planned |
+| Phase | Versions | Focus | Status |
+|-------|----------|-------|--------|
+| **1. Foundation & Infrastructure** | v0.0.1–v0.0.3 | Git, Cargo, Obsidian HUD theme, background worker (500ms), i18n (UA/EN), system fonts, generated icon, self-test, CI, backup, self-diagnosis badge | ✅ **Done** |
+| **2. Memory Module** | v0.0.4–v0.0.6 | Pure math model (`MemorySnapshot`, `MemoryHistory` ring buffer), `sysinfo` collector, RAM/Swap cards, progress bars, `egui_plot` history, one-click cache cleanup | 🔄 **In Progress** (v0.0.4) |
+| **3. Processes Module** | v0.0.7–v0.0.9 | `ProcessEntry`, `GroupKey`, `ProcessGroup`, `sysinfo::Processes` + Windows enrichment, `egui_extras::TableBuilder` with monospace PID, grouping, search | ⏳ Planned |
+| **4. CPU Module** | v0.1.0–v0.2.0 | Per-core usage, frequency, temperature (MSR), `egui_plot` graphs, top consumers table | ⏳ Planned |
+| **5. Storage I/O Module** | v0.2.0–v0.3.0 | Disk read/write throughput, latency, queue depth, SMART health, partition usage | ⏳ Planned |
+| **6. Network & GPU Module** | v0.3.0–v0.5.0 | Per-interface throughput, TCP/UDP stats, gamer ping, DXGI GPU usage/VRAM/temp | ⏳ Planned |
+| **7. Mini HUD Overlay** | v0.5.0–v1.0.0 | Always-on-top overlay, hotkey toggle, customizable panels, export to HTML/JSON | 🎯 **Final Target** |
 
 ---
 
@@ -38,11 +35,32 @@ pulse_manager/
 ├── src/
 │   ├── main.rs              # Entry point: eframe::run_native (≤35 lines)
 │   ├── app.rs               # PulseApp: state, UI panels, snapshot handling
-│   ├── theme.rs             # Obsidian HUD tokens, apply_obsidian_theme, load_color, card_frame
+│   ├── theme.rs             # Obsidian HUD tokens, apply_obsidian_theme, load_color, card_frame, setup_fonts
+│   ├── i18n.rs              # Language switcher (UA/EN), translation keys
 │   ├── core/
 │   │   ├── mod.rs           # SystemSnapshot, mpsc channel types, spawn_telemetry_worker
-│   │   └── worker.rs        # Background thread: 500ms interval, System::uptime() → channel
-│   └── modules/             # Future: memory/, processes/, system/ (model/collector/view each)
+│   │   └── worker.rs        # Background thread: 500ms interval, uptime + self RAM → channel
+│   ├── modules/
+│   │   ├── mod.rs           # Pub re-exports all modules
+│   │   ├── memory/
+│   │   │   ├── mod.rs       # Module exports
+│   │   │   ├── model.rs     # MemorySnapshot, MemoryHistory (pure math, no deps)
+│   │   │   ├── collector.rs # sysinfo RAM/Swap, EmptyWorkingSet via windows-sys
+│   │   │   └── view.rs      # RAM/Swap cards, progress bars, egui_plot graphs, Clear Cache button
+│   │   ├── processes/
+│   │   │   ├── mod.rs
+│   │   │   ├── model.rs     # ProcessEntry, GroupKey, ProcessGroup
+│   │   │   ├── collector.rs # sysinfo::Processes + Windows enrichment
+│   │   │   └── view.rs      # Table, grouping, search, monospace PID
+│   │   └── system/
+│   │       ├── mod.rs
+│   │       ├── model.rs     # CpuInfo, GpuInfo, DiskInfo, NetInfo
+│   │       ├── collector.rs # sysinfo collectors
+│   │       └── view.rs      # System overview panels
+│   └── utils/
+│       ├── mod.rs
+│       ├── formatting.rs    # bytes_to_human, monospace helpers
+│       └── windows_api.rs   # Wrappers for EmptyWorkingSet, PSAPI
 └── tests/                   # Integration tests (planned)
 ```
 
@@ -58,22 +76,25 @@ pulse_manager/
 
 ---
 
-## 🚀 Current Status: v0.0.2
+## 🚀 Current Status: v0.0.3
 
 **Implemented:**
-- ✅ Obsidian HUD theme system (`theme.rs`) with design tokens, traffic-light function, card frame
-- ✅ Background telemetry worker (`core/worker.rs`) — 500ms interval, `System::uptime()` via `mpsc`
-- ✅ Modular app structure (`app.rs`) — top panel (title, version, live uptime), left sidebar (180px, Memory tab), central panel (card placeholder)
-- ✅ Minimal entry point (`main.rs` — 27 lines)
-- ✅ **13 unit tests passing** (theme: 6, app: 5, core: 2)
-- ✅ `cargo check` — zero warnings
+- ✅ Obsidian HUD theme system (`theme.rs`) with design tokens, traffic-light function, card frame, system fonts
+- ✅ Background telemetry worker (`core/worker.rs`) — 500ms interval, `System::uptime()` + self RAM via `mpsc`
+- ✅ Modular app structure (`app.rs`) — top panel (title, version, live uptime, lang switch, self-diag badge), left sidebar (180px, Memory tab), central panel (card placeholder)
+- ✅ Internationalization (`i18n.rs`) — `Lang { Uk, En }`, `[ UA | EN ]` button, type-safe keys
+- ✅ Minimal entry point (`main.rs` — 27 lines) with `#![deny(unsafe_code)]`, `windows_subsystem`, custom icon, `--self-test`
+- ✅ **23 unit tests passing** (theme: 6, app: 7, core: 2, i18n: 8)
+- ✅ `cargo clippy --all-targets -- -D warnings` — zero warnings
+- ✅ Self-test: **HEADLESS CI** (`CI=true`) and **LIVE GUI** (5 frames, auto-switch tabs/lang)
 - ✅ Release profile optimized (LTO=fat, strip, panic=abort)
+- ✅ GitHub Actions CI (`.github/workflows/ci.yml`)
 
 **Running:**
 ```bash
 cargo run --release
 ```
-Opens a 1200×800 window with live uptime updating every 100ms.
+Opens a 1180×760 window with live uptime updating every 500ms.
 
 ---
 
@@ -105,15 +126,24 @@ Opens a 1200×800 window with live uptime updating every 100ms.
 
 ---
 
-## 📋 Definition of Done (Per Version)
+## 📋 Definition of Done (Per Version — 8 Iron Rules)
 
-Every version must complete all 5 steps:
+Every version must complete **all 8 steps**:
 
-1. **Code Quality** — `cargo check` (0 errors, 0 warnings), `cargo test` (all passing)
-2. **Version Bump** — Update `version` in `Cargo.toml` (SemVer)
-3. **Changelog** — Add entry to `CHANGELOG.md` (Keep a Changelog format)
-4. **External History** — Append detailed block to `../PULSE_AI_CONTEXT.md` (never delete old entries)
-5. **Git Commit** — `git add . && git commit -m "vX.Y.Z: description"`
+| # | Action | Command | Success Criteria |
+|---|--------|---------|------------------|
+| **1** | **Format** | `cargo fmt` | Zero formatting diffs |
+| **2** | **Clippy** | `cargo clippy --all-targets -- -D warnings` | **0 warnings, 0 errors** |
+| **3** | **Unit Tests** | `cargo test` | **All tests pass** (min 3–5 new per step, including i18n for Uk/En) |
+| **4** | **Self-Test** | `cargo run -- --self-test` | Prints `SELF-TEST PASSED`, auto-switches tabs & lang, exits 0 |
+| **5** | **Build & Export** | `cargo build --release` → copy to `../PULSE_BUILDS/pulse_vX.Y.Z.exe` + `PULSE_LATEST.exe` | Both `.exe` exist and run |
+| **6** | **Clean Backup** | Copy `src/`, `Cargo.toml`, `Cargo.lock`, `*.md` to `../PULSE_BACKUPS/vX.Y.Z_verified/` (NO `target/`, NO `.git/`) | Backup folder complete |
+| **7** | **Documentation** | Update `CHANGELOG.md` (EN), append to `../PULSE_AI_CONTEXT.md` (UA), update `../PULSE_UA_MANUAL.md` (UA) — **never delete history** | All three files current |
+| **8** | **Git Push** | `git add . && git commit -m "vX.Y.Z: description" && git push` | Remote `main` updated |
+
+### Iron Testing Standard
+- **Every step** (including visual `view.rs`, `chart_view.rs`, `table_view.rs`) adds **minimum 3–5 new unit tests** covering: math logic, i18n translations (Uk + En), UI state transitions.
+- **Live self-test** (`--self-test`) must **auto-switch all tabs and languages** (`Lang::Uk` → `Lang::En`) during test frames before auto-close to guarantee zero panics in rendering.
 
 ---
 

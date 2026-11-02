@@ -12,6 +12,7 @@ use eframe::egui;
 mod app;
 mod core;
 mod i18n;
+mod modules;
 mod theme;
 
 /// Generates a 32x32 RGBA icon: dark background #0B0C10 with neon pulse symbol #00F0FF.

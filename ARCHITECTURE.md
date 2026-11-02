@@ -104,25 +104,49 @@ windows-sys = { version = "0.52.0", features = ["Win32_System_ProcessStatus", "W
 |---|--------|----------------------|------------------|
 | **1** | **Format** | `cargo fmt` | Zero formatting diffs |
 | **2** | **Clippy** | `cargo clippy --all-targets -- -D warnings` | **0 warnings**, **0 errors** |
-| **3** | **Unit Tests** | `cargo test` | **All tests pass** |
-| **4** | **Self-Test** | `cargo run -- --self-test` | Prints `SELF-TEST PASSED` and exits 0 |
+| **3** | **Unit Tests** | `cargo test` | **All tests pass** (min 3–5 new per step, including i18n Uk/En) |
+| **4** | **Self-Test** | `cargo run -- --self-test` | Prints `SELF-TEST PASSED`, auto-switches tabs & lang, exits 0 |
 | **5** | **Build & Export** | `cargo build --release` → copy to `../PULSE_BUILDS/pulse_vX.Y.Z.exe` + `PULSE_LATEST.exe` | Both `.exe` files exist and run |
 | **6** | **Clean Backup** | Copy `src/`, `Cargo.toml`, `Cargo.lock`, `*.md` to `../PULSE_BACKUPS/vX.Y.Z_verified/` (NO `target/`, NO `.git/`) | Backup folder complete |
 | **7** | **Documentation** | Update `CHANGELOG.md` (EN), append to `../PULSE_AI_CONTEXT.md` (UA), update `../PULSE_UA_MANUAL.md` (UA) — **never delete history** | All three files current |
 | **8** | **Git Push** | `git add . && git commit -m "vX.Y.Z: description" && git push` | Remote `main` updated |
 
+### Iron Testing Standard (Mandatory for Every Step)
+
+- **Every step** (including visual `view.rs`, `chart_view.rs`, `table_view.rs`) adds **minimum 3–5 new unit tests** covering:
+  1. **Math logic** (pure functions, edge cases, saturating arithmetic, clamping)
+  2. **i18n translations** — both `Lang::Uk` and `Lang::En` for all new keys
+  3. **UI state transitions** — tab switching, language toggling, snapshot handling
+- **Live self-test** (`cargo run -- --self-test`) must **auto-switch all available tabs and languages** (`Lang::Uk` → `Lang::En`) during test frames before auto-close to guarantee zero panics in rendering.
+
 ---
 
-## 6. Project Structure (Reference Tree)
+## 6. Project Roadmap — 6 Phases to v1.0.0
+
+| Phase | Versions | Focus | Status |
+|-------|----------|-------|--------|
+| **1. Foundation & Infrastructure** | v0.0.1–v0.0.3 | Git, Cargo, Obsidian HUD theme, background worker (500ms), i18n (UA/EN), system fonts, generated icon, self-test, CI, backup, self-diagnosis badge | ✅ **Done** |
+| **2. Memory Module** | v0.0.4–v0.0.6 | Pure math model (`MemorySnapshot`, `MemoryHistory` ring buffer), `sysinfo` collector, RAM/Swap cards, progress bars, `egui_plot` history, one-click cache cleanup | 🔄 **In Progress** (v0.0.4) |
+| **3. Processes Module** | v0.0.7–v0.0.9 | `ProcessEntry`, `GroupKey`, `ProcessGroup`, `sysinfo::Processes` + Windows enrichment, `egui_extras::TableBuilder` with monospace PID, grouping, search | ⏳ Planned |
+| **4. CPU Module** | v0.1.0–v0.2.0 | Per-core usage, frequency, temperature (MSR), `egui_plot` graphs, top consumers table | ⏳ Planned |
+| **5. Storage I/O Module** | v0.2.0–v0.3.0 | Disk read/write throughput, latency, queue depth, SMART health, partition usage | ⏳ Planned |
+| **6. Network & GPU Module** | v0.3.0–v0.5.0 | Per-interface throughput, TCP/UDP stats, gamer ping, DXGI GPU usage/VRAM/temp | ⏳ Planned |
+| **7. Mini HUD Overlay** | v0.5.0–v1.0.0 | Always-on-top overlay, hotkey toggle, customizable panels, export to HTML/JSON | 🎯 **Final Target** |
+
+---
+
+## 7. Project Structure (Reference Tree)
 
 ```
 pulse_manager/
 ├── .gitignore
+├── LICENSE
 ├── README.md
 ├── ARCHITECTURE.md
 ├── CHANGELOG.md
 ├── Cargo.toml
 ├── Cargo.lock
+├── .github/workflows/ci.yml
 ├── src/
 │   ├── main.rs                 # Entry point: eframe::run_native
 │   ├── app.rs                  # Root App struct, state, update loop
@@ -130,12 +154,12 @@ pulse_manager/
 │   ├── i18n.rs                 # Language switcher (UA/EN)
 │   ├── core/
 │   │   ├── mod.rs              # SystemSnapshot, mpsc channel types, spawn_telemetry_worker
-│   │   └── worker.rs           # Background thread: 500ms interval, System::uptime() → channel
+│   │   └── worker.rs           # Background thread: 500ms interval, uptime + self RAM → channel
 │   ├── modules/
 │   │   ├── mod.rs              # Pub re-exports all modules
 │   │   ├── memory/
 │   │   │   ├── mod.rs
-│   │   │   ├── model.rs        # PhysicalMemory, SwapMemory, CacheCleaner
+│   │   │   ├── model.rs        # MemorySnapshot, MemoryHistory (pure math, no deps)
 │   │   │   ├── collector.rs    # sysinfo + windows-sys (EmptyWorkingSet)
 │   │   │   └── view.rs         # RAM/Swap cards, cleanup button, graphs
 │   │   ├── processes/
@@ -157,7 +181,7 @@ pulse_manager/
 
 ---
 
-## 7. Forbidden Patterns (Anti-Patterns)
+## 8. Forbidden Patterns (Anti-Patterns)
 
 | Pattern | Why Forbidden | Alternative |
 |---------|---------------|-------------|
@@ -169,7 +193,7 @@ pulse_manager/
 
 ---
 
-## 8. CI/CD Gates (Pre-Push Checks)
+## 9. CI/CD Gates (Pre-Push Checks)
 
 ```yaml
 # .github/workflows/ci.yml
@@ -185,5 +209,5 @@ pulse_manager/
 
 ---
 
-**Document Version:** `v0.0.3` (synced with `Cargo.toml`)
+**Document Version:** `v0.0.4` (synced with `Cargo.toml`)
 **Last Updated:** 2026-11-02

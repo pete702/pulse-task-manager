@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.4] - 2026-11-02
+
+### Added
+- **Memory Module — Pure Math Model** (`src/modules/memory/model.rs`): Zero-dependency pure math model for memory telemetry:
+  - `MemorySnapshot`: RAM/Swap bytes (total, used, available, free, cached via `saturating_sub`), GiB/MiB conversion, usage % with clamping `[0.0, 100.0]`, division-by-zero guard for disabled swap.
+  - `MemoryHistory`: Ring buffer (`VecDeque<f32>`) with fixed capacity of 120 points (60s at 500ms), session peak tracking for RAM/Swap, FIFO eviction.
+  - **6 new unit tests**: swap division-by-zero guard, `saturating_sub` for cached bytes, GiB/MiB conversion, usage % clamping, ring buffer 120-point capacity + peak preservation, i18n `Lang::Uk` <-> `Lang::En` toggle.
+- **Memory Module Exports** (`src/modules/memory/mod.rs`, `src/modules/mod.rs`): Module structure ready for collector/view.
+- **LICENSE**: MIT License file added to repository root.
+
+### Changed
+- **`src/main.rs`**: Added `mod modules;` declaration to include memory module.
+- **`src/modules/memory/mod.rs`**: Created with `pub mod model;`.
+- **`Cargo.toml`**: Version bumped to `0.0.4`.
+- **`README.md`**, **`ARCHITECTURE.md`**, **`../PULSE_UA_MANUAL.md`**: Updated roadmap to 7 phases (v0.0.1–v1.0.0), added Iron Testing Standard (min 3–5 tests/step, i18n Uk/En, self-test auto-switch tabs/lang), updated DoD to 8 rules.
+
+### Infrastructure
+- All **29 unit tests passing** (theme: 6, app: 7, core: 2, i18n: 8, memory: 6).
+- Zero warnings on `cargo clippy --all-targets -- -D warnings`.
+- Self-test passes both headless (CI) and live GUI modes (auto-switches tabs & lang).
+- Release binary exported to `../PULSE_BUILDS/pulse_v0.0.4.exe` and `PULSE_LATEST.exe`.
+- Clean backup created at `../PULSE_BACKUPS/v0.0.4_verified/`.
+
+---
+
 ## [v0.0.3] - 2026-11-02
 
 ### Added
