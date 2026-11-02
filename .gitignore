@@ -1,0 +1,19 @@
+# Rust
+/target/
+**/*.pdb
+
+# Environment
+.env
+.env.local
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db

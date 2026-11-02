@@ -1,0 +1,67 @@
+[package]
+name = "pulse_manager"
+version = "0.0.1"
+edition = "2021"
+description = "⚡ PULSE // Next-Gen System Telemetry for Windows — modular task manager in Rust + egui"
+license = "MIT"
+repository = "https://github.com/pulse-manager/pulse_manager"
+readme = "README.md"
+keywords = ["system-monitor", "task-manager", "windows", "rust", "egui", "telemetry"]
+categories = ["command-line-utilities", "gui", "system-tools"]
+
+[workspace]
+resolver = "2"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 1
+debug = true
+
+[dependencies]
+# =============================================================================
+# GUI FRAMEWORK (eframe/egui 0.27.2 — ПІДПИНЕНО ЖОРСТКО)
+# =============================================================================
+eframe = "0.27.2"
+egui = "0.27.2"
+egui_plot = "0.27.2"
+egui_extras = "0.27.2"
+
+# =============================================================================
+# SYSTEM INTELLIGENCE (sysinfo 0.30.12 — ПІДПИНЕНО ЖОРСТКО)
+# =============================================================================
+sysinfo = "0.30.12"
+
+# =============================================================================
+# WINDOWS NATIVE API (windows-sys 0.52.0 — ПІДПИНЕНО ЖОРСТКО)
+# Features: ProcessStatus (PSAPI), Threading, Foundation
+# =============================================================================
+windows-sys = { version = "0.52.0", features = ["Win32_System_ProcessStatus", "Win32_System_Threading", "Win32_Foundation"] }
+
+# =============================================================================
+# UTILITIES
+# =============================================================================
+# Системний час / форматування
+chrono = "0.4.38"
+# Серіалізація для налаштувань/конфігу
+serde = { version = "1.0.208", features = ["derive"] }
+serde_json = "1.0.123"
+# Логування
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter", "fmt"] }
+# Асинхронний рантайм для фонових збору даних
+tokio = { version = "1.40.1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+# Паралельні обчислення (Rayon для важких обробок процесів)
+rayon = "1.10.0"
+
+[dev-dependencies]
+# Property-based testing
+proptest = "1.4.0"
+
+[features]
+default = []
