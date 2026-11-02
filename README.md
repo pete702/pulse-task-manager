@@ -19,7 +19,7 @@
 | Phase | Versions | Focus | Status |
 |-------|----------|-------|--------|
 | **1. Foundation & Infrastructure** | v0.0.1–v0.0.2 | Git, Cargo, Obsidian HUD theme, background worker (500ms uptime), basic app structure | ✅ **Done** |
-| **2. i18n, Fonts, Icon, Self-Test, CI** | v0.0.3 | Language switcher (UA/EN), system fonts (Segoe UI/Consolas), generated neon icon, `--self-test` (headless CI + live GUI), GitHub Actions CI, backup automation, self-diagnosis badge | ✅ **Done** |
+| **2. i18n, Fonts, Icon, Self-Test, CI** | v0.0.3 | i18n foundation `Lang { Uk, En }` + translation keys (manual switch removed in v0.0.7, replaced by OS auto-detection), system fonts (Segoe UI/Consolas), generated neon icon, `--self-test` (headless CI + live GUI), GitHub Actions CI, backup automation, self-diagnosis badge | ✅ **Done** |
 | **3. Memory Math Model & Ring Buffer** | v0.0.4 | Pure math `MemorySnapshot` (RAM/Swap bytes, GiB/MiB, saturating cached, clamped usage %, division-by-zero guard), `MemoryHistory` ring buffer (120 points = 60s), session peaks, 6 new unit tests | ✅ **Done** |
 | **4. OS Memory Collector & Worker Integration** | v0.0.5 | `sysinfo` RAM/Swap collection, `EmptyWorkingSet` via `windows-sys` PSAPI, worker integration with `MemorySnapshot` + `MemoryHistory`, headless CI fix for OpenGL-less runners | ✅ **Done** |
 | **5. Memory HUD Cards & 60s Chart** | v0.0.6 | RAM/Swap cards with `card_frame()`, progress bars with traffic-light colors, `egui_plot` dual-line chart (ring buffer), one-click cache cleanup | ✅ **Done** |
@@ -40,37 +40,25 @@
 ```
 pulse_manager/
 ├── src/
-│   ├── main.rs                      # Entry point: eframe::run_native (≤35 lines)
-│   ├── app.rs                       # PulseApp: state, UI panels, snapshot handling
+│   ├── main.rs                      # Entry point: eframe::run_native, --self-test, icon, windows_subsystem
+│   ├── app.rs                       # PulseApp: state, tabs, UI panels, snapshot handling, render timing
 │   ├── theme.rs                     # Obsidian HUD tokens, apply_obsidian_theme, load_color, card_frame, setup_fonts
-│   ├── i18n.rs                      # Language switcher (UA/EN), translation keys
+│   ├── i18n.rs                      # Auto-detected UI language via GetUserDefaultUILanguage(), UA/EN keys
 │   ├── core/
 │   │   ├── mod.rs                   # SystemSnapshot (uptime + pulse_ram_mb + memory), mpsc channel types, spawn_telemetry_worker
 │   │   └── worker.rs                # Background thread: 1000 ms interval, self-trim + self RAM + OS memory → channel
-│   ├── modules/
-│   │   ├── mod.rs                   # Pub re-exports all modules
-│   │   ├── memory/
-│   │   │   ├── mod.rs               # Module exports
-│   │   │   ├── model.rs             # MemorySnapshot, MemoryHistory (900 pts / 15 min), ChartWindow
-│   │   │   ├── process_model.rs     # ProcessMemoryItem, clone grouping, sorting, MemorySpikeEvent
-│   │   │   ├── collector.rs         # sysinfo RAM/Swap, K32GetPerformanceInfo, K32EmptyWorkingSet, process scan
-│   │   │   ├── view.rs              # RAM/Swap cards, kernel tiles, localized labels
-│   │   │   └── chart_view.rs        # Multi-horizon (1m/5m/15m) dual-line neon chart
-│   │   ├── processes/
-│   │   │   ├── mod.rs
-│   │   │   ├── model.rs             # ProcessEntry, GroupKey, ProcessGroup
-│   │   │   ├── collector.rs         # sysinfo::Processes + Windows enrichment
-│   │   │   └── view.rs              # Table, grouping, search, monospace PID
-│   │   └── system/
-│   │       ├── mod.rs
-│   │       ├── model.rs             # CpuInfo, GpuInfo, DiskInfo, NetInfo
-│   │       ├── collector.rs         # sysinfo collectors
-│   │       └── view.rs              # System overview panels
-│   └── utils/
-│       ├── mod.rs
-│       ├── formatting.rs            # bytes_to_human, monospace helpers
-│       └── windows_api.rs           # Wrappers for EmptyWorkingSet, PSAPI
-└── tests/                           # Integration tests (planned)
+│   ├── ui/
+│   │   ├── mod.rs                   # UI chrome exports
+│   │   └── chrome.rs                # Top panel, sidebar, status bar rendering
+│   └── modules/
+│       ├── mod.rs                   # Pub re-exports all modules
+│       └── memory/
+│           ├── mod.rs               # Module exports
+│           ├── model.rs             # MemorySnapshot, MemoryHistory (900 pts / 15 min), ChartWindow
+│           ├── process_model.rs     # ProcessMemoryItem, clone grouping, sorting, MemorySpikeEvent
+│           ├── collector.rs         # sysinfo RAM/Swap, K32GetPerformanceInfo, K32EmptyWorkingSet, process scan
+│           ├── view.rs              # RAM/Swap cards, kernel tiles, localized labels
+│           └── chart_view.rs        # Multi-horizon (1m/5m/15m) dual-line neon chart
 ```
 
 ### Core Principles
@@ -89,7 +77,7 @@ pulse_manager/
 
 **Implemented:**
 - ✅ **Foundation & Infrastructure** (v0.0.1–v0.0.2): Git, Cargo, Obsidian HUD theme, background worker (500ms uptime), basic app structure
-- ✅ **i18n, Fonts, Icon, Self-Test, CI** (v0.0.3): Language switcher (UA/EN), system fonts (Segoe UI/Consolas), generated neon icon, `--self-test` (headless CI + live GUI), GitHub Actions CI, backup automation, self-diagnosis badge
+- ✅ **i18n, Fonts, Icon, Self-Test, CI** (v0.0.3): i18n foundation `Lang { Uk, En }` + translation keys (manual switch removed in v0.0.7, replaced by OS auto-detection), system fonts (Segoe UI/Consolas), generated neon icon, `--self-test` (headless CI + live GUI), GitHub Actions CI, backup automation, self-diagnosis badge
 - ✅ **Memory Math Model & Ring Buffer** (v0.0.4): Pure math `MemorySnapshot` (RAM/Swap bytes, GiB/MiB, saturating cached, clamped usage %, division-by-zero guard), `MemoryHistory` ring buffer (120 points = 60s), session peaks, 6 new unit tests
 - ✅ **OS Memory Collector & Worker Integration** (v0.0.5): `sysinfo` RAM/Swap collection via `collect_memory()`, `EmptyWorkingSet` wrapper via `windows-sys` PSAPI, worker integration with `MemorySnapshot` + `MemoryHistory`, headless CI fix for OpenGL-less runners (headless self-test without `eframe::run_native`)
 - ✅ **Memory HUD Cards & 60s Chart** (v0.0.6): Dual RAM/Swap cards with traffic-light progress bars, 4 kernel mini-tiles (System Cache, Kernel Pool, Commit Charge, OS Handles/Threads), `egui_plot` dual-line neon chart (60s history), GitHub Release pipeline

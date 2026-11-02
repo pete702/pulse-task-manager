@@ -153,7 +153,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [v0.0.3] - 2026-11-02
 
 ### Added
-- **Internationalization (i18n)** (`src/i18n.rs`): Language switcher `Lang { Uk, En }` with default Uk, instant toggle via `[ UA | EN ]` button in top bar. Type-safe translation keys for all UI elements. Unit tests for language switching and translations.
+- **Internationalization (i18n)** (`src/i18n.rs`): `Lang { Uk, En }` with type-safe translation keys for all UI elements and unit tests for both languages. The original `[ UA | EN ]` toggle was **removed in v0.0.7** — the language is now auto-detected from Windows.
 - **System Fonts** (`src/theme.rs::setup_fonts`): Loads Segoe UI (proportional) and Consolas (monospace) from `C:\Windows\Fonts\` with safe fallback to egui defaults.
 - **Application Icon**: Programmatically generated 32x32 RGBA icon — dark `#0B0C10` background with neon cyan `#00F0FF` pulse wave symbol.
 - **Self-Diagnosis Badge**: Top-right corner shows `[ PULSE: XX.X MB | UI: X.XX ms ]` — live process RAM and frame render time (monospace).
@@ -165,7 +165,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`src/main.rs`**: Added `#![deny(unsafe_code)]`, `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`, viewport 1180x760 (min 950x620), custom icon, `--self-test` argument parsing.
 - **`src/core/mod.rs`**: `SystemSnapshot` extended with `pulse_ram_mb: f32` (self process RAM in MB).
 - **`src/core/worker.rs`**: Worker now collects `pulse_ram_mb` through `sysinfo::Process::memory()` every 500ms. Unit tests updated.
-- **`src/app.rs`**: Language switcher button, self-diagnosis badge, `request_repaint_after(500ms)` for economical updates. `SelfTestApp` for automated testing. `ActiveTab::label()` now uses i18n. **7 unit tests** (dodano i18n keys, tab labels UK/EN).
+- **`src/app.rs`**: Self-diagnosis badge, `request_repaint_after(500ms)` for economical updates. `SelfTestApp` for automated testing. `ActiveTab::label()` now uses i18n. **7 unit tests** (dodano i18n keys, tab labels UK/EN).
 - **`src/theme.rs`**: Added `setup_fonts(ctx)` — завантажує Segoe UI (Proportional) та Consolas (Monospace) з `C:\Windows\Fonts\` з фолбеком на egui defaults. Використовуються лише геометричні Unicode символи (◈, ▣, ⚡, ▲, ▼, ●).
 - **`Cargo.toml`**: Version bumped to `0.0.3`.
 

@@ -125,7 +125,7 @@ windows-sys = { version = "0.52.0", features = ["Win32_System_ProcessStatus", "W
 
 | Phase | Versions | Focus | Status |
 |-------|----------|-------|--------|
-| **1. Foundation & Infrastructure** | v0.0.1–v0.0.3 | Git, Cargo, Obsidian HUD theme, background worker (500ms), i18n (UA/EN), system fonts, generated icon, self-test, CI, backup, self-diagnosis badge | ✅ **Done** |
+| **1. Foundation & Infrastructure** | v0.0.1–v0.0.3 | Git, Cargo, Obsidian HUD theme, background worker (500ms), i18n foundation `Lang { Uk, En }` + translation keys (OS auto-detection since v0.0.7), system fonts, generated icon, self-test, CI, backup, self-diagnosis badge | ✅ **Done** |
 | **2. Memory Module** | v0.0.4–v0.0.8 | Pure math model (`MemorySnapshot`, `MemoryHistory` 900-point ring buffer), `sysinfo` collector, `K32GetPerformanceInfo` kernel metrics, RAM/Swap cards, progress bars, multi-horizon (1m/5m/15m) `egui_plot` history, auto-detect Windows UI Language, worker optimization (refresh_pid), self working-set trim | ✅ **Done** (v0.0.8) |
 | **3. Process Memory Model & Table** | v0.0.8–v0.0.9 | v0.0.8: `ProcessMemoryItem`, clone grouping, `is_hog` detector, `MemorySpikeEvent` black box, process memory scan; v0.0.9: `egui_extras::TableBuilder` with monospace PID, search/filter, per-process EmptyWorkingSet | 🔄 **In progress** (v0.0.8 done) |
 | **4. CPU Module** | v0.1.0–v0.2.0 | Per-core usage, frequency, temperature (MSR), `egui_plot` graphs, top consumers table | ⏳ Planned |
@@ -151,7 +151,7 @@ pulse_manager/
 │   ├── main.rs                 # Entry point: eframe::run_native
 │   ├── app.rs                  # Root App struct, state, update loop
 │   ├── theme.rs                # Obsidian HUD tokens + style builder + fonts
-│   ├── i18n.rs                 # Language switcher (UA/EN)
+│   ├── i18n.rs                 # Auto-detected UI language (GetUserDefaultUILanguage), UA/EN keys
 │   ├── core/
 │   │   ├── mod.rs              # SystemSnapshot, mpsc channel types, spawn_telemetry_worker
 │   │   └── worker.rs           # Background thread: 1000 ms interval, self-trim + self RAM → channel
