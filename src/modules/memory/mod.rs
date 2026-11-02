@@ -3,4 +3,5 @@
 pub mod chart_view;
 pub mod collector;
 pub mod model;
+pub mod process_model;
 pub mod view;

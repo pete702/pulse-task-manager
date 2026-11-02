@@ -6,9 +6,48 @@
 
 use std::collections::VecDeque;
 
-/// Number of history points to retain (120 points = 60 seconds at 500ms interval).
+/// Number of history points to retain (900 points = 15 minutes at 1s interval).
 #[allow(dead_code)]
-const HISTORY_CAPACITY: usize = 120;
+const HISTORY_CAPACITY: usize = 900;
+
+/// Time window for chart display.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[allow(clippy::enum_variant_names)]
+pub enum ChartWindow {
+    /// 1 minute (60 seconds / 60 points at 1s interval).
+    #[default]
+    OneMin = 60,
+    /// 5 minutes (300 seconds / 300 points at 1s interval).
+    FiveMin = 300,
+    /// 15 minutes (900 seconds / 900 points at 1s interval).
+    FifteenMin = 900,
+}
+
+impl ChartWindow {
+    /// Returns the window duration in seconds.
+    #[inline]
+    pub fn seconds(self) -> u32 {
+        self as u32
+    }
+
+    /// Returns localized label for the button.
+    pub fn label(self) -> &'static str {
+        match self {
+            ChartWindow::OneMin => "1 хв",
+            ChartWindow::FiveMin => "5 хв",
+            ChartWindow::FifteenMin => "15 хв",
+        }
+    }
+
+    /// Returns English label for the button.
+    pub fn label_en(self) -> &'static str {
+        match self {
+            ChartWindow::OneMin => "1m",
+            ChartWindow::FiveMin => "5m",
+            ChartWindow::FifteenMin => "15m",
+        }
+    }
+}
 
 /// A single snapshot of system memory state.
 ///
@@ -212,9 +251,9 @@ impl MemorySnapshot {
 
 /// Ring buffer (кільцевий буфер) for memory usage history.
 ///
-/// Stores up to `HISTORY_CAPACITY` (120) data points representing
-/// RAM and Swap usage percentages. At 500ms interval this covers
-/// 60 seconds of history.
+/// Stores up to `HISTORY_CAPACITY` (900) data points representing
+/// RAM and Swap usage percentages. At 1s interval this covers
+/// 15 minutes of history.
 ///
 /// Also tracks session peaks for both RAM and Swap.
 #[derive(Clone, Debug, Default)]
@@ -227,6 +266,8 @@ pub struct MemoryHistory {
     pub peak_ram_percent: f32,
     /// Peak Swap usage percentage this session.
     pub peak_swap_percent: f32,
+    /// Currently selected chart time window.
+    pub chart_window: ChartWindow,
 }
 
 impl MemoryHistory {
@@ -239,6 +280,7 @@ impl MemoryHistory {
             swap_points: VecDeque::with_capacity(HISTORY_CAPACITY),
             peak_ram_percent: 0.0,
             peak_swap_percent: 0.0,
+            chart_window: ChartWindow::default(),
         }
     }
 
@@ -298,6 +340,22 @@ impl MemoryHistory {
     #[inline]
     pub fn swap_iter(&self) -> impl Iterator<Item = f32> + '_ {
         self.swap_points.iter().copied()
+    }
+
+    /// Returns points for the currently selected chart window.
+    #[allow(dead_code)]
+    pub fn windowed_ram_points(&self) -> impl Iterator<Item = f32> + '_ {
+        let window_size = self.chart_window.seconds() as usize;
+        let skip = self.ram_points.len().saturating_sub(window_size);
+        self.ram_points.iter().skip(skip).copied()
+    }
+
+    /// Returns points for the currently selected chart window.
+    #[allow(dead_code)]
+    pub fn windowed_swap_points(&self) -> impl Iterator<Item = f32> + '_ {
+        let window_size = self.chart_window.seconds() as usize;
+        let skip = self.swap_points.len().saturating_sub(window_size);
+        self.swap_points.iter().skip(skip).copied()
     }
 
     /// Clears all history and resets peaks.
@@ -414,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    fn test_memory_history_ring_buffer_120() {
+    fn test_memory_history_ring_buffer_900() {
         let mut history = MemoryHistory::new();
         let base_snap = MemorySnapshot {
             ram_total_bytes: 1000,
@@ -424,22 +482,70 @@ mod tests {
             ..Default::default()
         };
 
-        // Push 150 points (capacity is 120)
-        for i in 0..150 {
+        // Push 1000 points (capacity is 900)
+        for i in 0..1000 {
             let mut snap = base_snap.clone();
             snap.ram_used_bytes = 500 + (i % 10) as u64 * 10; // Vary slightly
             snap.swap_used_bytes = 250 + (i % 5) as u64 * 10;
             history.push(&snap);
         }
 
-        // Should only keep last 120 points
+        // Should only keep last 900 points
         assert_eq!(history.len(), HISTORY_CAPACITY);
         assert_eq!(history.ram_points.len(), HISTORY_CAPACITY);
         assert_eq!(history.swap_points.len(), HISTORY_CAPACITY);
 
-        // Peaks should be preserved from the 150 points
+        // Peaks should be preserved from the 1000 points
         assert!(history.peak_ram_percent >= 50.0);
         assert!(history.peak_swap_percent >= 25.0);
+    }
+
+    #[test]
+    fn test_chart_window_seconds() {
+        assert_eq!(ChartWindow::OneMin.seconds(), 60);
+        assert_eq!(ChartWindow::FiveMin.seconds(), 300);
+        assert_eq!(ChartWindow::FifteenMin.seconds(), 900);
+    }
+
+    #[test]
+    fn test_chart_window_labels_uk() {
+        assert_eq!(ChartWindow::OneMin.label(), "1 хв");
+        assert_eq!(ChartWindow::FiveMin.label(), "5 хв");
+        assert_eq!(ChartWindow::FifteenMin.label(), "15 хв");
+    }
+
+    #[test]
+    fn test_chart_window_labels_en() {
+        assert_eq!(ChartWindow::OneMin.label_en(), "1m");
+        assert_eq!(ChartWindow::FiveMin.label_en(), "5m");
+        assert_eq!(ChartWindow::FifteenMin.label_en(), "15m");
+    }
+
+    #[test]
+    fn test_windowed_points() {
+        let mut history = MemoryHistory::new();
+        let base_snap = MemorySnapshot {
+            ram_total_bytes: 1000,
+            ram_used_bytes: 500,
+            swap_total_bytes: 1000,
+            swap_used_bytes: 250,
+            ..Default::default()
+        };
+
+        // Push 100 points
+        for i in 0..100 {
+            let mut snap = base_snap.clone();
+            snap.ram_used_bytes = 500 + i as u64;
+            history.push(&snap);
+        }
+
+        history.chart_window = ChartWindow::OneMin; // 60 points
+        let ram_windowed: Vec<f32> = history.windowed_ram_points().collect();
+        assert_eq!(ram_windowed.len(), 60);
+
+        history.chart_window = ChartWindow::FiveMin; // 300 points, but only 100 available
+        let ram_windowed: Vec<f32> = history.windowed_ram_points().collect();
+        assert_eq!(ram_windowed.len(), 100);
     }
 
     #[test]

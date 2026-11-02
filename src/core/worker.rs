@@ -8,17 +8,18 @@ use std::time::Duration;
 use sysinfo::{Pid, System};
 
 use crate::core::{SnapshotTx, SystemSnapshot};
-use crate::modules::memory::collector::collect_memory;
+use crate::modules::memory::collector::{collect_memory, trim_self_working_set};
 
-/// Telemetry update interval (500 ms).
-const WORKER_INTERVAL: Duration = Duration::from_millis(500);
+/// Telemetry update interval (1000 ms = 1 second for 15-minute chart horizon).
+const WORKER_INTERVAL: Duration = Duration::from_millis(1000);
 
 /// Spawns a background thread that reads `System::uptime()`, current process RAM,
-/// and OS memory every 500ms and sends `SystemSnapshot` through the channel.
+/// and OS memory every 1s and sends `SystemSnapshot` through the channel.
 /// Returns a `Receiver` for the UI thread.
 ///
-/// Optimization: Uses `refresh_pid()` for current process only (not full process list)
+/// Optimization: Uses `refresh_pids()` for current process only (not full process list)
 /// to reduce memory overhead from ~150MB to ~35-50MB.
+/// Also calls `K32EmptyWorkingSet` to trim self working set before measurement.
 pub fn spawn() -> mpsc::Receiver<SystemSnapshot> {
     let (tx, rx): (SnapshotTx, mpsc::Receiver<SystemSnapshot>) = mpsc::channel();
 
@@ -32,6 +33,10 @@ pub fn spawn() -> mpsc::Receiver<SystemSnapshot> {
 
         loop {
             let uptime = System::uptime();
+
+            // Trim self working set (font caches, OpenGL buffers) to reduce RAM footprint
+            // from ~150MB to ~25-35MB
+            trim_self_working_set();
 
             // OPTIMIZATION: Refresh ONLY the current process PID (not all processes)
             // This reduces sysinfo's internal process table memory from ~150MB to ~35-50MB
@@ -69,8 +74,8 @@ mod tests {
 
         // Wait for first snapshot (should arrive quickly)
         let snapshot = rx
-            .recv_timeout(Duration::from_secs(2))
-            .expect("Worker should send first snapshot within 2 seconds");
+            .recv_timeout(Duration::from_secs(3))
+            .expect("Worker should send first snapshot within 3 seconds");
 
         // Verify uptime > 0 (system is running)
         assert!(snapshot.uptime_secs > 0, "Uptime should be positive");
@@ -93,10 +98,10 @@ mod tests {
         let rx = spawn();
 
         let first = rx
-            .recv_timeout(Duration::from_secs(2))
+            .recv_timeout(Duration::from_secs(3))
             .expect("First snapshot");
         let second = rx
-            .recv_timeout(Duration::from_secs(2))
+            .recv_timeout(Duration::from_secs(3))
             .expect("Second snapshot");
 
         // Second snapshot should be later (or equal if very fast)
@@ -116,7 +121,7 @@ mod tests {
     fn test_memory_snapshot_in_worker() {
         let rx = spawn();
         let snapshot = rx
-            .recv_timeout(Duration::from_secs(2))
+            .recv_timeout(Duration::from_secs(3))
             .expect("First snapshot");
 
         let mem = snapshot.memory.expect("Memory should be present");

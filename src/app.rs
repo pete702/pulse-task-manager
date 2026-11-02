@@ -96,6 +96,13 @@ impl eframe::App for PulseApp {
         // Clone snapshot for use in closures to avoid borrow issues
         let latest_snapshot = self.latest_snapshot.clone();
 
+        // Extract active process count for status bar
+        let active_processes = latest_snapshot
+            .as_ref()
+            .and_then(|s| s.memory.as_ref())
+            .map(|m| m.system_processes)
+            .unwrap_or(0);
+
         // Top panel
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             chrome::render_top_panel(ui, &latest_snapshot, frame_start, self.last_frame_time);
@@ -105,7 +112,7 @@ impl eframe::App for PulseApp {
         egui::TopBottomPanel::bottom("status_bar")
             .frame(crate::theme::status_bar_frame())
             .show(ctx, |ui| {
-                chrome::render_status_bar(ui);
+                chrome::render_status_bar(ui, active_processes);
             });
 
         // Left sidebar
@@ -126,7 +133,8 @@ impl eframe::App for PulseApp {
                         if let Some(ref mem) = snapshot.memory {
                             view::render_memory_cards(ui, mem, &self.memory_history);
                             ui.add_space(12.0);
-                            chart_view::render_memory_chart(ui, &self.memory_history);
+                            // Pass mutable reference for chart window switcher
+                            chart_view::render_memory_chart(ui, &mut self.memory_history);
                         } else {
                             ui.label(
                                 egui::RichText::new(Key::AwaitingMemoryModel.t())
@@ -190,8 +198,8 @@ impl eframe::App for PulseApp {
         // Update last frame time
         self.last_frame_time = frame_start;
 
-        // Request repaint after 500ms (economical)
-        ctx.request_repaint_after(std::time::Duration::from_millis(500));
+        // Request repaint after 1000ms (1 second interval for 1s chart updates)
+        ctx.request_repaint_after(std::time::Duration::from_millis(1000));
     }
 }
 

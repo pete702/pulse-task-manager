@@ -84,8 +84,8 @@ pub fn render_top_panel(
     });
 }
 
-/// Renders the bottom status bar.
-pub fn render_status_bar(ui: &mut egui::Ui) {
+/// Renders the bottom status bar with active process count.
+pub fn render_status_bar(ui: &mut egui::Ui, active_processes: u32) {
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new(Key::StatusReady.t())
@@ -94,8 +94,20 @@ pub fn render_status_bar(ui: &mut egui::Ui) {
                 .color(colors::ACCENT_CYAN),
         );
         ui.separator();
+        // Build status info manually since format! requires string literal
+        let lang = current_lang();
+        let status_text = match lang {
+            crate::i18n::Lang::Uk => format!(
+                "PULSE v0.0.8  |  Моніторинг ядра Windows  |  Активних процесів: {}",
+                active_processes
+            ),
+            crate::i18n::Lang::En => format!(
+                "PULSE v0.0.8  |  Windows Kernel Monitor  |  Active Processes: {}",
+                active_processes
+            ),
+        };
         ui.label(
-            egui::RichText::new(Key::StatusInfo.t())
+            egui::RichText::new(status_text)
                 .monospace()
                 .size(11.0)
                 .color(colors::TEXT_SECONDARY),

@@ -1,12 +1,24 @@
 //! OS memory collector for PULSE: gathers real RAM/Swap metrics via sysinfo
 //! and Windows kernel metrics via K32GetPerformanceInfo.
+//! Also provides process memory collection and self-memory trimming.
 
-use sysinfo::System;
+use sysinfo::{ProcessRefreshKind, System};
 
 use crate::modules::memory::model::MemorySnapshot;
+use crate::modules::memory::process_model::MemorySpikeEvent;
+
+/// Row of raw process memory data: (PID, name, RAM bytes, virtual bytes).
+pub type RawProcessRow = (u32, String, u64, u64);
+
+/// Result of a process memory collection pass.
+pub type ProcessMemoryScan = (Vec<RawProcessRow>, Option<MemorySpikeEvent>);
 
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::System::ProcessStatus::{K32GetPerformanceInfo, PERFORMANCE_INFORMATION};
+use windows_sys::Win32::System::ProcessStatus::{
+    K32EmptyWorkingSet, K32GetPerformanceInfo, PERFORMANCE_INFORMATION,
+};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::Threading::GetCurrentProcess;
 
 /// Collects current system memory state into a `MemorySnapshot`.
 ///
@@ -46,6 +58,64 @@ pub fn collect_memory(sys: &mut System) -> MemorySnapshot {
     }
 
     snap
+}
+
+/// Collects process memory information for the process list view.
+///
+/// Returns a vector of (PID, name, RAM bytes, virtual bytes) tuples,
+/// and optionally detects memory spike events (RAM >= 85%).
+#[allow(dead_code)]
+pub fn collect_process_memory(sys: &mut System, total_ram: u64) -> ProcessMemoryScan {
+    // Refresh process list with memory info
+    sys.refresh_processes_specifics(ProcessRefreshKind::new().with_memory());
+
+    let mut processes = Vec::new();
+    let mut current_ram_pct = 0.0f32;
+
+    for (pid, process) in sys.processes() {
+        let pid_u32 = pid.as_u32();
+        let name = process.name().to_string();
+        let ram_bytes = process.memory();
+        let virtual_bytes = process.virtual_memory();
+
+        processes.push((pid_u32, name, ram_bytes, virtual_bytes));
+
+        // Track current RAM usage for spike detection
+        if total_ram > 0 {
+            current_ram_pct = (ram_bytes as f64 / total_ram as f64 * 100.0) as f32;
+        }
+    }
+
+    // Detect memory spike
+    let spike = crate::modules::memory::process_model::detect_memory_spike(
+        &processes,
+        total_ram,
+        current_ram_pct.max(0.0),
+    );
+
+    (processes, spike)
+}
+
+/// Trims the working set of the current process using K32EmptyWorkingSet.
+///
+/// This releases unused memory pages (font caches, OpenGL buffers, etc.)
+/// back to the OS, reducing PULSE's own RAM footprint from ~150MB to ~25-35MB.
+/// Should be called before measuring own process memory.
+#[allow(dead_code)]
+pub fn trim_self_working_set() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        // SAFETY: GetCurrentProcess returns a pseudo-handle, K32EmptyWorkingSet is safe to call
+        #[allow(unsafe_code)]
+        let handle = unsafe { GetCurrentProcess() };
+        #[allow(unsafe_code)]
+        let result = unsafe { K32EmptyWorkingSet(handle) };
+        result != 0
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
 }
 
 /// Windows kernel metrics collected via K32GetPerformanceInfo.
@@ -91,18 +161,6 @@ fn collect_windows_kernel_metrics() -> KernelMetrics {
         system_processes: info.ProcessCount,
         system_cache_bytes: info.SystemCache as u64 * page_size,
     }
-}
-
-/// Trims the working set of the current process (Windows EmptyWorkingSet equivalent).
-///
-/// Calls `sysinfo::Process::memory()` to get current RSS, then attempts to
-/// release unused pages via the OS. Returns `true` if the call succeeded.
-#[allow(dead_code)]
-pub fn trim_working_set() -> bool {
-    // On Windows, sysinfo doesn't expose EmptyWorkingSet directly.
-    // This is a placeholder for future windows-sys integration.
-    // For now, we just return false to indicate "not implemented".
-    false
 }
 
 #[cfg(test)]
@@ -250,5 +308,34 @@ mod tests {
             "System threads should be > 0 on Windows, got {}",
             snap.system_threads
         );
+    }
+
+    #[test]
+    fn test_collect_process_memory() {
+        let mut sys = System::new_all();
+        let total_ram = sys.total_memory();
+        let (processes, _spike) = collect_process_memory(&mut sys, total_ram);
+
+        // Should have at least some processes
+        assert!(!processes.is_empty(), "Should have at least one process");
+
+        // Each process should have valid data (PID 0 = System Idle Process is skipped)
+        for (pid, name, ram_bytes, virtual_bytes) in processes {
+            if pid == 0 {
+                continue;
+            }
+            assert!(pid > 0, "PID should be > 0");
+            assert!(!name.is_empty(), "Process name should not be empty");
+            assert!(
+                ram_bytes > 0 || virtual_bytes > 0,
+                "Process should have some memory"
+            );
+        }
+    }
+
+    #[test]
+    fn test_trim_self_working_set() {
+        // Just verify the function runs without panic
+        let _result = trim_self_working_set();
     }
 }

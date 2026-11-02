@@ -127,23 +127,29 @@ pub enum Key {
     PhysicalRamTitle,
     SwapCommitTitle,
 
-    // Memory module - Grid labels
+    // Memory module - Grid labels (Card 1: RAM)
     UsedTotal,
     AvailableFree,
     CachedStandby,
     PeakSession,
+
+    // Memory module - Grid labels (Card 2: Swap/Commit)
     SwapUsedTotal,
     CommitChargeLimit,
     CommitPercent,
 
     // Kernel mini-tiles
     SystemCache,
+    SystemCacheSubtitle,
     KernelPool,
+    KernelPoolPaged,
+    KernelPoolNonpaged,
     CommitCharge,
+    CommitChargeLimitLabel,
     OsActivity,
 
     // Chart
-    MemoryHistory60s,
+    MemoryHistoryTitle,
     RamPercent,
     SwapPercent,
 
@@ -161,6 +167,19 @@ pub enum Key {
     ClearCacheButton,
     CacheCleared,
     CacheClearFailed,
+
+    // Process module (v0.0.8+)
+    ProcessTitle,
+    ProcessSearch,
+    ProcessGrouped,
+    ProcessName,
+    ProcessPid,
+    ProcessRam,
+    ProcessVirtual,
+    ProcessPct,
+    ProcessCount,
+    ProcessHog,
+    ProcessSpikeEvent,
 }
 
 impl Key {
@@ -236,10 +255,10 @@ impl Lang {
             (Lang::Uk, Key::PhysicalRamTitle) => "◈ ФІЗИЧНА ПАМ'ЯТЬ (RAM)",
             (Lang::En, Key::PhysicalRamTitle) => "◈ PHYSICAL MEMORY (RAM)",
 
-            (Lang::Uk, Key::SwapCommitTitle) => "▣ ФАЙЛ ПІДКАЧКИ ТА COMMIT",
+            (Lang::Uk, Key::SwapCommitTitle) => "▣ ФАЙЛ ПІДКАЧКИ ТА ВИДІЛЕННЯ",
             (Lang::En, Key::SwapCommitTitle) => "▣ SWAP FILE & COMMIT",
 
-            // Memory module - Grid labels
+            // Memory module - Grid labels (Card 1: RAM)
             (Lang::Uk, Key::UsedTotal) => "Використано / Всього",
             (Lang::En, Key::UsedTotal) => "Used / Total",
 
@@ -252,31 +271,44 @@ impl Lang {
             (Lang::Uk, Key::PeakSession) => "Пік за сесію",
             (Lang::En, Key::PeakSession) => "Peak (Session)",
 
-            (Lang::Uk, Key::SwapUsedTotal) => "Swap Використано / Всього",
+            // Memory module - Grid labels (Card 2: Swap/Commit)
+            (Lang::Uk, Key::SwapUsedTotal) => "Підкачка (Викор. / Всього)",
             (Lang::En, Key::SwapUsedTotal) => "Swap Used / Total",
 
-            (Lang::Uk, Key::CommitChargeLimit) => "Commit Charge / Limit",
+            (Lang::Uk, Key::CommitChargeLimit) => "Виділено (Commit / Ліміт)",
             (Lang::En, Key::CommitChargeLimit) => "Commit Charge / Limit",
 
-            (Lang::Uk, Key::CommitPercent) => "Commit %",
+            (Lang::Uk, Key::CommitPercent) => "Частка виділення (%)",
             (Lang::En, Key::CommitPercent) => "Commit %",
 
             // Kernel mini-tiles
             (Lang::Uk, Key::SystemCache) => "Системний кеш",
             (Lang::En, Key::SystemCache) => "System Cache",
 
+            (Lang::Uk, Key::SystemCacheSubtitle) => "Резерв ОС • {:.1}% від ОЗП",
+            (Lang::En, Key::SystemCacheSubtitle) => "OS Reserve • {:.1}% of RAM",
+
             (Lang::Uk, Key::KernelPool) => "Пул ядра",
             (Lang::En, Key::KernelPool) => "Kernel Pool",
 
-            (Lang::Uk, Key::CommitCharge) => "Виділено (Commit Charge)",
-            (Lang::En, Key::CommitCharge) => "Committed (Commit Charge)",
+            (Lang::Uk, Key::KernelPoolPaged) => "Вивантаж.: {} / Невивантаж.: {}",
+            (Lang::En, Key::KernelPoolPaged) => "Paged: {} / Non-paged: {}",
 
-            (Lang::Uk, Key::OsActivity) => "Активність ОС (Handles & Threads)",
-            (Lang::En, Key::OsActivity) => "OS Activity (Handles & Threads)",
+            (Lang::Uk, Key::KernelPoolNonpaged) => "Невивантаж.: {}",
+            (Lang::En, Key::KernelPoolNonpaged) => "Non-paged: {}",
+
+            (Lang::Uk, Key::CommitCharge) => "Виділено",
+            (Lang::En, Key::CommitCharge) => "Committed",
+
+            (Lang::Uk, Key::CommitChargeLimitLabel) => "Ліміт ОС: {} ({:.1}%)",
+            (Lang::En, Key::CommitChargeLimitLabel) => "Limit: {} ({:.1}%)",
+
+            (Lang::Uk, Key::OsActivity) => "Активність ОС: {} процеси | {} потоки | {} дескриптори",
+            (Lang::En, Key::OsActivity) => "OS Activity: {} processes | {} threads | {} handles",
 
             // Chart
-            (Lang::Uk, Key::MemoryHistory60s) => "● 60-SECOND MEMORY HISTORY",
-            (Lang::En, Key::MemoryHistory60s) => "● 60-SECOND MEMORY HISTORY",
+            (Lang::Uk, Key::MemoryHistoryTitle) => "● ДИНАМІКА НАВАНТАЖЕННЯ ПАМ'ЯТІ",
+            (Lang::En, Key::MemoryHistoryTitle) => "● MEMORY UTILIZATION HISTORY",
 
             (Lang::Uk, Key::RamPercent) => "RAM %",
             (Lang::En, Key::RamPercent) => "RAM %",
@@ -289,10 +321,10 @@ impl Lang {
             (Lang::En, Key::StatusReady) => "● READY",
 
             (Lang::Uk, Key::StatusInfo) => {
-                "PULSE v0.0.7  |  Obsidian HUD  |  60s History  |  Windows Kernel Metrics"
+                "PULSE v0.0.8  |  Моніторинг ядра Windows  |  Активних процесів: {}"
             }
             (Lang::En, Key::StatusInfo) => {
-                "PULSE v0.0.7  |  Obsidian HUD  |  60s History  |  Windows Kernel Metrics"
+                "PULSE v0.0.8  |  Windows Kernel Monitor  |  Active Processes: {}"
             }
 
             // Memory module - legacy keys (keep for backward compat)
@@ -322,6 +354,40 @@ impl Lang {
 
             (Lang::Uk, Key::CacheClearFailed) => "Помилка очищення кешу",
             (Lang::En, Key::CacheClearFailed) => "Cache clear failed",
+
+            // Process module (v0.0.8+)
+            (Lang::Uk, Key::ProcessTitle) => "◈ ПРОЦЕСИ ОЗП",
+            (Lang::En, Key::ProcessTitle) => "◈ RAM PROCESSES",
+
+            (Lang::Uk, Key::ProcessSearch) => "Пошук за назвою або PID...",
+            (Lang::En, Key::ProcessSearch) => "Search by name or PID...",
+
+            (Lang::Uk, Key::ProcessGrouped) => " (згруповано)",
+            (Lang::En, Key::ProcessGrouped) => " (grouped)",
+
+            (Lang::Uk, Key::ProcessName) => "Назва",
+            (Lang::En, Key::ProcessName) => "Name",
+
+            (Lang::Uk, Key::ProcessPid) => "PID",
+            (Lang::En, Key::ProcessPid) => "PID",
+
+            (Lang::Uk, Key::ProcessRam) => "ОЗП (RAM)",
+            (Lang::En, Key::ProcessRam) => "RAM",
+
+            (Lang::Uk, Key::ProcessVirtual) => "Віртуальна",
+            (Lang::En, Key::ProcessVirtual) => "Virtual",
+
+            (Lang::Uk, Key::ProcessPct) => "% ОЗП",
+            (Lang::En, Key::ProcessPct) => "% RAM",
+
+            (Lang::Uk, Key::ProcessCount) => "К-сть",
+            (Lang::En, Key::ProcessCount) => "Count",
+
+            (Lang::Uk, Key::ProcessHog) => "⚠ HOG",
+            (Lang::En, Key::ProcessHog) => "⚠ HOG",
+
+            (Lang::Uk, Key::ProcessSpikeEvent) => "ПІК ПАМ'ЯТІ: {} ({}%) — {} (PID {})",
+            (Lang::En, Key::ProcessSpikeEvent) => "MEMORY SPIKE: {} ({}%) — {} (PID {})",
         }
     }
 }
@@ -362,11 +428,20 @@ mod tests {
         assert_eq!(Key::TabSystem.t(), "⚙ Система та GPU");
         assert_eq!(Key::UptimeLabel.t(), "Uptime");
         assert_eq!(Key::PhysicalRamTitle.t(), "◈ ФІЗИЧНА ПАМ'ЯТЬ (RAM)");
-        assert_eq!(Key::SwapCommitTitle.t(), "▣ ФАЙЛ ПІДКАЧКИ ТА COMMIT");
+        assert_eq!(Key::SwapCommitTitle.t(), "▣ ФАЙЛ ПІДКАЧКИ ТА ВИДІЛЕННЯ");
         assert_eq!(Key::UsedTotal.t(), "Використано / Всього");
         assert_eq!(Key::AvailableFree.t(), "Доступно / Вільно");
         assert_eq!(Key::CachedStandby.t(), "Кешовано (Standby)");
         assert_eq!(Key::PeakSession.t(), "Пік за сесію");
+        assert_eq!(Key::SwapUsedTotal.t(), "Підкачка (Викор. / Всього)");
+        assert_eq!(Key::CommitChargeLimit.t(), "Виділено (Commit / Ліміт)");
+        assert_eq!(Key::CommitPercent.t(), "Частка виділення (%)");
+        assert_eq!(
+            Key::MemoryHistoryTitle.t(),
+            "● ДИНАМІКА НАВАНТАЖЕННЯ ПАМ'ЯТІ"
+        );
+        assert_eq!(Key::RamPercent.t(), "RAM %");
+        assert_eq!(Key::SwapPercent.t(), "Swap %");
     }
 
     #[test]
@@ -385,6 +460,12 @@ mod tests {
         assert_eq!(Key::AvailableFree.t(), "Available / Free");
         assert_eq!(Key::CachedStandby.t(), "Cached (Standby)");
         assert_eq!(Key::PeakSession.t(), "Peak (Session)");
+        assert_eq!(Key::SwapUsedTotal.t(), "Swap Used / Total");
+        assert_eq!(Key::CommitChargeLimit.t(), "Commit Charge / Limit");
+        assert_eq!(Key::CommitPercent.t(), "Commit %");
+        assert_eq!(Key::MemoryHistoryTitle.t(), "● MEMORY UTILIZATION HISTORY");
+        assert_eq!(Key::RamPercent.t(), "RAM %");
+        assert_eq!(Key::SwapPercent.t(), "Swap %");
     }
 
     #[test]

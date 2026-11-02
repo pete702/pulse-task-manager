@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.0.8] - 2026-11-02
+
+### Added
+- **Process Memory Model** (`src/modules/memory/process_model.rs`): `ProcessMemoryItem` (PID, name, RAM/virtual bytes, RAM %, `process_count`, `is_hog`), `MemorySortCol`, and pure `filter_group_and_sort()` with case-insensitive name/PID search, clone grouping (summed RAM + instance count), and column sorting. The `is_hog` flag triggers at RAM ≥ 15%.
+- **Memory Spike "Black Box"** (`MemorySpikeEvent`, `detect_memory_spike()`): captures timestamp, peak RAM %, culprit name/PID/bytes when total RAM usage reaches ≥ 85%. `collect_process_memory()` refreshes processes with `ProcessRefreshKind::new().with_memory()`.
+- **Multi-Horizon Memory Chart** (`ChartWindow` in `model.rs`, switcher in `chart_view.rs`): `[ 1m | 5m | 15m ]` buttons; history ring buffer extended from 120 to 900 points (15 minutes at 1s); windowed point iterators; the plot now occupies 100% of card width (no `view_aspect`).
+- **Self Working-Set Trim** (`src/modules/memory/collector.rs`): `K32EmptyWorkingSet(GetCurrentProcess())` is called before measuring PULSE's own RSS, releasing font/OpenGL buffers and lowering the process footprint.
+- **Real UI Render Time** (`src/app.rs`): `update()` is timed with `Instant::now()` instead of `ctx.input().unstable_dt`, so the top badge reports actual render cost rather than VSync wait.
+- **Pure Ukrainian Localization** (`src/i18n.rs`, `src/modules/memory/view.rs`, `src/ui/chrome.rs`): localized RAM/Swap cards, kernel tiles (OS reserve %, paged/non-paged pools, OS commit limit), chart title, and status bar (`PULSE v0.0.8 | Моніторинг ядра Windows | Активних процесів: N`).
+
+### Changed
+- **`src/modules/memory/model.rs`**: `HISTORY_CAPACITY` 120 → 900; added `ChartWindow { OneMin, FiveMin, FifteenMin }`, `MemoryHistory::chart_window`, `windowed_ram_points()`, `windowed_swap_points()`.
+- **`src/modules/memory/chart_view.rs`**: translated title plus 1m/5m/15m switcher; full-width plot; x-axis window follows the selected horizon.
+- **`src/modules/memory/collector.rs`**: process memory scan, spike detection, self working-set trim, and `ProcessMemoryScan`/`RawProcessRow` type aliases.
+- **`src/core/worker.rs`**: telemetry interval 500 ms → 1000 ms; trims the worker's own working set before each measurement.
+- **`src/app.rs`**: mutable history passed to the chart; real render timing; active process count passed to the status bar.
+- **`src/ui/chrome.rs`**: status bar shows the active process count and v0.0.8.
+- **`src/modules/memory/mod.rs`**: registers `pub mod process_model;`.
+- **`Cargo.toml`**: version bumped to `0.0.8`.
+
+### Infrastructure
+- **61 unit tests passing** (0 failed), including 9 new process-model tests (clone grouping, hog detector, search by name/PID, sorting, spike detection).
+- `cargo fmt` and `cargo clippy -- -D warnings` clean; live GUI self-test passes (`SELF-TEST PASSED (LIVE GUI)`).
+- Release binary exported to `../PULSE_BUILDS/PULSE_v0.0.8_multi_horizon_processes.exe` and `PULSE_latest.exe`.
+- Clean backup created at `../PULSE_BACKUPS/v0.0.8_verified/`.
+
+---
+
 ## [v0.0.7] - 2026-11-02
 
 ### Added

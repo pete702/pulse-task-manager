@@ -4,7 +4,7 @@ use eframe::egui;
 
 use crate::i18n::Key;
 use crate::modules::memory::model::MemorySnapshot;
-use crate::theme::colors;
+use crate::theme::{card_frame, colors};
 
 /// Renders the memory HUD cards and mini-tiles.
 pub fn render_memory_cards(
@@ -32,7 +32,7 @@ pub fn render_memory_cards(
     // ----- Row 1: Two main cards (RAM + Swap/Commit) -----
     ui.columns(2, |cols| {
         // --- Card 1: PHYSICAL RAM ---
-        crate::theme::card_frame().show(&mut cols[0], |ui| {
+        card_frame().show(&mut cols[0], |ui| {
             ui.vertical(|ui| {
                 // Header
                 ui.horizontal(|ui| {
@@ -90,7 +90,7 @@ pub fn render_memory_cards(
                         );
                         ui.end_row();
 
-                        // Available / Free
+                        // Available / Free (localized)
                         ui.label(
                             egui::RichText::new(Key::AvailableFree.t())
                                 .monospace()
@@ -99,7 +99,7 @@ pub fn render_memory_cards(
                         );
                         ui.label(
                             egui::RichText::new(format!(
-                                "{:.2} GiB / Free: {:.2} GiB",
+                                "{:.2} GiB / Вільно: {:.2} GiB",
                                 mem.ram_available_gib(),
                                 mem.ram_free_bytes as f64 / 1_073_741_824.0
                             ))
@@ -143,7 +143,7 @@ pub fn render_memory_cards(
         });
 
         // --- Card 2: SWAP & COMMIT ---
-        crate::theme::card_frame().show(&mut cols[1], |ui| {
+        card_frame().show(&mut cols[1], |ui| {
             ui.vertical(|ui| {
                 // Header
                 ui.horizontal(|ui| {
@@ -268,7 +268,7 @@ pub fn render_memory_cards(
     // ----- Row 2: 4 Mini-tiles (Kernel Metrics) -----
     ui.columns(4, |cols| {
         // Tile 1: System Cache
-        crate::theme::card_frame().show(&mut cols[0], |ui| {
+        card_frame().show(&mut cols[0], |ui| {
             ui.vertical_centered(|ui| {
                 ui.label(
                     egui::RichText::new(Key::SystemCache.t())
@@ -283,17 +283,27 @@ pub fn render_memory_cards(
                         .size(16.0)
                         .color(colors::ACCENT_CYAN),
                 );
+                // Subtitle: OS Reserve • X% of RAM
+                let cache_pct = if mem.ram_total_bytes > 0 {
+                    (mem.ram_cached_bytes() as f64 / mem.ram_total_bytes as f64) * 100.0
+                } else {
+                    0.0
+                };
                 ui.label(
-                    egui::RichText::new(Key::SystemCache.t())
-                        .monospace()
-                        .size(10.0)
-                        .color(colors::TEXT_SECONDARY),
+                    egui::RichText::new(format!(
+                        "{} {:.1}% від ОЗП",
+                        Key::SystemCacheSubtitle.t(),
+                        cache_pct
+                    ))
+                    .monospace()
+                    .size(10.0)
+                    .color(colors::TEXT_SECONDARY),
                 );
             });
         });
 
         // Tile 2: Kernel Pool
-        crate::theme::card_frame().show(&mut cols[1], |ui| {
+        card_frame().show(&mut cols[1], |ui| {
             ui.vertical_centered(|ui| {
                 ui.label(
                     egui::RichText::new(Key::KernelPool.t())
@@ -312,7 +322,7 @@ pub fn render_memory_cards(
                 ui.add_space(2.0);
                 ui.label(
                     egui::RichText::new(format!(
-                        "Paged: {} / Non-paged: {}",
+                        "{} / {}",
                         format_bytes(mem.kernel_paged_bytes),
                         format_bytes(mem.kernel_nonpaged_bytes)
                     ))
@@ -324,7 +334,7 @@ pub fn render_memory_cards(
         });
 
         // Tile 3: Commit Charge
-        crate::theme::card_frame().show(&mut cols[2], |ui| {
+        card_frame().show(&mut cols[2], |ui| {
             ui.vertical_centered(|ui| {
                 ui.label(
                     egui::RichText::new(Key::CommitCharge.t())
@@ -339,16 +349,16 @@ pub fn render_memory_cards(
                         .size(16.0)
                         .color(colors::ACCENT_PURPLE),
                 );
+                let commit_pct = if mem.commit_limit_bytes > 0 {
+                    (mem.commit_total_bytes as f64 / mem.commit_limit_bytes as f64 * 100.0) as f32
+                } else {
+                    0.0
+                };
                 ui.label(
                     egui::RichText::new(format!(
-                        "Limit: {} ({:.1}%)",
+                        "Ліміт ОС: {} ({:.1}%)",
                         format_bytes(mem.commit_limit_bytes),
-                        if mem.commit_limit_bytes > 0 {
-                            (mem.commit_total_bytes as f64 / mem.commit_limit_bytes as f64 * 100.0)
-                                as f32
-                        } else {
-                            0.0
-                        }
+                        commit_pct
                     ))
                     .monospace()
                     .size(10.0)
@@ -358,7 +368,7 @@ pub fn render_memory_cards(
         });
 
         // Tile 4: OS Activity (Handles & Threads)
-        crate::theme::card_frame().show(&mut cols[3], |ui| {
+        card_frame().show(&mut cols[3], |ui| {
             ui.vertical_centered(|ui| {
                 ui.label(
                     egui::RichText::new(Key::OsActivity.t())
@@ -369,7 +379,7 @@ pub fn render_memory_cards(
                 ui.add_space(4.0);
                 ui.label(
                     egui::RichText::new(format!(
-                        "{} процесів  |  {} потоків  |  {} дескрипторів",
+                        "{} процеси | {} потоки | {} дескриптори",
                         mem.system_processes, mem.system_threads, mem.system_handles
                     ))
                     .monospace()
