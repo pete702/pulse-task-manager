@@ -40,7 +40,7 @@ static CURRENT_LANG: AtomicU8 = AtomicU8::new(Lang::Uk as u8);
 // Unit tests run in parallel, so language state is thread-local there.
 #[cfg(test)]
 thread_local! {
-    static TEST_LANG: std::cell::Cell<Lang> = std::cell::Cell::new(Lang::Uk);
+    static TEST_LANG: std::cell::Cell<Lang> = const { std::cell::Cell::new(Lang::Uk) };
 }
 
 /// Gets the current global language.
