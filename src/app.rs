@@ -6,9 +6,11 @@ use std::time::Instant;
 use eframe::egui;
 
 use crate::core::{spawn_telemetry_worker, SystemSnapshot};
-use crate::i18n::Key;
+use crate::i18n::{current_lang, Key};
+use crate::modules::memory::collector::trim_own_working_set;
 use crate::modules::memory::model::MemoryHistory;
-use crate::modules::memory::{chart_view, view};
+use crate::modules::memory::page::{self, MemorySubView};
+use crate::modules::memory::table_view::MemoryTableState;
 use crate::theme::{apply_obsidian_theme, card_frame};
 use crate::ui::chrome;
 
@@ -59,6 +61,12 @@ pub struct PulseApp {
     latest_snapshot: Option<SystemSnapshot>,
     /// Currently active tab.
     active_tab: ActiveTab,
+    /// Memory tab sub-view (overview or process table).
+    memory_sub_view: MemorySubView,
+    /// Process table search/sort/selection state.
+    table_state: MemoryTableState,
+    /// Frame counter used to trim the working set after OpenGL startup.
+    frame_count: u64,
     /// Last frame render time for UI timing.
     last_ui_ms: f32,
     /// Memory usage history (ring buffer).
@@ -71,6 +79,9 @@ impl Default for PulseApp {
             snapshot_rx: spawn_telemetry_worker(),
             latest_snapshot: None,
             active_tab: ActiveTab::Memory,
+            memory_sub_view: MemorySubView::default(),
+            table_state: MemoryTableState::default(),
+            frame_count: 0,
             last_ui_ms: 0.0,
             memory_history: MemoryHistory::new(),
         }
@@ -80,6 +91,12 @@ impl Default for PulseApp {
 impl eframe::App for PulseApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let frame_start = Instant::now();
+
+        // Release OpenGL driver buffers after startup and periodically afterwards.
+        self.frame_count = self.frame_count.wrapping_add(1);
+        if self.frame_count == 3 || self.frame_count.is_multiple_of(30) {
+            trim_own_working_set();
+        }
 
         // Apply theme
         apply_obsidian_theme(ctx);
@@ -131,10 +148,14 @@ impl eframe::App for PulseApp {
                 ActiveTab::Memory => {
                     if let Some(ref snapshot) = latest_snapshot {
                         if let Some(ref mem) = snapshot.memory {
-                            view::render_memory_cards(ui, mem, &self.memory_history);
-                            ui.add_space(12.0);
-                            // Pass mutable reference for chart window switcher
-                            chart_view::render_memory_chart(ui, &mut self.memory_history);
+                            page::render_memory_page(
+                                ui,
+                                mem,
+                                &mut self.memory_history,
+                                &mut self.memory_sub_view,
+                                &mut self.table_state,
+                                current_lang(),
+                            );
                         } else {
                             ui.label(
                                 egui::RichText::new(Key::AwaitingMemoryModel.t())
@@ -401,7 +422,7 @@ mod tests {
             system_handles: 0,
             system_threads: 0,
             system_processes: 0,
-            ram_cached_bytes_override: 0,
+            ..Default::default()
         };
 
         history.push(&snap);

@@ -437,7 +437,7 @@ mod tests {
             system_handles: 50000,
             system_threads: 2000,
             system_processes: 150,
-            ram_cached_bytes_override: 0,
+            ..Default::default()
         };
         let _history = crate::modules::memory::model::MemoryHistory::new();
 

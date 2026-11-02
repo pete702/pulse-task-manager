@@ -5,51 +5,51 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use sysinfo::{Pid, System};
+use sysinfo::System;
 
 use crate::core::{SnapshotTx, SystemSnapshot};
-use crate::modules::memory::collector::{collect_memory, trim_self_working_set};
+use crate::modules::memory::collector::{
+    collect_memory, collect_process_memory, own_working_set_mb, trim_own_working_set,
+};
 
 /// Telemetry update interval (1000 ms = 1 second for 15-minute chart horizon).
 const WORKER_INTERVAL: Duration = Duration::from_millis(1000);
 
 /// Spawns a background thread that reads `System::uptime()`, current process RAM,
-/// and OS memory every 1s and sends `SystemSnapshot` through the channel.
-/// Returns a `Receiver` for the UI thread.
+/// OS memory, and the process memory table every 1s and sends `SystemSnapshot`
+/// through the channel. Returns a `Receiver` for the UI thread.
 ///
-/// Optimization: Uses `refresh_pids()` for current process only (not full process list)
-/// to reduce memory overhead from ~150MB to ~35-50MB.
-/// Also calls `K32EmptyWorkingSet` to trim self working set before measurement.
+/// Optimization: starts with `System::new()` and refreshes only memory and process
+/// memory, avoiding a full system scan. Own RSS is measured directly with Win32
+/// `K32GetProcessMemoryInfo` after trimming the working set.
 pub fn spawn() -> mpsc::Receiver<SystemSnapshot> {
     let (tx, rx): (SnapshotTx, mpsc::Receiver<SystemSnapshot>) = mpsc::channel();
 
     thread::spawn(move || {
-        let mut sys = System::new_all();
-        // Initial refresh
-        sys.refresh_all();
-
-        // Get current process PID
-        let pid = Pid::from(std::process::id() as usize);
+        let mut sys = System::new();
+        let mut latest_spike = None;
 
         loop {
             let uptime = System::uptime();
 
-            // Trim self working set (font caches, OpenGL buffers) to reduce RAM footprint
-            // from ~150MB to ~25-35MB
-            trim_self_working_set();
+            // Collect OS memory (RAM/Swap), then the per-process memory table.
+            let mut memory = collect_memory(&mut sys);
+            let (processes, spike) = collect_process_memory(
+                &mut sys,
+                memory.ram_total_bytes,
+                memory.ram_usage_percent(),
+            );
+            memory.processes = processes;
+            if spike.is_some() {
+                latest_spike = spike;
+            }
+            memory.latest_spike = latest_spike.clone();
 
-            // OPTIMIZATION: Refresh ONLY the current process PID (not all processes)
-            // This reduces sysinfo's internal process table memory from ~150MB to ~35-50MB
-            sys.refresh_pids(&[pid]);
-            let pulse_ram_mb = sys
-                .process(pid)
-                .map(|p| p.memory() as f32 / (1024.0 * 1024.0)) // Convert bytes to MB
-                .unwrap_or(0.0);
+            // Trim self working set after UI/OpenGL allocations, then measure own RSS.
+            trim_own_working_set();
+            let pulse_ram_mb = own_working_set_mb();
 
-            // Collect OS memory (RAM/Swap) - this also refreshes memory info
-            let memory = Some(collect_memory(&mut sys));
-
-            let snapshot = SystemSnapshot::new(uptime, pulse_ram_mb, memory);
+            let snapshot = SystemSnapshot::new(uptime, pulse_ram_mb, Some(memory));
 
             // Send snapshot; if receiver is closed, terminate thread
             if tx.send(snapshot).is_err() {

@@ -37,12 +37,25 @@ impl Lang {
 /// Uses AtomicU8 for lock-free reads/writes (0 = Uk, 1 = En).
 static CURRENT_LANG: AtomicU8 = AtomicU8::new(Lang::Uk as u8);
 
+// Unit tests run in parallel, so language state is thread-local there.
+#[cfg(test)]
+thread_local! {
+    static TEST_LANG: std::cell::Cell<Lang> = std::cell::Cell::new(Lang::Uk);
+}
+
 /// Gets the current global language.
 #[inline]
 pub fn current_lang() -> Lang {
-    match CURRENT_LANG.load(Ordering::Relaxed) {
-        0 => Lang::Uk,
-        _ => Lang::En,
+    #[cfg(test)]
+    {
+        TEST_LANG.with(|lang| lang.get())
+    }
+    #[cfg(not(test))]
+    {
+        match CURRENT_LANG.load(Ordering::Relaxed) {
+            0 => Lang::Uk,
+            _ => Lang::En,
+        }
     }
 }
 
@@ -50,6 +63,8 @@ pub fn current_lang() -> Lang {
 #[inline]
 pub fn set_lang(lang: Lang) {
     CURRENT_LANG.store(lang as u8, Ordering::Relaxed);
+    #[cfg(test)]
+    TEST_LANG.with(|cell| cell.set(lang));
 }
 
 /// Initializes language from OS detection (Windows GetUserDefaultUILanguage).
@@ -337,10 +352,10 @@ impl Lang {
             (Lang::En, Key::StatusReady) => "● READY",
 
             (Lang::Uk, Key::StatusInfo) => {
-                "PULSE v0.0.8  |  Моніторинг ядра Windows  |  Активних процесів: {}"
+                "PULSE v0.0.9  |  Моніторинг ядра Windows  |  Активних процесів: {}"
             }
             (Lang::En, Key::StatusInfo) => {
-                "PULSE v0.0.8  |  Windows Kernel Monitor  |  Active Processes: {}"
+                "PULSE v0.0.9  |  Windows Kernel Monitor  |  Active Processes: {}"
             }
 
             // Memory module - legacy keys (keep for backward compat)

@@ -96,11 +96,11 @@ pub fn render_status_bar(ui: &mut egui::Ui, active_processes: u32) {
         let lang = current_lang();
         let status_text = match lang {
             crate::i18n::Lang::Uk => format!(
-                "PULSE v0.0.8  |  Моніторинг ядра Windows  |  Активних процесів: {}",
+                "PULSE v0.0.9  |  Моніторинг ядра Windows  |  Активних процесів: {}",
                 active_processes
             ),
             crate::i18n::Lang::En => format!(
-                "PULSE v0.0.8  |  Windows Kernel Monitor  |  Active Processes: {}",
+                "PULSE v0.0.9  |  Windows Kernel Monitor  |  Active Processes: {}",
                 active_processes
             ),
         };

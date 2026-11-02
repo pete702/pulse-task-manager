@@ -6,6 +6,8 @@
 
 use std::collections::VecDeque;
 
+use crate::modules::memory::process_model::MemorySpikeEvent;
+
 /// Number of history points to retain (900 points = 15 minutes at 1s interval).
 #[allow(dead_code)]
 const HISTORY_CAPACITY: usize = 900;
@@ -52,7 +54,7 @@ impl ChartWindow {
 /// A single snapshot of system memory state.
 ///
 /// All values are in **bytes** (`u64`).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct MemorySnapshot {
     /// Total physical RAM in bytes.
     pub ram_total_bytes: u64,
@@ -87,6 +89,12 @@ pub struct MemorySnapshot {
     /// Real Windows System Cache (from K32GetPerformanceInfo.SystemCache * PageSize).
     /// When > 0, this overrides the calculated `available - free` fallback.
     pub ram_cached_bytes_override: u64,
+
+    // ===== v0.0.9: Process table data =====
+    /// Process memory rows: (PID, name, physical RAM bytes, virtual bytes).
+    pub processes: Vec<(u32, String, u64, u64)>,
+    /// Most recent memory spike (RAM >= 85%), kept as a "black box" event.
+    pub latest_spike: Option<MemorySpikeEvent>,
 }
 
 impl MemorySnapshot {

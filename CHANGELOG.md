@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.0.9] - 2026-04-06
+
+### Added
+- **Mission Center Sub-view Switcher** (`src/modules/memory/page.rs`): `MemorySubView { Overview, Processes }` (default `Overview`) rendered inside a `card_frame()`. The localized switcher labels show the live process count (`◈ Telemetry Overview` / `📋 Memory Processes (N)` in English; the Ukrainian dictionary supplies equivalent localized strings at runtime). The `Processes` branch adds a compact RAM bar above the table.
+- **Virtualized Process Memory Table** (`src/modules/memory/table_view.rs`, `table_body.rs`, `table_widgets.rs`): `MemoryTableState { search_query, group_clones, sort_col, sort_asc, selected_pid }` with clone grouping enabled and descending RAM sort by default. `egui_extras::TableBuilder` renders rows through `body.rows(24.0, rows.len(), …)`, so paint cost is **O(visible_rows)** instead of O(process count).
+- **Instant Search, Clone Grouping, and Sorting**: case-insensitive name substring or exact PID match; `[Nx]` cyan badge for clone groups; five sortable monospace columns (Process / PID / Physical RAM / Virtual / RAM %); sort direction starts ascending for text columns and descending for numeric columns.
+- **Resource Hog Badges**: `⚠️ HOG` red badge for processes at ≥ 15% of total RAM, recomputed after clone grouping.
+- **RAM Spike "Black Box" Banner** (`table_widgets.rs`): an amber/red banner renders `snap.latest_spike` with timestamp, peak RAM %, and the culprit as `name [PID] • bytes`. The worker now preserves the last detected spike instead of dropping it between 1000 ms intervals.
+- **Snapshot Process Payload**: `MemorySnapshot.processes: Vec<RawProcessRow>` and `MemorySnapshot.latest_spike: Option<MemorySpikeEvent>` are filled by the telemetry worker and consumed directly by the table.
+- **Own Working Set Measurement** (`src/modules/memory/collector.rs`): `own_working_set_mb()` reads `WorkingSetSize` via `K32GetProcessMemoryInfo(GetCurrentProcess(), …)`; the worker trims and measures its own working set before each snapshot.
+
+### Changed
+- **`src/app.rs`**: The Memory tab now routes through `page::render_memory_page(…)` with `memory_sub_view` and `table_state`; the app also trims its own working set after OpenGL startup (frame 3) and every 30 frames.
+- **`src/core/worker.rs`**: Collects the process table via `collect_process_memory()`, carries the latest `MemorySpikeEvent`, trims the working set, and reports `pulse_ram_mb` from `own_working_set_mb()`.
+- **`src/modules/memory/collector.rs`**: Process scan returns `(rows, spike)`; added the `own_working_set_mb()` measurement alongside `trim_own_working_set()`.
+- **`src/modules/memory/mod.rs`**: Registers `page`, `table_view`, `table_body`, and `table_widgets`.
+- **`src/ui/chrome.rs`**, **`src/modules/memory/view.rs`**, **`src/i18n.rs`**: Version/status text synced to v0.0.9 and locale keys aligned with the new sub-view and table labels.
+- **`Cargo.toml`**: Version bumped to `0.0.9`; release profile switched from `lto = "fat"` to `lto = "thin"` for faster release builds with comparable optimization.
+
+### Fixed
+- Table header sorting now toggles correctly per column, and the active column shows `▲`/`▼` with cyan emphasis.
+- RAM and RAM % cells use `load_color()`, so critical rows are visually red instead of plain text.
+- Selection state (`selected_pid`) is preserved across refreshes and highlighted per row.
+- The table-scroll height is derived from `ui.available_height()`, so the table fills the card on any window size instead of overflowing it.
+
+### Verified
+- **72 / 72 unit tests passing** (theme: 7, app: 10, core: 3, i18n: 10, memory model: 12, collector: 8, process model: 9, chart: 2, view: 2, page: 2, table view: 2, table body: 1, table widgets: 2, ui: 1, file size: 1).
+- `cargo fmt` clean; `cargo clippy -- -D warnings` — **0 warnings**; `SELF-TEST PASSED (LIVE GUI)`.
+- Visual verification: 180 live processes collapsed into 65 grouped rows, spike banner at **93.6%** naming `Resolve.exe [PID 14440] • 6.40 GiB`, plus working search, sorting, `[Nx]` grouping, and `⚠️ HOG` badges.
+- Release binary: `../PULSE_BUILDS/PULSE_v0.0.9_process_table.exe` + `PULSE_latest.exe` — **4,101,120 bytes (≈3.91 MiB)**, SHA-256 `F4A795AF550E11E6066691DC5559BC62A7711DD8D49793C10534AB41E427F245`.
+- Clean backup: `../PULSE_BACKUPS/v0.0.9_verified/`.
+
+---
+
 ## [v0.0.8] - 2026-11-02
 
 ### Added
@@ -228,18 +262,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Planned for v0.0.7
-- **Processes Module — Model** (`src/modules/processes/model.rs`): `ProcessEntry`, `GroupKey`, `ProcessGroup`.
-
-### Planned for v0.0.8
-- **Processes Module — Collector** (`src/modules/processes/collector.rs`): `sysinfo::Processes` snapshot + Windows enrichment (exe path, session, cmdline).
-
-### Planned for v0.0.9
-- **Processes Module — View** (`src/modules/processes/view.rs`): `egui_extras::TableBuilder` with monospace PID, grouping, search/filter.
+### Delivered in v0.0.7 – v0.0.9
+- **v0.0.7** — UI chrome extraction, auto-detected Windows locale, real system cache, full localization (see `[v0.0.7]`).
+- **v0.0.8** — process memory model, clone grouping, hog detector, multi-horizon chart, spike black box, self working-set trim (see `[v0.0.8]`).
+- **v0.0.9** — Mission Center sub-view switcher, virtualized process table, instant search, sortable columns, `⚠️ HOG` badges, spike banner (see `[0.0.9]`).
 
 ### Planned for v0.1.0 — Phase 1 Release: WinAPI RAM Purge
 - Integration of all Memory module components.
-- End-to-end test: RAM/Swap monitoring + cache cleanup working.
+- End-to-end test: RAM/Swap monitoring + safety-gated cache cleanup with a before/after reclamation audit.
+- Groundwork for the export-ready sanitized diagnostic report (`[REDACTED]` masking).
+- Incremental refactor of legacy modules toward the 180-line architectural limit.
 - `CHANGELOG.md` + `PULSE_AI_CONTEXT.md` updated.
 - Git tag `v0.1.0`.
 
