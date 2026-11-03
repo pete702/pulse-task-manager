@@ -7,7 +7,7 @@ use eframe::egui;
 
 use crate::core::{spawn_telemetry_worker, SystemSnapshot};
 use crate::i18n::Key;
-use crate::modules::memory::collector::trim_own_working_set;
+use crate::modules::memory::collector::{trim_current_process_working_set, trim_own_working_set};
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::page::{self, MemorySubView};
 use crate::modules::memory::table_view::MemoryTableState;
@@ -24,6 +24,8 @@ pub struct PulseApp {
     frame_count: u64,
     last_ui_ms: f32,
     memory_history: MemoryHistory,
+    /// Tracks previous minimized state for edge-triggered trim.
+    was_minimized: bool,
 }
 
 impl Default for PulseApp {
@@ -37,6 +39,7 @@ impl Default for PulseApp {
             frame_count: 0,
             last_ui_ms: 0.0,
             memory_history: MemoryHistory::new(),
+            was_minimized: false,
         }
     }
 }
@@ -120,6 +123,13 @@ impl eframe::App for PulseApp {
             .unwrap_or(0);
 
         let is_minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
+
+        // Edge-triggered minimize self-trim: only trim when transitioning TO minimized state
+        if is_minimized && !self.was_minimized {
+            trim_current_process_working_set();
+        }
+        self.was_minimized = is_minimized;
+
         if is_minimized {
             ctx.request_repaint_after(std::time::Duration::from_millis(1000));
             return;
@@ -129,6 +139,7 @@ impl eframe::App for PulseApp {
             chrome::render_top_panel(ui, &latest_snapshot, self.last_ui_ms);
         });
         egui::TopBottomPanel::bottom("bottom_status_bar")
+            .exact_height(26.0)
             .frame(crate::theme::status_bar_frame())
             .show(ctx, |ui| {
                 chrome::render_status_bar(ui, active_processes, &latest_snapshot);
@@ -139,9 +150,18 @@ impl eframe::App for PulseApp {
             .show(ctx, |ui| {
                 sidebar::render_sidebar(ui, &mut self.active_tab, &latest_snapshot);
             });
-        egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_central_panel(ui, &latest_snapshot);
-        });
+        egui::CentralPanel::default()
+            .frame(egui::Frame::none().inner_margin(egui::Margin {
+                left: 12.0,
+                right: 14.0,
+                top: 10.0,
+                bottom: 10.0,
+            }))
+            .show(ctx, |ui| {
+                // Hard clipping: no child widget can ever paint outside CentralPanel's bounds
+                ui.set_clip_rect(ui.max_rect());
+                self.render_central_panel(ui, &latest_snapshot);
+            });
 
         self.last_ui_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
         ctx.request_repaint_after(std::time::Duration::from_millis(1000));

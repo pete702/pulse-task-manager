@@ -3,6 +3,8 @@
 
 use std::collections::HashMap;
 
+use crate::util::format_timestamp_now;
+
 /// A single process memory entry for display and analysis.
 #[derive(Clone, Debug, Default, PartialEq)]
 #[allow(dead_code)]
@@ -14,6 +16,8 @@ pub struct ProcessMemoryItem {
     pub ram_pct: f32,
     pub process_count: usize,
     pub is_hog: bool,
+    /// Per-second working set delta (bytes/sec). Positive = growing (leak), negative = shrinking (reclaim).
+    pub delta_bytes_per_sec: i64,
 }
 
 /// Column for sorting process list.
@@ -55,6 +59,7 @@ impl ProcessMemoryItem {
             ram_pct,
             process_count: 1,
             is_hog: ram_pct >= 15.0,
+            delta_bytes_per_sec: 0,
         }
     }
 }
@@ -62,7 +67,7 @@ impl ProcessMemoryItem {
 /// Filters, groups (by name), and sorts process memory items.
 #[allow(dead_code)]
 pub fn filter_group_and_sort(
-    processes: &[(u32, String, u64, u64)],
+    processes: &[(u32, String, u64, u64, i64)],
     total_ram: u64,
     search: &str,
     group_clones: bool,
@@ -72,14 +77,24 @@ pub fn filter_group_and_sort(
     let search_lower = search.to_lowercase();
     let mut items: Vec<ProcessMemoryItem> = processes
         .iter()
-        .filter(|(pid, name, _, _)| {
+        .filter(|(pid, name, _, _, _)| {
             search.is_empty()
                 || search_lower == pid.to_string()
                 || name.to_lowercase().contains(&search_lower)
         })
-        .map(|(pid, name, ram_bytes, virtual_bytes)| {
-            ProcessMemoryItem::new(*pid, name.clone(), *ram_bytes, *virtual_bytes, total_ram)
-        })
+        .map(
+            |(pid, name, ram_bytes, virtual_bytes, delta_bytes_per_sec)| {
+                let mut item = ProcessMemoryItem::new(
+                    *pid,
+                    name.clone(),
+                    *ram_bytes,
+                    *virtual_bytes,
+                    total_ram,
+                );
+                item.delta_bytes_per_sec = *delta_bytes_per_sec;
+                item
+            },
+        )
         .collect();
     if group_clones {
         let mut grouped: HashMap<String, ProcessMemoryItem> = HashMap::new();
@@ -89,6 +104,9 @@ pub fn filter_group_and_sort(
                 .and_modify(|ex| {
                     ex.ram_bytes = ex.ram_bytes.saturating_add(item.ram_bytes);
                     ex.virtual_bytes = ex.virtual_bytes.saturating_add(item.virtual_bytes);
+                    ex.delta_bytes_per_sec = ex
+                        .delta_bytes_per_sec
+                        .saturating_add(item.delta_bytes_per_sec);
                     ex.process_count += 1;
                     ex.ram_pct = if total_ram > 0 {
                         (ex.ram_bytes as f64 / total_ram as f64 * 100.0) as f32
@@ -127,16 +145,16 @@ pub fn filter_group_and_sort(
 /// Detects memory spike events (RAM usage >= 85%).
 #[allow(dead_code)]
 pub fn detect_memory_spike(
-    processes: &[(u32, String, u64, u64)],
+    processes: &[(u32, String, u64, u64, i64)],
     total_ram: u64,
     current_ram_pct: f32,
 ) -> Option<MemorySpikeEvent> {
     if current_ram_pct < 85.0 || total_ram == 0 {
         return None;
     }
-    let culprit = processes.iter().max_by_key(|(_, _, rb, _)| *rb);
-    culprit.map(|(pid, name, rb, _)| MemorySpikeEvent {
-        timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+    let culprit = processes.iter().max_by_key(|(_, _, rb, _, _)| *rb);
+    culprit.map(|(pid, name, rb, _, _)| MemorySpikeEvent {
+        timestamp: format_timestamp_now(),
         peak_ram_pct: current_ram_pct,
         culprit_name: name.clone(),
         culprit_pid: *pid,

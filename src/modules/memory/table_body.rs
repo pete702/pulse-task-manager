@@ -2,13 +2,13 @@
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
 
+use crate::modules::memory::formatters::format_bytes;
 use crate::modules::memory::process_model::{MemorySortCol, ProcessMemoryItem};
 use crate::theme::colors;
 
 use super::table_view::MemoryTableState;
-use super::table_widgets::{format_bytes, header_labels};
+use super::table_widgets::header_labels;
 
-/// Renders the virtualized rows and sortable header.
 pub(super) fn render_table(
     ui: &mut egui::Ui,
     rows: &[ProcessMemoryItem],
@@ -16,6 +16,7 @@ pub(super) fn render_table(
     height: f32,
 ) {
     let labels = header_labels();
+    let max_body_height = (ui.available_height() - 48.0).max(60.0);
     let table = TableBuilder::new(ui)
         .striped(true)
         .resizable(true)
@@ -23,7 +24,7 @@ pub(super) fn render_table(
         .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
         .auto_shrink([false, false])
         .min_scrolled_height(height)
-        .max_scroll_height(height)
+        .max_scroll_height(max_body_height)
         .column(Column::remainder().at_least(180.0))
         .column(Column::initial(75.0))
         .column(Column::initial(120.0))
@@ -63,12 +64,28 @@ pub(super) fn render_table(
                 );
             });
             row.col(|ui| {
-                ui.label(
-                    egui::RichText::new(format_bytes(item.ram_bytes))
-                        .monospace()
-                        .size(11.0)
-                        .color(crate::theme::load_color(item.ram_pct)),
-                );
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format_bytes(item.ram_bytes))
+                            .monospace()
+                            .size(11.0)
+                            .color(crate::theme::load_color(item.ram_pct)),
+                    );
+                    if item.delta_bytes_per_sec.abs() >= 1_048_576 {
+                        let delta_mib = item.delta_bytes_per_sec as f64 / 1_048_576.0;
+                        let (symbol, color) = if item.delta_bytes_per_sec > 0 {
+                            ("▲", colors::ACCENT_AMBER)
+                        } else {
+                            ("▼", egui::Color32::from_rgb(0x00, 0xE0, 0x80))
+                        };
+                        ui.label(
+                            egui::RichText::new(format!(" {}{:+.1} M/s", symbol, delta_mib))
+                                .monospace()
+                                .size(9.0)
+                                .color(color),
+                        );
+                    }
+                });
             });
             row.col(|ui| {
                 ui.label(
@@ -111,7 +128,6 @@ fn render_name_cell(ui: &mut egui::Ui, item: &ProcessMemoryItem) {
         );
     }
     if item.is_hog {
-        // Use geometric ▲ HOG badge in a Frame instead of ⚠️ emoji
         egui::Frame::none()
             .fill(egui::Color32::from_rgb(0x3A, 0x10, 0x1D))
             .stroke(egui::Stroke::new(
@@ -153,27 +169,11 @@ fn sort_header(ui: &mut egui::Ui, text: &str, active: bool, asc: bool) -> bool {
     .clicked()
 }
 
-fn toggle_sort(state: &mut MemoryTableState, col: MemorySortCol) {
+pub(super) fn toggle_sort(state: &mut MemoryTableState, col: MemorySortCol) {
     if state.sort_col == col {
         state.sort_asc = !state.sort_asc;
     } else {
         state.sort_col = col;
         state.sort_asc = matches!(col, MemorySortCol::Name | MemorySortCol::Pid);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_toggle_sort() {
-        let mut s = MemoryTableState::default();
-        toggle_sort(&mut s, MemorySortCol::RamBytes);
-        assert!(s.sort_asc);
-        toggle_sort(&mut s, MemorySortCol::Name);
-        assert_eq!(s.sort_col, MemorySortCol::Name);
-        assert!(s.sort_asc);
-        toggle_sort(&mut s, MemorySortCol::Name);
-        assert!(!s.sort_asc);
     }
 }

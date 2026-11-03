@@ -11,8 +11,6 @@ impl Lang {
             (Lang::En, Key::AppTitle) => Some("⚡ PULSE // TELEMETRY"),
             (Lang::En, Key::VersionPrefix) => Some("v"),
             (Lang::En, Key::UptimeLabel) => Some("Uptime"),
-            (Lang::En, Key::SelfDiagLabel) => Some("Self-Diag"),
-            (Lang::En, Key::LocaleIndicator) => Some("Locale"),
 
             // Sidebar tabs (geometric Unicode symbols, no emoji)
             (Lang::En, Key::TabMemory) => Some("◈ Memory (RAM)"),
@@ -33,9 +31,6 @@ impl Lang {
 
             // Status bar
             (Lang::En, Key::StatusReady) => Some("● READY"),
-            (Lang::En, Key::StatusInfo) => {
-                Some("PULSE v0.0.11  |  Windows Kernel Monitor  |  Active Processes: {}")
-            }
 
             _ => None,
         }

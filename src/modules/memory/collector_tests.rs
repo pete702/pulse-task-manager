@@ -2,7 +2,9 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::modules::memory::collector::{collect_memory, collect_process_memory};
+    use crate::modules::memory::collector::{
+        collect_memory, collect_process_memory, ProcessDeltaTracker,
+    };
     use crate::modules::memory::win32_api::{own_working_set_mb, trim_own_working_set};
     use sysinfo::System;
 
@@ -82,9 +84,11 @@ mod tests {
     fn test_collect_process_memory() {
         let mut sys = System::new_all();
         let total_ram = sys.total_memory();
-        let (processes, _spike) = collect_process_memory(&mut sys, total_ram, 0.0);
+        let mut delta_tracker = ProcessDeltaTracker::new();
+        let (processes, _spike) =
+            collect_process_memory(&mut sys, total_ram, 0.0, &mut delta_tracker);
         assert!(!processes.is_empty(), "at least one process");
-        for (pid, name, ram_bytes, virtual_bytes) in processes {
+        for (pid, name, ram_bytes, virtual_bytes, _delta) in processes {
             if pid == 0 {
                 continue;
             }

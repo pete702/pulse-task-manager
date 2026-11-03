@@ -2,6 +2,7 @@
 
 use eframe::egui;
 
+use crate::modules::memory::formatters::format_bytes;
 use crate::modules::memory::process_model::MemorySpikeEvent;
 use crate::theme::colors;
 
@@ -96,35 +97,9 @@ pub(super) fn header_labels() -> [&'static str; 5] {
     ["Process", "PID", "Physical RAM", "Virtual", "RAM %"]
 }
 
-/// Formats bytes into a compact binary unit string.
-pub(super) fn format_bytes(bytes: u64) -> String {
-    const GIB: u64 = 1_073_741_824;
-    const MIB: u64 = 1_048_576;
-    const KIB: u64 = 1024;
-
-    if bytes >= GIB {
-        format!("{:.2} GiB", bytes as f64 / GIB as f64)
-    } else if bytes >= MIB {
-        format!("{:.2} MiB", bytes as f64 / MIB as f64)
-    } else if bytes >= KIB {
-        format!("{:.2} KiB", bytes as f64 / KIB as f64)
-    } else {
-        format!("{bytes} B")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_format_bytes_table() {
-        assert_eq!(format_bytes(1_073_741_824), "1.00 GiB");
-        assert_eq!(format_bytes(1_048_576), "1.00 MiB");
-        assert_eq!(format_bytes(1024), "1.00 KiB");
-        assert_eq!(format_bytes(512), "512 B");
-        assert_eq!(format_bytes(0), "0 B");
-    }
 
     #[test]
     fn test_header_labels_localized() {

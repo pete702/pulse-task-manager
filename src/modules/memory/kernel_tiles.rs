@@ -3,25 +3,9 @@
 use eframe::egui;
 
 use crate::i18n::Key;
+use crate::modules::memory::formatters::format_bytes;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::theme::{card_frame, colors};
-
-/// Formats bytes into human-readable string (GiB/MiB/KiB)
-pub fn format_bytes(bytes: u64) -> String {
-    const GIB: u64 = 1_073_741_824;
-    const MIB: u64 = 1_048_576;
-    const KIB: u64 = 1024;
-
-    if bytes >= GIB {
-        format!("{:.2} GiB", bytes as f64 / GIB as f64)
-    } else if bytes >= MIB {
-        format!("{:.2} MiB", bytes as f64 / MIB as f64)
-    } else if bytes >= KIB {
-        format!("{:.2} KiB", bytes as f64 / KIB as f64)
-    } else {
-        format!("{} B", bytes)
-    }
-}
 
 /// Renders a single kernel metrics tile with fixed dimensions to prevent wrapping.
 fn render_tile(
@@ -92,10 +76,7 @@ pub fn render_kernel_tiles(ui: &mut egui::Ui, mem: &MemorySnapshot) {
                 Key::KernelPool.t(),
                 &format_bytes(mem.kernel_paged_bytes + mem.kernel_nonpaged_bytes),
                 colors::ACCENT_AMBER,
-                &format!(
-                    "Paged: {:.0} MiB • Non-Paged: {:.0} MiB",
-                    paged_mib, nonpaged_mib
-                ),
+                &format!("Paged: {:.0}M • Non-Paged: {:.0}M", paged_mib, nonpaged_mib),
             );
         });
 
@@ -135,20 +116,4 @@ pub fn render_kernel_tiles(ui: &mut egui::Ui, mem: &MemorySnapshot) {
             );
         });
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_format_bytes() {
-        assert_eq!(format_bytes(1_073_741_824), "1.00 GiB");
-        assert_eq!(format_bytes(1_048_576), "1.00 MiB");
-        assert_eq!(format_bytes(1024), "1.00 KiB");
-        assert_eq!(format_bytes(512), "512 B");
-        assert_eq!(format_bytes(0), "0 B");
-        assert_eq!(format_bytes(2_147_483_648), "2.00 GiB");
-        assert_eq!(format_bytes(5_368_709_120), "5.00 GiB");
-    }
 }

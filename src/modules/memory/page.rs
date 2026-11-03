@@ -2,7 +2,6 @@
 
 use eframe::egui;
 
-use crate::modules::memory::chart_view;
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::modules::memory::table_view::{render_memory_table, MemoryTableState};
@@ -67,8 +66,6 @@ pub fn render_memory_page(
     match *sub_view {
         MemorySubView::Overview => {
             view::render_memory_cards(ui, mem, history);
-            ui.add_space(12.0);
-            chart_view::render_memory_chart(ui, history);
         }
         MemorySubView::Processes => {
             render_compact_ram_bar(ui, mem);

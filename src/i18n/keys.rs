@@ -8,8 +8,6 @@ pub enum Key {
     AppTitle,
     VersionPrefix,
     UptimeLabel,
-    SelfDiagLabel,
-    LocaleIndicator,
 
     // Sidebar tabs
     TabMemory,
@@ -28,11 +26,11 @@ pub enum Key {
 
     // Status bar
     StatusReady,
-    StatusInfo,
 
     // Memory module - Card headers
     PhysicalRamTitle,
     SwapCommitTitle,
+    MemoryCompositionTitle,
 
     // Memory module - Grid labels (Card 1: RAM)
     UsedTotal,
@@ -46,7 +44,6 @@ pub enum Key {
     CommitPercent,
 
     // Kernel mini-tiles
-    SystemCache,
     KernelPool,
     CommitCharge,
     OsActivityTitle,
@@ -55,28 +52,4 @@ pub enum Key {
     MemoryHistoryTitle,
     RamPercent,
     SwapPercent,
-
-    // Memory module - legacy keys (keep for backward compat)
-    MemoryTotal,
-    MemoryAvailable,
-    MemoryUsed,
-    SwapTotal,
-    SwapUsed,
-    SwapFree,
-    ClearCacheButton,
-    CacheCleared,
-    CacheClearFailed,
-
-    // Process module (v0.0.8+)
-    ProcessTitle,
-    ProcessSearch,
-    ProcessGrouped,
-    ProcessName,
-    ProcessPid,
-    ProcessRam,
-    ProcessVirtual,
-    ProcessPct,
-    ProcessCount,
-    ProcessHog,
-    ProcessSpikeEvent,
 }

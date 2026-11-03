@@ -62,7 +62,6 @@ fn test_i18n_keys() {
     assert_eq!(Key::AppTitle.t(), "⚡ PULSE // TELEMETRY");
     assert_eq!(Key::VersionPrefix.t(), "v");
     assert_eq!(Key::UptimeLabel.t(), "Uptime");
-    assert_eq!(Key::SelfDiagLabel.t(), "Self-Diag");
     assert_eq!(
         Key::AwaitingMemoryModel.t(),
         "Telemetry core active. Awaiting memory model..."

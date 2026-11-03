@@ -1,10 +1,10 @@
-//! Rich Telemetry Sidebar for PULSE — Obsidian HUD Mini-Cards.
+//! Rich Telemetry Sidebar for PULSE — Obsidian HUD Navigation Cards.
 
 use crate::core::SystemSnapshot;
 use crate::theme::colors;
 use eframe::egui;
 
-/// Renders the left sidebar with rich telemetry mini-cards.
+/// Renders the left sidebar with rich navigation mini-cards.
 pub fn render_sidebar(
     ui: &mut egui::Ui,
     active_tab: &mut crate::app_tabs::ActiveTab,
@@ -16,27 +16,13 @@ pub fn render_sidebar(
         let tabs = crate::app_tabs::ActiveTab::all();
         for tab in tabs {
             let is_active = *active_tab == *tab;
-            let btn_text = tab.label();
-
-            // Build display text for Memory tab with live RAM %
-            let display_text = if *tab == crate::app_tabs::ActiveTab::Memory {
-                if let Some(ref snapshot) = latest_snapshot {
-                    if let Some(ref mem) = snapshot.memory {
-                        format!("{} [{:.0}%]", btn_text, mem.ram_usage_percent())
-                    } else {
-                        btn_text.to_string()
-                    }
-                } else {
-                    btn_text.to_string()
-                }
-            } else {
-                btn_text.to_string()
-            };
+            let title = tab.label();
 
             // Determine card colors based on active state
-            let (bg_color, border_color, text_color) = if is_active {
+            let (bg_color, border_color, accent_color, text_color) = if is_active {
                 (
                     egui::Color32::from_rgb(0x16, 0x1F, 0x2E),
+                    colors::ACCENT_CYAN,
                     colors::ACCENT_CYAN,
                     colors::TEXT_PRIMARY,
                 )
@@ -44,16 +30,19 @@ pub fn render_sidebar(
                 (
                     egui::Color32::from_rgb(0x12, 0x14, 0x1C),
                     colors::BORDER,
-                    colors::TEXT_SECONDARY,
+                    egui::Color32::TRANSPARENT,
+                    egui::Color32::from_rgb(0x94, 0xA3, 0xB8), // #94A3B8 - readable inactive
                 )
             };
 
-            let card_width = 186.0;
-            let card_height = 38.0;
+            let card_height = 42.0;
+            let available_width = ui.available_width();
 
-            // Render as custom card using interact() for click handling (no ugly button fill)
-            let (rect, response) =
-                ui.allocate_exact_size(egui::vec2(card_width, card_height), egui::Sense::click());
+            // Render as custom card using interact() for click handling
+            let (rect, response) = ui.allocate_exact_size(
+                egui::vec2(available_width, card_height),
+                egui::Sense::click(),
+            );
 
             // Draw card background & border
             ui.painter()
@@ -64,111 +53,50 @@ pub fn render_sidebar(
                 egui::Stroke::new(1.0_f32, border_color),
             );
 
-            // Card content
-            ui.allocate_ui_at_rect(rect, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(4.0);
+            // Draw left accent bar for active tab
+            if is_active {
+                let accent_rect = egui::Rect::from_min_max(
+                    egui::pos2(rect.left(), rect.top()),
+                    egui::pos2(rect.left() + 3.0, rect.bottom()),
+                );
+                ui.painter()
+                    .rect_filled(accent_rect, egui::Rounding::same(6.0), accent_color);
+            }
 
-                    // Memory tab gets special multi-row treatment
-                    if *tab == crate::app_tabs::ActiveTab::Memory {
-                        if let Some(ref snapshot) = latest_snapshot {
-                            if let Some(ref mem) = snapshot.memory {
-                                // Row 1: Title + live RAM %
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(btn_text)
-                                            .monospace()
-                                            .size(13.0)
-                                            .color(text_color),
-                                    );
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |ui| {
-                                            let pct = mem.ram_usage_percent();
-                                            let color = crate::theme::load_color(pct);
-                                            ui.label(
-                                                egui::RichText::new(format!("{:.0}%", pct))
-                                                    .monospace()
-                                                    .size(13.0)
-                                                    .color(color),
-                                            );
-                                        },
-                                    );
-                                });
-                                ui.add_space(2.0);
+            // Paint tab title at LEFT_CENTER
+            let title_pos = egui::pos2(rect.left() + 14.0, rect.center().y);
+            ui.painter().text(
+                title_pos,
+                egui::Align2::LEFT_CENTER,
+                title,
+                egui::FontId::monospace(13.0),
+                text_color,
+            );
 
-                                // Row 2: Mini progress bar
-                                let pct = mem.ram_usage_percent() / 100.0;
-                                let bar_color = crate::theme::load_color(mem.ram_usage_percent());
-                                ui.add(
-                                    egui::ProgressBar::new(pct)
-                                        .fill(bar_color)
-                                        .animate(false)
-                                        .rounding(egui::Rounding::same(2.0))
-                                        .desired_width(160.0)
-                                        .show_percentage(),
-                                );
-                                ui.add_space(1.0);
-
-                                // Row 3: Subtitle
-                                let used_gib = mem.ram_used_gib();
-                                let total_gib = mem.ram_total_gib();
-                                let commit_pct = if mem.commit_limit_bytes > 0 {
-                                    (mem.commit_total_bytes as f64 / mem.commit_limit_bytes as f64
-                                        * 100.0) as f32
-                                } else {
-                                    0.0
-                                };
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "{:.2} / {:.2} GiB • Commit {:.0}%",
-                                        used_gib, total_gib, commit_pct
-                                    ))
-                                    .monospace()
-                                    .size(10.0)
-                                    .color(colors::TEXT_SECONDARY),
-                                );
-                            } else {
-                                // Fallback if no memory data
-                                ui.label(
-                                    egui::RichText::new(display_text)
-                                        .monospace()
-                                        .size(13.0)
-                                        .color(text_color),
-                                );
-                            }
-                        } else {
-                            // Other tabs: single row with subtitle
-                            ui.label(
-                                egui::RichText::new(display_text)
-                                    .monospace()
-                                    .size(13.0)
-                                    .color(text_color),
-                            );
-                            ui.add_space(2.0);
-                            let subtitle = match tab {
-                                crate::app_tabs::ActiveTab::Cpu => "Telemetry: Phase 2",
-                                crate::app_tabs::ActiveTab::Storage => "Telemetry: Phase 3",
-                                crate::app_tabs::ActiveTab::Network => "Telemetry: Phase 3",
-                                crate::app_tabs::ActiveTab::System => "Telemetry: Phase 3",
-                                _ => "",
-                            };
-                            if !subtitle.is_empty() {
-                                ui.label(
-                                    egui::RichText::new(subtitle)
-                                        .monospace()
-                                        .size(10.0)
-                                        .color(colors::TEXT_SECONDARY),
-                                );
-                            }
-                        }
+            // Paint live RAM % badge on Memory tab at RIGHT_CENTER
+            if *tab == crate::app_tabs::ActiveTab::Memory {
+                if let Some(ref snapshot) = latest_snapshot {
+                    if let Some(ref mem) = snapshot.memory {
+                        let ram_pct = mem.ram_usage_percent();
+                        let pct_color = crate::theme::load_color(ram_pct);
+                        let pct_text = format!("{:.0}%", ram_pct);
+                        let pct_pos = egui::pos2(rect.right() - 12.0, rect.center().y);
+                        ui.painter().text(
+                            pct_pos,
+                            egui::Align2::RIGHT_CENTER,
+                            pct_text,
+                            egui::FontId::monospace(13.0),
+                            pct_color,
+                        );
                     }
-                });
-            });
+                }
+            }
 
             if response.clicked() {
                 *active_tab = *tab;
             }
+
+            ui.add_space(6.0);
         }
     });
 }

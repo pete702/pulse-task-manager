@@ -1,86 +1,57 @@
-# ⚡ PULSE — Featherweight Task Manager & Hardware HUD for Windows
+# ⚡ PULSE — Windows Memory & Process Telemetry HUD
 
-![Version](https://img.shields.io/badge/version-v0.0.11-00F0FF)
-![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20(x64)-1F2330)
-![Engine](https://img.shields.io/badge/engine-Rust%20%2B%20egui-00F0FF)
-![Safety](https://img.shields.io/badge/safety-100%25%20Anti--Cheat%20Safe-00F0FF)
+A native Windows 10/11 task manager in Rust + `egui` that shows RAM composition, real-time per-process memory growth (`Δ RAM/s`), and which process caused a sudden memory spike.
 
-> **Built for Gamers, Video Editors, and Power Users who want instant hardware clarity without background bloat.**
+**[📥 Download Latest Portable .exe (Windows 10/11 x64)](https://github.com/pete702/pulse-task-manager/releases/latest)**
 
-![PULSE Obsidian HUD](screenshot.png)
+[![CI](https://github.com/pete702/pulse-task-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/pete702/pulse-task-manager/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform: Windows 10/11 x64](https://img.shields.io/badge/Platform-Windows%2010%2F11%20x64-0078D4.svg)](https://github.com/pete702/pulse-task-manager/releases)
 
----
+![PULSE Telemetry HUD](assets/screenshot.png)
 
-## ✨ Why PULSE?
+## Why PULSE?
 
-| Feature | What It Means for You |
-|---------|----------------------|
-| **Featherweight by Design** | Single portable `.exe`. Runs on strictly **2 threads** (no heavy thread pools) with **0% GPU/CPU usage when minimized**, leaving 100% of your PC's power for your games and renders. |
-| **100% Anti-Cheat Safe** | Zero DLL injection, zero DirectX hooks, and zero kernel drivers. Completely safe to run alongside **Vanguard, EasyAntiCheat, BattlEye, and Ricochet**. |
-| **Catches What Task Manager Misses** | Built-in **Memory Spike Blackbox** records the exact process that caused a sudden RAM surge, while the **System Jitter Probe** detects Windows kernel micro-stutters in real time. |
-| **Automatic Workload Detection** | Automatically detects whether your PC is in **Desktop Idle**, **Workstation Load**, or **Gaming / Heavy App** mode (e.g., DaVinci Resolve or AAA games). |
-| **Clean "Obsidian HUD" Interface** | High-contrast dark theme with traffic-light load indicators (Cyan / Amber / Crimson) and instant process clone grouping (`chrome.exe [33x]`). |
+Standard Windows Task Manager shows total RAM usage, but rarely tells you **which process** caused a sudden memory jump or how much of your used memory is actually reclaimable OS Standby Cache.
 
----
+PULSE provides a dark-mode telemetry HUD with a **Memory Spike Blackbox**, a **3-Segment RAMMap Composition Bar**, and a **Real-Time Leak Hunter (`Δ RAM/s`)**.
 
-## 📊 PULSE vs. Traditional Monitors
+## Feature Status (`v0.0.12`)
 
-| Capability | Windows Task Manager | Heavy Gaming Overlays | **PULSE** |
-|------------|---------------------|----------------------|-----------|
-| Background Footprint | ~30–50 MB, 4+ threads | ~100–200 MB, hooks into games | **~4.4 MB, 2 threads** |
-| Anti-Cheat Safety (Zero DLL Hooks) | ✅ Native | ❌ Often flagged | ✅ **Zero hooks, 100% safe** |
-| Process Clone Grouping `[Nx]` | ❌ | ❌ | ✅ **Instant grouping** |
-| Memory Spike Blackbox & OS Jitter Probe | ❌ | ❌ | ✅ **Built-in** |
-| Portable Single `.exe` (No Installer) | ❌ System app | ❌ Installer required | ✅ **Portable, no install** |
+| Subsystem / Feature | Status | Details |
+| :--- | :--- | :--- |
+| **Physical RAM & Swap/Pagefile** | **Implemented ✅** | Live usage bars, commit charge, and pressure verdicts |
+| **Win32 Kernel Pool Telemetry** | **Implemented ✅** | Paged Pool, Non-Paged Pool, Standby Cache via `K32GetPerformanceInfo` |
+| **3-Segment RAM Composition Bar** | **Implemented ✅** | Visual breakdown of `In Use`, `Standby Cache`, and `Free` RAM |
+| **Virtualized Process Table** | **Implemented ✅** | `Ctrl+F` search, `Esc` clear, `[Nx]` clone grouping, `▲ HOG` badges |
+| **Real-Time Leak Hunter (`Δ RAM/s`)** | **Implemented ✅** | Per-process working-set delta (`▲ +M/s` / `▼ -M/s`) updated at 1 Hz |
+| **Memory Spike Blackbox & Chart** | **Implemented ✅** | Records culprit PID/process on RAM jumps; `1m/5m/15m` chart with 85% line |
+| **1-Click Safe RAM Purge & Actions** | *Planned (`v0.1.0`) 🔄* | Working-set purge with Before/After audit, trim selected, end task |
+| **Processor (CPU) & EcoQoS** | *Planned (`v0.2.0`) 🔄* | Per-core grid, single-core bottleneck detector, Win32 EcoQoS toggle |
+| **Storage & Disk I/O Freeze Hunter** | *Planned (`v0.3.0`) 🔄* | Volume capacity bars and per-process read/write MB/s table |
+| **Network & Ping/Jitter Radar** | *Planned (`v0.4.0`) 🔄* | Adapter throughput and non-blocking TCP latency/jitter probe |
+| **DXGI Multi-GPU & System Report** | *Planned (`v0.5.0`) 🔄* | Dedicated/Shared VRAM via `IDXGIAdapter3` and sanitized Markdown report |
 
----
+## Technical Characteristics
 
-## 🚀 Quick Start
+- **Single Portable Executable**: Standalone `.exe` (`~3.9 MiB` binary size on disk), no installer, no background service.
+- **Live Self-Diagnostics**: PULSE displays its own real-time memory working set and UI frame time directly in the top header badge (`[ PULSE: XX.X MB | UI: X.XX ms ]`).
+- **Decoupled 1 Hz Collector**: Main `egui` UI thread + single background telemetry worker thread (`std::sync::mpsc`) with 1 Hz process table row caching.
+- **Minimize Hibernation**: UI rendering pauses while minimized and triggers a one-time working-set self-trim (`K32EmptyWorkingSet`).
+- **User-Mode Only**: Uses standard Win32 APIs (`K32GetPerformanceInfo`, `sysinfo`); no kernel drivers, no DLL injection, and no hooks into other processes.
 
-### Download & Run (Recommended)
-1. Go to **[Releases](https://github.com/pulse-manager/pulse_manager/releases)**
-2. Download `PULSE_v0.0.11_modularity_memory.exe` (or `PULSE_latest.exe`)
-3. Double-click — no installation needed
+## Keyboard Shortcuts
 
-### From Source
-```bash
-git clone https://github.com/pulse-manager/pulse_manager
-cd pulse_manager
+- `Ctrl + F` — Focus process search filter
+- `Esc` — Clear search filter and reset focus
+
+## Build from Source
+
+Requires Rust `1.78+` on Windows 10/11 (x64 MSVC toolchain):
+
+```powershell
+git clone https://github.com/pete702/pulse-task-manager.git
+cd pulse-task-manager
 cargo run --release
-```
-
-### Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl + F` | Instant search by Process Name or PID (switches to Memory → Processes) |
-| `Esc` | Clear search filter |
-
----
-
-## 🗺️ Product Roadmap
-
-| Phase | Target | Focus |
-|-------|--------|-------|
-| **1** | **v0.1.0** | Memory Telemetry, Spike Blackbox & **1-Click Safe RAM Purge** *(Current — v0.0.11)* |
-| **2** | v0.2.0 | CPU Per-Core Heatmap, Single-Thread Bottleneck Detector & EcoQoS Mode |
-| **3** | v0.3.0 | Storage & Disk I/O Freeze Hunter |
-| **4** | v0.4.0 | Network Throughput & Esports Ping/Jitter Radar |
-| **5** | v0.5.0 | Multi-GPU VRAM Telemetry & 1-Click Sanitized System Report |
-| **6** | **v1.0.0** | Always-On-Top Tactical Mini-HUD (F10) & External Language Packs |
-
----
-
-## 🛠️ For Developers
-
-- **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) — module tree, 2-thread design, safety gates, NVIDIA Agent Skills patterns
-- **Changelog:** [CHANGELOG.md](CHANGELOG.md) — detailed version history
-- **Core Crates:** `eframe` 0.27.2, `egui` 0.27.2, `egui_plot` 0.27.2, `egui_extras` 0.27.2, `sysinfo` 0.30.12 (`default-features = false`), `windows-sys` 0.52.0
-- **Build:** `cargo build --release` (thin LTO, strip=symbols, panic=abort)
-- **Tests:** `cargo test` (72+ unit tests, architectural guards for file size & zero Cyrillic)
-
----
-
-## 📜 License
-
-MIT License — see [LICENSE](LICENSE) for details.
+License
+Open-Source under the MIT License.

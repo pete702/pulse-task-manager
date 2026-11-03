@@ -9,6 +9,7 @@ use sysinfo::System;
 
 use crate::core::{SnapshotTx, SystemSnapshot};
 use crate::modules::memory::collector::{collect_memory, collect_process_memory};
+use crate::modules::memory::delta_tracker::ProcessDeltaTracker;
 use crate::modules::memory::win32_api::{own_working_set_mb, trim_own_working_set};
 
 /// Telemetry update interval (1000 ms = 1 second for 15-minute chart horizon).
@@ -28,6 +29,7 @@ pub fn spawn() -> mpsc::Receiver<SystemSnapshot> {
     thread::spawn(move || {
         let mut sys = System::new();
         let mut latest_spike = None;
+        let mut delta_tracker = ProcessDeltaTracker::new();
 
         // Trim working set ONCE at startup (before the loop) to avoid page-fault thrashing
         // while the GUI window is open. Periodic trimming causes page-fault storms when
@@ -43,6 +45,7 @@ pub fn spawn() -> mpsc::Receiver<SystemSnapshot> {
                 &mut sys,
                 memory.ram_total_bytes,
                 memory.ram_usage_percent(),
+                &mut delta_tracker,
             );
             memory.processes = processes;
             if spike.is_some() {

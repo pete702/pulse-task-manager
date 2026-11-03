@@ -3,7 +3,7 @@
 use eframe::egui;
 
 use crate::i18n::Key;
-use crate::modules::memory::kernel_tiles::format_bytes;
+use crate::modules::memory::formatters::format_bytes;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::theme::{card_frame, colors};
 

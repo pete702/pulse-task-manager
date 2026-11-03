@@ -4,15 +4,9 @@
 
 use sysinfo::{ProcessRefreshKind, System, UpdateKind};
 
+use crate::modules::memory::delta_tracker::{ProcessDeltaTracker, ProcessMemoryScan};
 use crate::modules::memory::model::MemorySnapshot;
-use crate::modules::memory::process_model::MemorySpikeEvent;
 use crate::modules::memory::win32_api::{collect_windows_kernel_metrics, KernelMetrics};
-
-/// Row of raw process memory data: (PID, name, RAM bytes, virtual bytes).
-pub type RawProcessRow = (u32, String, u64, u64);
-
-/// Result of a process memory collection pass.
-pub type ProcessMemoryScan = (Vec<RawProcessRow>, Option<MemorySpikeEvent>);
 
 /// Collects current system memory state into a `MemorySnapshot`.
 ///
@@ -56,13 +50,14 @@ pub fn collect_memory(sys: &mut System) -> MemorySnapshot {
 
 /// Collects process memory information for the process list view.
 ///
-/// Returns a vector of (PID, name, RAM bytes, virtual bytes) tuples,
+/// Returns a vector of (PID, name, RAM bytes, virtual bytes, delta bytes/sec) tuples,
 /// and optionally detects memory spike events (RAM >= 85%).
 #[allow(dead_code)]
 pub fn collect_process_memory(
     sys: &mut System,
     total_ram: u64,
     current_ram_pct: f32,
+    delta_tracker: &mut ProcessDeltaTracker,
 ) -> ProcessMemoryScan {
     // Refresh process list with memory info only; skip exe path re-query on each cycle
     sys.refresh_processes_specifics(
@@ -71,7 +66,7 @@ pub fn collect_process_memory(
             .with_exe(UpdateKind::OnlyIfNotSet),
     );
 
-    let processes: Vec<RawProcessRow> = sys
+    let processes: Vec<(u32, String, u64, u64)> = sys
         .processes()
         .iter()
         .map(|(pid, process)| {
@@ -85,16 +80,21 @@ pub fn collect_process_memory(
         })
         .collect();
 
+    // Track deltas
+    let processes_with_delta = delta_tracker.track(&processes);
+
     // Detect memory spike using system-wide RAM usage (not the last process).
     let spike = crate::modules::memory::process_model::detect_memory_spike(
-        &processes,
+        &processes_with_delta,
         total_ram,
         current_ram_pct,
     );
 
-    (processes, spike)
+    (processes_with_delta, spike)
 }
 
 // Re-export Win32 API functions for backward compatibility
 #[allow(unused_imports)]
-pub use crate::modules::memory::win32_api::{own_working_set_mb, trim_own_working_set};
+pub use crate::modules::memory::win32_api::{
+    own_working_set_mb, trim_current_process_working_set, trim_own_working_set,
+};

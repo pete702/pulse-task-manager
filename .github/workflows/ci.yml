@@ -43,6 +43,8 @@ jobs:
       - name: Run cargo check
         run: cargo check --all-targets
 
+      - name: Documentation Guard
+        run: cargo test --test docs_guard
       - name: Run unit tests
         run: cargo test --all-targets
 

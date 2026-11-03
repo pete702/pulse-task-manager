@@ -21,3 +21,16 @@ pub fn format_uptime(secs: u64) -> String {
 
     parts.join(" ")
 }
+
+/// Formats current system time as HH:MM:SS using std::time (no chrono dependency).
+pub fn format_timestamp_now() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = now.as_secs();
+    let hours = (secs / 3600) % 24;
+    let mins = (secs / 60) % 60;
+    let secs = secs % 60;
+    format!("{:02}:{:02}:{:02}", hours, mins, secs)
+}

@@ -22,6 +22,7 @@ mod tests {
         assert!((item.ram_pct - 6.25).abs() < 0.01);
         assert_eq!(item.process_count, 1);
         assert!(!item.is_hog);
+        assert_eq!(item.delta_bytes_per_sec, 0);
     }
 
     #[test]
@@ -39,9 +40,9 @@ mod tests {
     #[test]
     fn test_group_clones() {
         let procs = vec![
-            (100, "chrome.exe".into(), 500_000_000, 1_000_000_000),
-            (101, "chrome.exe".into(), 300_000_000, 800_000_000),
-            (102, "firefox.exe".into(), 800_000_000, 1_500_000_000),
+            (100, "chrome.exe".into(), 500_000_000, 1_000_000_000, 0),
+            (101, "chrome.exe".into(), 300_000_000, 800_000_000, 0),
+            (102, "firefox.exe".into(), 800_000_000, 1_500_000_000, 0),
         ];
         let res = filter_group_and_sort(
             &procs,
@@ -64,9 +65,9 @@ mod tests {
     #[test]
     fn test_search_filter_by_name() {
         let procs = vec![
-            (100, "chrome.exe".into(), 500_000_000, 1_000_000_000),
-            (101, "firefox.exe".into(), 800_000_000, 1_500_000_000),
-            (102, "notepad.exe".into(), 50_000_000, 100_000_000),
+            (100, "chrome.exe".into(), 500_000_000, 1_000_000_000, 0),
+            (101, "firefox.exe".into(), 800_000_000, 1_500_000_000, 0),
+            (102, "notepad.exe".into(), 50_000_000, 100_000_000, 0),
         ];
         let ram = 16_000_000_000;
         let r = filter_group_and_sort(&procs, ram, "chrome", false, MemorySortCol::RamBytes, false);
@@ -80,8 +81,8 @@ mod tests {
     #[test]
     fn test_search_filter_by_pid() {
         let procs = vec![
-            (100, "chrome.exe".into(), 500_000_000, 1_000_000_000),
-            (101, "firefox.exe".into(), 800_000_000, 1_500_000_000),
+            (100, "chrome.exe".into(), 500_000_000, 1_000_000_000, 0),
+            (101, "firefox.exe".into(), 800_000_000, 1_500_000_000, 0),
         ];
         let r = filter_group_and_sort(
             &procs,
@@ -99,9 +100,9 @@ mod tests {
     #[test]
     fn test_sort_by_ram_pct_desc() {
         let procs = vec![
-            (100, "small.exe".into(), 100_000_000, 200_000_000),
-            (101, "large.exe".into(), 1_000_000_000, 2_000_000_000),
-            (102, "medium.exe".into(), 500_000_000, 1_000_000_000),
+            (100, "small.exe".into(), 100_000_000, 200_000_000, 0),
+            (101, "large.exe".into(), 1_000_000_000, 2_000_000_000, 0),
+            (102, "medium.exe".into(), 500_000_000, 1_000_000_000, 0),
         ];
         let r = filter_group_and_sort(
             &procs,
@@ -118,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_detect_memory_spike_no_spike() {
-        let procs = vec![(100, "chrome.exe".into(), 500_000_000, 1_000_000_000)];
+        let procs = vec![(100, "chrome.exe".into(), 500_000_000, 1_000_000_000, 0)];
         let r = crate::modules::memory::process_model::detect_memory_spike(
             &procs,
             16_000_000_000,
@@ -130,8 +131,8 @@ mod tests {
     #[test]
     fn test_detect_memory_spike_detected() {
         let procs = vec![
-            (100, "chrome.exe".into(), 500_000_000, 1_000_000_000),
-            (101, "heavy.exe".into(), 12_000_000_000, 14_000_000_000),
+            (100, "chrome.exe".into(), 500_000_000, 1_000_000_000, 0),
+            (101, "heavy.exe".into(), 12_000_000_000, 14_000_000_000, 0),
         ];
         let r = crate::modules::memory::process_model::detect_memory_spike(
             &procs,
@@ -149,8 +150,8 @@ mod tests {
     #[test]
     fn test_sort_by_name_asc() {
         let procs = vec![
-            (100, "zebra.exe".into(), 100_000_000, 200_000_000),
-            (101, "alpha.exe".into(), 500_000_000, 1_000_000_000),
+            (100, "zebra.exe".into(), 100_000_000, 200_000_000, 0),
+            (101, "alpha.exe".into(), 500_000_000, 1_000_000_000, 0),
         ];
         let r = filter_group_and_sort(&procs, 16_000_000_000, "", false, MemorySortCol::Name, true);
         assert_eq!(r[0].name, "alpha.exe");

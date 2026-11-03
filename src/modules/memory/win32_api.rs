@@ -120,3 +120,18 @@ pub fn own_working_set_mb() -> f32 {
 pub fn own_working_set_mb() -> f32 {
     0.0
 }
+
+/// Trims the working set of the current process using K32EmptyWorkingSet.
+/// Alias for `trim_own_working_set` with clearer intent for on-minimize trim.
+#[cfg(target_os = "windows")]
+#[allow(dead_code)]
+pub fn trim_current_process_working_set() -> bool {
+    trim_own_working_set()
+}
+
+/// Non-Windows fallback.
+#[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
+pub fn trim_current_process_working_set() -> bool {
+    false
+}

@@ -71,10 +71,7 @@ fn generate_icon() -> Arc<egui::IconData> {
 }
 
 fn main() -> eframe::Result<()> {
-    // Initialize tracing logger and panic hook
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    // Initialize panic hook
     std::panic::set_hook(Box::new(|info| {
         eprintln!("PANIC: {}", info);
     }));

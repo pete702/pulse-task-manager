@@ -2,19 +2,8 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::modules::memory::kernel_tiles::format_bytes;
+    use crate::modules::memory::formatters::format_bytes;
     use crate::modules::memory::model::MemorySnapshot;
-
-    #[test]
-    fn test_format_bytes() {
-        assert_eq!(format_bytes(1_073_741_824), "1.00 GiB");
-        assert_eq!(format_bytes(1_048_576), "1.00 MiB");
-        assert_eq!(format_bytes(1024), "1.00 KiB");
-        assert_eq!(format_bytes(512), "512 B");
-        assert_eq!(format_bytes(0), "0 B");
-        assert_eq!(format_bytes(2_147_483_648), "2.00 GiB");
-        assert_eq!(format_bytes(5_368_709_120), "5.00 GiB");
-    }
 
     #[test]
     fn test_render_memory_cards_no_panic() {

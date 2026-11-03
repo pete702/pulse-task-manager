@@ -80,8 +80,8 @@ pub struct MemorySnapshot {
     pub ram_cached_bytes_override: u64,
 
     // ===== v0.0.9: Process table data =====
-    /// Process memory rows: (PID, name, physical RAM bytes, virtual bytes).
-    pub processes: Vec<(u32, String, u64, u64)>,
+    /// Process memory rows: (PID, name, physical RAM bytes, virtual bytes, delta bytes/sec).
+    pub processes: Vec<(u32, String, u64, u64, i64)>,
     /// Most recent memory spike (RAM >= 85%), kept as a "black box" event.
     pub latest_spike: Option<MemorySpikeEvent>,
 }

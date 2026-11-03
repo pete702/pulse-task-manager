@@ -41,7 +41,7 @@ pub fn render_status_bar(
                 let any_heavy_process = mem
                     .processes
                     .iter()
-                    .any(|(_, _, ram, _)| *ram >= (2560_u64 << 20)); // 2.5 GiB
+                    .any(|(_, _, ram, _, _)| *ram >= (2560_u64 << 20)); // 2.5 GiB
                 let total_ram_pct = mem.ram_usage_percent();
                 if any_heavy_process {
                     ("[ ◈ MODE: GAMING / HEAVY APP ]", colors::ACCENT_RED)
