@@ -35,7 +35,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Check formatting
-        run: cargo fmt --check
+        run: cargo fmt --all -- --check
 
       - name: Run Clippy (deny warnings)
         run: cargo clippy --locked --all-targets -- -D warnings
