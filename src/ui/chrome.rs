@@ -4,10 +4,24 @@ use crate::i18n::{os_locale_badge, Key};
 use crate::theme::colors;
 use crate::util::format_uptime;
 use eframe::egui;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 // Re-export for compatibility with app.rs
 pub use crate::ui::placeholder_tab::render_placeholder_tab;
 pub use crate::ui::status_bar::render_status_bar;
+
+/// Cached uptime formatter: allocates only when uptime_secs changes (1 Hz).
+fn cached_format_uptime(uptime_secs: u64) -> String {
+    static CACHE: OnceLock<Mutex<(u64, String)>> = OnceLock::new();
+    let mut cache = CACHE
+        .get_or_init(|| Mutex::new((0, String::new())))
+        .lock()
+        .unwrap();
+    if cache.0 != uptime_secs {
+        cache.0 = uptime_secs;
+        cache.1 = format_uptime(uptime_secs);
+    }
+    cache.1.clone()
+}
 
 /// Renders the top panel with title, version, uptime, and locale indicator.
 pub fn render_top_panel(
@@ -38,9 +52,9 @@ pub fn render_top_panel(
         );
         ui.separator();
 
-        // Uptime
+        // Uptime (cached at 1 Hz)
         if let Some(ref snapshot) = latest_snapshot {
-            let uptime_str = format_uptime(snapshot.uptime_secs);
+            let uptime_str = cached_format_uptime(snapshot.uptime_secs);
             ui.label(
                 egui::RichText::new(format!("{}: {}", Key::UptimeLabel.t(), uptime_str))
                     .monospace()

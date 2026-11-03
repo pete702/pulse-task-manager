@@ -3,6 +3,13 @@
 All notable changes to **PULSE** (`pulse_manager`) are documented in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
 
+## [0.0.16] - 2026-11-03
+
+- **TOCTOU Handle Identity Verification**: Added `verify_handle_identity` using `QueryFullProcessImageNameW` and enforced `IsProcessCritical` checks in both `trim_single_pid` and `terminate_process_group` (engine only in `v0.0.16`, UI wiring in `v0.1.0`).
+- **Cross-Platform Fixes**: Wrapped `CommandExt` in `#[cfg(target_os = "windows")]`; `open_process_file_location` resolves `explorer.exe` via `%SystemRoot%` environment variable.
+- **Resource P1 Optimizations**: `search_hash: u64` + `uptime_secs` table cache key (zero per-frame `String` allocations); 1 Hz `cached_format_uptime` with `OnceLock<Mutex<(u64, String)>>`; reusable `HashSet<u32>` in `ProcessDeltaTracker`; full-tick jitter measurement; compacted `table_body.rs` to 158 lines.
+- **CI & Repo Hygiene**: `--locked` on all cargo commands + MSRV `1.78.0` toolchain check in `.github/workflows/ci.yml`; full-repo recursive walker in `tests/docs_guard.rs` enforcing `0` NUL bytes, `0` Cyrillic (`U+0400..=U+052F`), and `<= 165` lines for `src/**/*.rs`.
+
 ## [0.0.15] - 2026-11-03
 
 - **Win32 Safety & Path Normalization Fixes**: Made `SafeHandle` raw field private, wrapped `OpenProcessToken` in RAII, added `IsProcessCritical` checks, and fixed full-path normalization in `verify_pid_safety_gate`.
@@ -37,7 +44,3 @@ Binary assets and checksums are published on [GitHub Releases](https://github.co
 
 - **Strict 180-Line Modularity Refactoring**: Decomposed the codebase into 50 focused `.rs` modules under a hard `MAX_RS_FILE_LINES = 180` ceiling enforced by `src/core/selftest_tests.rs`.
 - **Submodule Test Architecture**: Extracted unit tests into sibling `*_tests.rs` files and enforced the International English (`0` Cyrillic) repository policy with a native Win32 OS locale badge (`GetUserDefaultUILanguage`).
-
-## [0.0.9] - 2026-11-02
-
-- **Live GUI `--self-test` & Top Process Analytics**: Upgraded `--self-test` to verify live frame rendering and added Top-5 RAM consumer cards alongside `1m / 5m / 15m` history chart scaling.

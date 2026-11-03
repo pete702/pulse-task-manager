@@ -22,8 +22,8 @@ impl MemorySubView {
     /// Switcher label with the live process count.
     pub fn label(self, process_count: usize) -> String {
         match self {
-            Self::Overview => "◈ Overview & Charts".to_owned(),
-            Self::Processes => format!("📋 RAM Processes ({process_count})"),
+            Self::Overview => "Overview & Charts".to_owned(),
+            Self::Processes => format!("RAM Processes ({process_count})"),
         }
     }
 }
@@ -35,6 +35,7 @@ pub fn render_memory_page(
     history: &mut MemoryHistory,
     sub_view: &mut MemorySubView,
     table_state: &mut MemoryTableState,
+    uptime_secs: u64,
 ) {
     card_frame().show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -70,7 +71,7 @@ pub fn render_memory_page(
         MemorySubView::Processes => {
             render_compact_ram_bar(ui, mem);
             ui.add_space(8.0);
-            render_memory_table(ui, mem, table_state);
+            render_memory_table(ui, mem, table_state, uptime_secs);
         }
     }
 }
@@ -132,10 +133,7 @@ mod tests {
 
     #[test]
     fn test_subview_labels() {
-        assert_eq!(MemorySubView::Overview.label(0), "◈ Overview & Charts");
-        assert_eq!(
-            MemorySubView::Processes.label(123),
-            "📋 RAM Processes (123)"
-        );
+        assert_eq!(MemorySubView::Overview.label(0), "Overview & Charts");
+        assert_eq!(MemorySubView::Processes.label(123), "RAM Processes (123)");
     }
 }

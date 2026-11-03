@@ -12,20 +12,23 @@ pub type RawProcessRow = (u32, String, u64, u64, i64);
 pub type ProcessMemoryScan = (Vec<RawProcessRow>, Option<MemorySpikeEvent>);
 
 /// Internal state for tracking process memory deltas across ticks.
+/// Reuses active_pids HashSet capacity across ticks to avoid reallocations.
 pub struct ProcessDeltaTracker {
     prev_ram_bytes: HashMap<u32, u64>,
+    active_pids: HashSet<u32>,
 }
 
 impl ProcessDeltaTracker {
     pub fn new() -> Self {
         Self {
             prev_ram_bytes: HashMap::new(),
+            active_pids: HashSet::new(),
         }
     }
 
     /// Calculate delta for each process and update tracking.
     /// Returns vector of (PID, name, RAM bytes, virtual bytes, delta bytes/sec).
-    /// Uses O(n) HashSet for stale PID cleanup instead of O(n²) retain.
+    /// Reuses active_pids HashSet via clear() + extend() to avoid reallocation.
     pub fn track(&mut self, processes: &[(u32, String, u64, u64)]) -> Vec<RawProcessRow> {
         let mut result = Vec::with_capacity(processes.len());
         for (pid, name, ram, virt) in processes {
@@ -34,10 +37,12 @@ impl ProcessDeltaTracker {
             self.prev_ram_bytes.insert(*pid, *ram);
             result.push((*pid, name.clone(), *ram, *virt, delta));
         }
-        // Clean up stale PIDs in O(n) using HashSet of active PIDs
-        let active_pids: HashSet<u32> = processes.iter().map(|(pid, _, _, _)| *pid).collect();
+        // Reuse active_pids HashSet capacity across ticks
+        self.active_pids.clear();
+        self.active_pids
+            .extend(processes.iter().map(|(pid, _, _, _)| *pid));
         self.prev_ram_bytes
-            .retain(|pid, _| active_pids.contains(pid));
+            .retain(|pid, _| self.active_pids.contains(pid));
         result
     }
 }

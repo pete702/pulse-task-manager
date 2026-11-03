@@ -2,7 +2,7 @@
 
 A native Windows 10/11 task manager in Rust + `egui` that shows RAM composition, real-time per-process memory growth (`Δ RAM/s`), and which process caused a sudden memory spike.
 
-**[📥 Download Latest Portable .exe (Windows 10/11 x64)](https://github.com/pete702/pulse-task-manager/releases/latest)**
+**[📥 Download v0.0.16 Portable .exe (Windows 10/11 x64)](https://github.com/pete702/pulse-task-manager/releases/tag/v0.0.16)**
 
 [![CI](https://github.com/pete702/pulse-task-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/pete702/pulse-task-manager/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -34,7 +34,7 @@ PULSE provides a dark-mode telemetry HUD with a **Memory Spike Blackbox**, a **3
 
 ## Technical Characteristics
 
-- **Single Portable Executable**: Standalone `.exe` (`~3.9 MiB` binary size on disk), no installer, no background service.
+- **Single Portable Executable**: Standalone `.exe` (`~4.0 MiB` binary size on disk), no installer, no background service.
 - **Live Self-Diagnostics**: PULSE displays its own real-time memory working set and UI frame time directly in the top header badge (`[ PULSE: XX.X MB | UI: X.XX ms ]`).
 - **Decoupled 1 Hz Collector**: Main `egui` UI thread + background telemetry worker thread (`bounded std::sync::mpsc::sync_channel(2)`) with 1 Hz process table row caching.
 - **Minimize Hibernation**: UI rendering pauses while minimized and triggers a one-time working-set self-trim (`K32EmptyWorkingSet`).

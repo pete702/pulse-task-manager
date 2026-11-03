@@ -23,7 +23,6 @@ pub struct PulseApp {
     frame_count: u64,
     last_ui_ms: f32,
     memory_history: MemoryHistory,
-    /// Tracks previous minimized state for edge-triggered trim.
     was_minimized: bool,
 }
 
@@ -56,6 +55,7 @@ impl PulseApp {
                             &mut self.memory_history,
                             &mut self.memory_sub_view,
                             &mut self.table_state,
+                            snap.uptime_secs,
                         );
                     } else {
                         Self::render_awaiting(ui);
@@ -64,15 +64,17 @@ impl PulseApp {
                     Self::render_awaiting(ui);
                 }
             }
-            crate::app_tabs::ActiveTab::Cpu => chrome::render_placeholder_tab(ui, Key::TabCpu.t()),
+            crate::app_tabs::ActiveTab::Cpu => {
+                chrome::render_placeholder_tab(ui, Key::TabCpu.t(), "v0.2.0")
+            }
             crate::app_tabs::ActiveTab::Storage => {
-                chrome::render_placeholder_tab(ui, Key::TabStorage.t())
+                chrome::render_placeholder_tab(ui, Key::TabStorage.t(), "v0.3.0")
             }
             crate::app_tabs::ActiveTab::Network => {
-                chrome::render_placeholder_tab(ui, Key::TabNetwork.t())
+                chrome::render_placeholder_tab(ui, Key::TabNetwork.t(), "v0.4.0")
             }
             crate::app_tabs::ActiveTab::System => {
-                chrome::render_placeholder_tab(ui, Key::TabSystem.t())
+                chrome::render_placeholder_tab(ui, Key::TabSystem.t(), "v0.5.0")
             }
         }
     }
@@ -89,7 +91,6 @@ impl PulseApp {
 impl eframe::App for PulseApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let frame_start = Instant::now();
-
         if crate::app_tabs::handle_global_hotkeys(
             ctx,
             &mut self.active_tab,
@@ -99,39 +100,28 @@ impl eframe::App for PulseApp {
             ctx.request_repaint_after(std::time::Duration::from_millis(1000));
             return;
         }
-
         self.frame_count = self.frame_count.wrapping_add(1);
-
-        // Drain channel first - zero-copy Arc<SystemSnapshot>
         while let Ok(snap) = self.snapshot_rx.try_recv() {
             if let Some(ref mem) = snap.memory {
                 self.memory_history.push(mem);
             }
             self.latest_snapshot = Some(snap);
         }
-
-        // Check minimized early - before any rendering
         let is_minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
-
-        // Edge-triggered minimize self-trim: only trim when transitioning TO minimized state
         if is_minimized && !self.was_minimized {
             trim_own_working_set();
         }
         self.was_minimized = is_minimized;
-
         if is_minimized {
             ctx.request_repaint_after(std::time::Duration::from_millis(1000));
             return;
         }
-
-        // Use Arc directly - cheap clone of Option<Arc<...>> (atomic refcount increment only)
         let latest_snapshot = self.latest_snapshot.clone();
         let active_processes = latest_snapshot
             .as_ref()
             .and_then(|s| s.memory.as_ref())
             .map(|m| m.system_processes)
             .unwrap_or(0);
-
         egui::TopBottomPanel::top("top_header").show(ctx, |ui| {
             chrome::render_top_panel(ui, &latest_snapshot, self.last_ui_ms);
         });
@@ -155,11 +145,9 @@ impl eframe::App for PulseApp {
                 bottom: 10.0,
             }))
             .show(ctx, |ui| {
-                // Hard clipping: no child widget can ever paint outside CentralPanel's bounds
                 ui.set_clip_rect(ui.max_rect());
                 self.render_central_panel(ui, &latest_snapshot);
             });
-
         self.last_ui_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
         ctx.request_repaint_after(std::time::Duration::from_millis(1000));
     }

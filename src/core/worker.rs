@@ -22,7 +22,7 @@ const WORKER_INTERVAL: Duration = Duration::from_millis(1000);
 /// Optimization: starts with `System::new()` and refreshes only memory and process
 /// memory, avoiding a full system scan. Own RSS is measured directly with Win32
 /// `K32GetProcessMemoryInfo` after trimming the working set.
-// Working-set self-trim runs once at worker startup and on window minimize transition.
+/// Jitter measures full tick cadence (collection + sleep) vs target interval.
 pub fn spawn() -> mpsc::Receiver<Arc<SystemSnapshot>> {
     let (tx, rx): (SnapshotTx, mpsc::Receiver<Arc<SystemSnapshot>>) = mpsc::sync_channel(2);
 
@@ -37,6 +37,7 @@ pub fn spawn() -> mpsc::Receiver<Arc<SystemSnapshot>> {
         trim_own_working_set();
 
         loop {
+            let tick_start = std::time::Instant::now();
             let uptime = System::uptime();
 
             // Collect OS memory (RAM/Swap), then the per-process memory table.
@@ -57,11 +58,16 @@ pub fn spawn() -> mpsc::Receiver<Arc<SystemSnapshot>> {
             // Measure own RSS after trimming
             let pulse_ram_mb = own_working_set_mb();
 
-            // Measure OS scheduler jitter (how much the 1000ms sleep overshot)
-            let sleep_start = std::time::Instant::now();
-            thread::sleep(WORKER_INTERVAL);
-            let os_scheduler_jitter_ms =
-                sleep_start.elapsed().as_millis().saturating_sub(1000) as u32;
+            // Sleep for remaining interval, then measure full tick jitter
+            let elapsed = tick_start.elapsed();
+            if elapsed < WORKER_INTERVAL {
+                thread::sleep(WORKER_INTERVAL - elapsed);
+            }
+            let os_scheduler_jitter_ms = tick_start
+                .elapsed()
+                .as_millis()
+                .saturating_sub(WORKER_INTERVAL.as_millis())
+                as u32;
 
             let snapshot = SystemSnapshot::new_with_jitter(
                 uptime,
@@ -96,20 +102,14 @@ mod tests {
     #[test]
     fn test_worker_sends_first_snapshot() {
         let rx = spawn();
-
-        // Wait for first snapshot (should arrive quickly)
         let snapshot = rx
             .recv_timeout(Duration::from_secs(3))
             .expect("Worker should send first snapshot within 3 seconds");
-
-        // Verify uptime > 0 (system is running)
         assert!(snapshot.uptime_secs > 0, "Uptime should be positive");
-        // Verify pulse_ram_mb is non-negative
         assert!(
             snapshot.pulse_ram_mb >= 0.0,
             "Pulse RAM should be non-negative"
         );
-        // Verify memory snapshot is present
         assert!(
             snapshot.memory.is_some(),
             "Memory snapshot should be present"
@@ -121,23 +121,18 @@ mod tests {
     #[test]
     fn test_multiple_snapshots_increasing() {
         let rx = spawn();
-
         let first = rx
             .recv_timeout(Duration::from_secs(3))
             .expect("First snapshot");
         let second = rx
             .recv_timeout(Duration::from_secs(3))
             .expect("Second snapshot");
-
-        // Second snapshot should be later (or equal if very fast)
         assert!(
             second.uptime_secs >= first.uptime_secs,
             "Uptime should not decrease"
         );
-        // RAM should be non-negative
         assert!(first.pulse_ram_mb >= 0.0);
         assert!(second.pulse_ram_mb >= 0.0);
-        // Both should have memory snapshots
         assert!(first.memory.is_some());
         assert!(second.memory.is_some());
     }
@@ -148,7 +143,6 @@ mod tests {
         let snapshot = rx
             .recv_timeout(Duration::from_secs(3))
             .expect("First snapshot");
-
         let mem = snapshot.memory.as_ref().expect("Memory should be present");
         assert!(mem.ram_total_bytes > 0);
         assert!(mem.ram_used_bytes > 0);
@@ -162,7 +156,6 @@ mod tests {
         let snapshot = rx
             .recv_timeout(Duration::from_secs(3))
             .expect("First snapshot");
-        // Jitter should be recorded (may be 0 on precise systems)
         let _ = snapshot.os_scheduler_jitter_ms;
     }
 }

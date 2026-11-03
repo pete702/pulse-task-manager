@@ -18,8 +18,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
+      - name: Install Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install Rust toolchain (MSRV 1.78.0)
+        uses: dtolnay/rust-toolchain@1.78.0
         with:
           components: rustfmt, clippy
 
@@ -38,16 +43,19 @@ jobs:
         run: cargo fmt --check
 
       - name: Run Clippy (deny warnings)
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
-      - name: Run cargo check
-        run: cargo check --all-targets
+      - name: Run cargo check (stable)
+        run: cargo check --locked --all-targets
+
+      - name: Run cargo check (MSRV 1.78.0)
+        run: cargo +1.78.0 check --locked --all-targets
 
       - name: Run unit tests
-        run: cargo test --all-targets
+        run: cargo test --locked --all-targets
 
       - name: Build release
-        run: cargo build --release
+        run: cargo build --release --locked
 
       - name: Run self-test (headless CI mode)
         run: cargo run --release -- --self-test

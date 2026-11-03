@@ -38,7 +38,7 @@ mod tests {
         let mut state = MemoryTableState::default();
 
         egui::__run_test_ui(|ui| {
-            crate::modules::memory::table_view::render_memory_table(ui, &snap, &mut state);
+            crate::modules::memory::table_view::render_memory_table(ui, &snap, &mut state, 0);
         });
     }
 
@@ -63,14 +63,14 @@ mod tests {
 
         // First render - populates cache
         egui::__run_test_ui(|ui| {
-            crate::modules::memory::table_view::render_memory_table(ui, &snap, &mut state);
+            crate::modules::memory::table_view::render_memory_table(ui, &snap, &mut state, 0);
         });
         assert!(state.has_cached_rows());
 
         // Change sort column - should invalidate cache
         state.sort_col = crate::modules::memory::process_model::MemorySortCol::Name;
         egui::__run_test_ui(|ui| {
-            crate::modules::memory::table_view::render_memory_table(ui, &snap, &mut state);
+            crate::modules::memory::table_view::render_memory_table(ui, &snap, &mut state, 0);
         });
         assert!(state.has_cached_rows()); // Recomputed
     }
@@ -99,7 +99,7 @@ mod tests {
         };
 
         // First computation - populates cache
-        let rows1 = state.get_or_compute_rows(&snap1);
+        let rows1 = state.get_or_compute_rows(&snap1, 0);
         assert!(state.has_cached_rows());
         assert_eq!(rows1.len(), 2);
 
@@ -124,7 +124,7 @@ mod tests {
         };
 
         // Should recompute because signature changed (ram_used_bytes + delta)
-        let rows2 = state.get_or_compute_rows(&snap2);
+        let rows2 = state.get_or_compute_rows(&snap2, 1);
         assert_eq!(rows2.len(), 2);
 
         // Verify cache was actually recomputed (not returning stale data)

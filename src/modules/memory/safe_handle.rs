@@ -5,7 +5,9 @@ use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
 use windows_sys::Win32::Security::{
     GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
 };
-use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcess, OpenProcessToken};
+use windows_sys::Win32::System::Threading::{
+    GetCurrentProcess, OpenProcess, OpenProcessToken, QueryFullProcessImageNameW,
+};
 
 /// RAII wrapper for Win32 HANDLE that guarantees CloseHandle on drop.
 /// The inner HANDLE is private; use `from_raw` / `as_raw` for controlled access.
@@ -21,20 +23,17 @@ impl SafeHandle {
             Some(Self(h))
         }
     }
-
     /// Returns the raw HANDLE for FFI calls.
     #[inline]
     pub fn as_raw(&self) -> HANDLE {
         self.0
     }
-
     #[allow(unsafe_code)]
     pub fn open(access: u32, pid: u32) -> Option<Self> {
         if pid == 0 || pid == 4 {
             return None;
         }
-        let h = unsafe { OpenProcess(access, 0, pid) };
-        Self::from_raw(h)
+        Self::from_raw(unsafe { OpenProcess(access, 0, pid) })
     }
 }
 
@@ -58,7 +57,6 @@ pub fn is_app_elevated() -> bool {
         if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw_token) == 0 {
             return false;
         }
-        // Wrap token in SafeHandle so CloseHandle is guaranteed on Drop
         let _token_guard = match SafeHandle::from_raw(raw_token) {
             Some(h) => h,
             None => return false,
@@ -76,48 +74,10 @@ pub fn is_app_elevated() -> bool {
     }
 }
 
-const CRITICAL_OS_PROCESSES: &[&str] = &[
-    "system",
-    "registry",
-    "memory compression",
-    "smss.exe",
-    "csrss.exe",
-    "wininit.exe",
-    "services.exe",
-    "lsass.exe",
-    "lsaiso.exe",
-    "svchost.exe",
-    "dwm.exe",
-    "winlogon.exe",
-    "fontdrvhost.exe",
-    "sihost.exe",
-    "taskhostw.exe",
-    "msmpeng.exe",
-    "nissrv.exe",
-    "securityhealthservice.exe",
-    "spoolsv.exe",
-    "audiodg.exe",
-    "wmiprvse.exe",
-    "searchindexer.exe",
-    "startmenuexperiencehost.exe",
-    "searchhost.exe",
-    "shellexperiencehost.exe",
-    "textinputhost.exe",
-    "conhost.exe",
-];
-const ANTI_CHEAT_PROCESSES: &[&str] = &[
-    "vgc.exe",
-    "vgtray.exe",
-    "easyanticheat.exe",
-    "easyanticheat_eos.exe",
-    "beservice.exe",
-    "bedaisy.sys",
-    "zksvc.exe",
-    "faceitclient.exe",
-    "eseaclient.exe",
-    "ricochet.exe",
-    "hoyokprotect.sys",
-];
+#[rustfmt::skip]
+const CRITICAL_OS_PROCESSES: &[&str] = &["system", "registry", "memory compression", "smss.exe", "csrss.exe", "wininit.exe", "services.exe", "lsass.exe", "lsaiso.exe", "svchost.exe", "dwm.exe", "winlogon.exe", "fontdrvhost.exe", "sihost.exe", "taskhostw.exe", "msmpeng.exe", "nissrv.exe", "securityhealthservice.exe", "spoolsv.exe", "audiodg.exe", "wmiprvse.exe", "searchindexer.exe", "startmenuexperiencehost.exe", "searchhost.exe", "shellexperiencehost.exe", "textinputhost.exe", "conhost.exe"];
+#[rustfmt::skip]
+const ANTI_CHEAT_PROCESSES: &[&str] = &["vgc.exe", "vgtray.exe", "easyanticheat.exe", "easyanticheat_eos.exe", "beservice.exe", "bedaisy.sys", "zksvc.exe", "faceitclient.exe", "eseaclient.exe", "ricochet.exe", "hoyokprotect.sys"];
 
 /// Normalizes a process name for comparison: extracts filename, lowercases, strips .exe.
 /// Prevents path bypass (e.g., "C:\\Windows\\System32\\csrss.exe" -> "csrss").
@@ -165,9 +125,30 @@ pub fn is_protected_process(pid: u32, process_name: &str) -> bool {
 #[allow(unsafe_code)]
 pub fn is_handle_critical(handle: &SafeHandle) -> bool {
     let mut critical: i32 = 0;
-    // SAFETY: Queries kernel critical flag on a valid open process handle.
     let ok = unsafe {
         windows_sys::Win32::System::Threading::IsProcessCritical(handle.as_raw(), &mut critical)
     };
     ok != 0 && critical != 0
+}
+
+/// Verifies that a process handle still points to the expected executable (TOCTOU mitigation).
+/// Uses QueryFullProcessImageNameW to get the actual image path and compares normalized names.
+#[allow(unsafe_code)]
+pub fn verify_handle_identity(handle: &SafeHandle, expected_name: &str) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        let mut buf = [0u16; 512];
+        let mut size = buf.len() as u32;
+        let ok =
+            unsafe { QueryFullProcessImageNameW(handle.as_raw(), 0, buf.as_mut_ptr(), &mut size) };
+        if ok == 0 || size == 0 {
+            return false;
+        }
+        let actual_path = String::from_utf16_lossy(&buf[..size as usize]);
+        normalize_name(&actual_path) == normalize_name(expected_name)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        !expected_name.trim().is_empty()
+    }
 }

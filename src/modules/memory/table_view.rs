@@ -2,6 +2,8 @@
 //! Features 1 Hz caching to avoid re-sorting on every UI frame.
 
 use eframe::egui;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::modules::memory::model::MemorySnapshot;
@@ -12,10 +14,11 @@ use super::table_body::render_table;
 use super::table_widgets::{empty_label, render_spike_banner, render_toolbar};
 
 /// Cache key for 1 Hz process table optimization.
+/// Uses search_hash (u64) instead of String to avoid per-frame allocations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TableCacheKey {
     snapshot_id: u64,
-    search_query: String,
+    search_hash: u64,
     sort_col: MemorySortCol,
     sort_asc: bool,
     group_clones: bool,
@@ -48,12 +51,14 @@ impl Default for MemoryTableState {
 }
 
 /// Computes a fast 64-bit signature of dynamic telemetry for cache invalidation.
-fn compute_snapshot_signature(snap: &MemorySnapshot) -> u64 {
-    let mut h = snap.ram_used_bytes;
-    h = h.wrapping_add(snap.ram_available_bytes.rotate_left(13));
-    h = h.wrapping_add(snap.swap_used_bytes.rotate_left(29));
+/// Includes uptime_secs to ensure monotonic 1 Hz tick invalidation.
+fn compute_snapshot_signature(snap: &MemorySnapshot, uptime_secs: u64) -> u64 {
+    let mut h = uptime_secs;
+    h = h.wrapping_add(snap.ram_used_bytes.rotate_left(13));
+    h = h.wrapping_add(snap.ram_available_bytes.rotate_left(29));
+    h = h.wrapping_add(snap.swap_used_bytes.rotate_left(41));
     let cached = snap.ram_cached_bytes();
-    h = h.wrapping_add(cached.rotate_left(41));
+    h = h.wrapping_add(cached.rotate_left(53));
     for (_, _, ram, _, delta) in &snap.processes {
         if *ram > 0 {
             let ratio = (*delta as i128 * 1_000_000) / (*ram as i128);
@@ -63,15 +68,23 @@ fn compute_snapshot_signature(snap: &MemorySnapshot) -> u64 {
     h
 }
 
+fn hash_search_query(query: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    query.hash(&mut hasher);
+    hasher.finish()
+}
+
 impl MemoryTableState {
     pub(crate) fn get_or_compute_rows(
         &mut self,
         snap: &MemorySnapshot,
+        uptime_secs: u64,
     ) -> Arc<[crate::modules::memory::process_model::ProcessMemoryItem]> {
-        let snapshot_id = compute_snapshot_signature(snap);
+        let snapshot_id = compute_snapshot_signature(snap, uptime_secs);
+        let search_hash = hash_search_query(&self.search_query);
         let new_key = TableCacheKey {
             snapshot_id,
-            search_query: self.search_query.clone(),
+            search_hash,
             sort_col: self.sort_col,
             sort_asc: self.sort_asc,
             group_clones: self.group_clones,
@@ -107,8 +120,13 @@ impl MemoryTableState {
 }
 
 /// Renders the spike banner, toolbar, and virtualized process table.
-pub fn render_memory_table(ui: &mut egui::Ui, snap: &MemorySnapshot, state: &mut MemoryTableState) {
-    let rows = state.get_or_compute_rows(snap);
+pub fn render_memory_table(
+    ui: &mut egui::Ui,
+    snap: &MemorySnapshot,
+    state: &mut MemoryTableState,
+    uptime_secs: u64,
+) {
+    let rows = state.get_or_compute_rows(snap, uptime_secs);
     let clone_groups = rows.iter().filter(|r| r.process_count > 1).count();
     let total_processes = snap.processes.len();
     let shown_rows = rows.len();
