@@ -2,6 +2,7 @@
 name = "pulse_manager"
 version = "0.0.12"
 edition = "2021"
+rust-version = "1.78"
 description = "⚡ PULSE // Next-Gen System Telemetry for Windows — modular task manager in Rust + egui"
 license = "MIT"
 repository = "https://github.com/pete702/pulse-task-manager"

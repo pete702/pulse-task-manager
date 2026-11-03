@@ -8,7 +8,7 @@ A native Windows 10/11 task manager in Rust + `egui` that shows RAM composition,
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform: Windows 10/11 x64](https://img.shields.io/badge/Platform-Windows%2010%2F11%20x64-0078D4.svg)](https://github.com/pete702/pulse-task-manager/releases)
 
-![PULSE Telemetry HUD](assets/screenshot.png)
+![PULSE Telemetry HUD](screenshot.png)
 
 ## Why PULSE?
 
@@ -16,7 +16,7 @@ Standard Windows Task Manager shows total RAM usage, but rarely tells you **whic
 
 PULSE provides a dark-mode telemetry HUD with a **Memory Spike Blackbox**, a **3-Segment RAMMap Composition Bar**, and a **Real-Time Leak Hunter (`Δ RAM/s`)**.
 
-## Feature Status (`v0.0.12`)
+## Feature Status
 
 | Subsystem / Feature | Status | Details |
 | :--- | :--- | :--- |
@@ -36,7 +36,7 @@ PULSE provides a dark-mode telemetry HUD with a **Memory Spike Blackbox**, a **3
 
 - **Single Portable Executable**: Standalone `.exe` (`~3.9 MiB` binary size on disk), no installer, no background service.
 - **Live Self-Diagnostics**: PULSE displays its own real-time memory working set and UI frame time directly in the top header badge (`[ PULSE: XX.X MB | UI: X.XX ms ]`).
-- **Decoupled 1 Hz Collector**: Main `egui` UI thread + single background telemetry worker thread (`std::sync::mpsc`) with 1 Hz process table row caching.
+- **Decoupled 1 Hz Collector**: Main `egui` UI thread + background telemetry worker thread (`std::sync::mpsc::channel`) with 1 Hz process table row caching.
 - **Minimize Hibernation**: UI rendering pauses while minimized and triggers a one-time working-set self-trim (`K32EmptyWorkingSet`).
 - **User-Mode Only**: Uses standard Win32 APIs (`K32GetPerformanceInfo`, `sysinfo`); no kernel drivers, no DLL injection, and no hooks into other processes.
 
@@ -53,5 +53,10 @@ Requires Rust `1.78+` on Windows 10/11 (x64 MSVC toolchain):
 git clone https://github.com/pete702/pulse-task-manager.git
 cd pulse-task-manager
 cargo run --release
-License
+```
+
+## Documentation & License
+
+For developers: [Architecture & Engineering Rules](ARCHITECTURE.md) · [Changelog](CHANGELOG.md)
+
 Open-Source under the MIT License.

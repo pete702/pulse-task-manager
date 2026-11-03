@@ -95,6 +95,4 @@ pub fn collect_process_memory(
 
 // Re-export Win32 API functions for backward compatibility
 #[allow(unused_imports)]
-pub use crate::modules::memory::win32_api::{
-    own_working_set_mb, trim_current_process_working_set, trim_own_working_set,
-};
+pub use crate::modules::memory::win32_api::{own_working_set_mb, trim_own_working_set};

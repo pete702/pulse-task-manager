@@ -57,5 +57,16 @@ fn markdown_docs_respect_size_and_content_rules() {
                 token
             );
         }
+
+        // NUL byte check
+        assert!(!content.contains('\0'), "{} contains NUL byte(s)", rel);
+        // Cyrillic character check
+        assert!(
+            !content
+                .chars()
+                .any(|c| ('\u{0400}'..='\u{04FF}').contains(&c)),
+            "{} contains Cyrillic characters",
+            rel
+        );
     }
 }

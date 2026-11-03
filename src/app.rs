@@ -7,7 +7,7 @@ use eframe::egui;
 
 use crate::core::{spawn_telemetry_worker, SystemSnapshot};
 use crate::i18n::Key;
-use crate::modules::memory::collector::{trim_current_process_working_set, trim_own_working_set};
+use crate::modules::memory::collector::trim_own_working_set;
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::page::{self, MemorySubView};
 use crate::modules::memory::table_view::MemoryTableState;
@@ -102,9 +102,6 @@ impl eframe::App for PulseApp {
         }
 
         self.frame_count = self.frame_count.wrapping_add(1);
-        if self.frame_count == 3 || self.frame_count.is_multiple_of(30) {
-            trim_own_working_set();
-        }
 
         apply_obsidian_theme(ctx);
 
@@ -126,7 +123,7 @@ impl eframe::App for PulseApp {
 
         // Edge-triggered minimize self-trim: only trim when transitioning TO minimized state
         if is_minimized && !self.was_minimized {
-            trim_current_process_working_set();
+            trim_own_working_set();
         }
         self.was_minimized = is_minimized;
 

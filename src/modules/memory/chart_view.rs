@@ -71,7 +71,6 @@ pub fn render_memory_chart(ui: &mut egui::Ui, history: &mut MemoryHistory) {
                     .enumerate()
                     .map(|(i, v)| {
                         let _total = history.ram_points.len();
-                        let _skip = _total.saturating_sub(window_secs);
                         let x = -((window_secs.saturating_sub(i + 1)) as f64);
                         [x, v as f64]
                     })
@@ -81,13 +80,10 @@ pub fn render_memory_chart(ui: &mut egui::Ui, history: &mut MemoryHistory) {
                     .enumerate()
                     .map(|(i, v)| {
                         let _total = history.swap_points.len();
-                        let _skip = _total.saturating_sub(window_secs);
                         let x = -((window_secs.saturating_sub(i + 1)) as f64);
                         [x, v as f64]
                     })
                     .collect();
-                let ram_legend = Key::RamPercent.t();
-                let swap_legend = Key::SwapPercent.t();
                 let plot_height = (ui.available_height() - 24.0).clamp(75.0, 165.0);
                 let plot = Plot::new("memory_history_plot")
                     .width(inner_width)
@@ -128,14 +124,14 @@ pub fn render_memory_chart(ui: &mut egui::Ui, history: &mut MemoryHistory) {
                     );
                     plot_ui.line(
                         Line::new(ram_points)
-                            .name(ram_legend)
+                            .name(Key::RamPercent.t())
                             .color(colors::ACCENT_CYAN)
                             .width(2.2_f32)
                             .fill(0.0_f32),
                     );
                     plot_ui.line(
                         Line::new(swap_points)
-                            .name(swap_legend)
+                            .name(Key::SwapPercent.t())
                             .color(colors::ACCENT_PURPLE)
                             .width(1.8_f32),
                     );
