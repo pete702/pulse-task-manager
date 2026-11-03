@@ -5,6 +5,16 @@ mod tests {
     use crate::modules::memory::model::MemorySnapshot;
     use crate::modules::memory::table_view::MemoryTableState;
 
+    fn row(
+        pid: u32,
+        name: &str,
+        ram: u64,
+        virt: u64,
+        delta: i64,
+    ) -> (u32, String, u64, u64, i64, Option<String>) {
+        (pid, name.to_owned(), ram, virt, delta, None)
+    }
+
     #[test]
     fn test_table_state_defaults() {
         let state = MemoryTableState::default();
@@ -20,8 +30,8 @@ mod tests {
         let snap = MemorySnapshot {
             ram_total_bytes: 16_000_000_000,
             processes: vec![
-                (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 0),
-                (200, "game.exe".to_owned(), 3_000_000_000, 4_000_000_000, 0),
+                row(100, "chrome.exe", 1_000_000_000, 2_000_000_000, 0),
+                row(200, "game.exe", 3_000_000_000, 4_000_000_000, 0),
             ],
             latest_spike: None,
             ..Default::default()
@@ -38,70 +48,60 @@ mod tests {
         let snap = MemorySnapshot {
             ram_total_bytes: 16_000_000_000,
             processes: vec![
-                (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 0),
-                (200, "game.exe".to_owned(), 3_000_000_000, 4_000_000_000, 0),
+                row(100, "chrome.exe", 1_000_000_000, 2_000_000_000, 0),
+                row(200, "game.exe", 3_000_000_000, 4_000_000_000, 0),
             ],
             latest_spike: None,
             ..Default::default()
         };
         let mut state = MemoryTableState::default();
 
-        // First render - populates cache
         egui::__run_test_ui(|ui| {
             crate::modules::memory::table_view::render_memory_table(ui, &snap, &mut state, 0);
         });
         assert!(state.has_cached_rows());
 
-        // Change sort column - should invalidate cache
         state.sort_col = crate::modules::memory::process_model::MemorySortCol::Name;
         egui::__run_test_ui(|ui| {
             crate::modules::memory::table_view::render_memory_table(ui, &snap, &mut state, 0);
         });
-        assert!(state.has_cached_rows()); // Recomputed
+        assert!(state.has_cached_rows());
     }
 
     #[test]
     fn test_cache_invalidates_on_ram_delta_change() {
         let mut state = MemoryTableState::default();
 
-        // Create first snapshot with specific process RAM and delta
         let snap1 = MemorySnapshot {
             ram_total_bytes: 16_000_000_000,
             ram_used_bytes: 8_000_000_000,
             ram_available_bytes: 8_000_000_000,
             swap_used_bytes: 1_000_000_000,
             processes: vec![
-                (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 0),
-                (200, "game.exe".to_owned(), 3_000_000_000, 4_000_000_000, 0),
+                row(100, "chrome.exe", 1_000_000_000, 2_000_000_000, 0),
+                row(200, "game.exe", 3_000_000_000, 4_000_000_000, 0),
             ],
             ..Default::default()
         };
 
-        // First computation - populates cache
         let rows1 = state.get_or_compute_rows(&snap1, 0);
         assert!(state.has_cached_rows());
         assert_eq!(rows1.len(), 2);
 
-        // Create second snapshot with SAME ram_total_bytes and processes.len()
-        // but DIFFERENT ram_used_bytes and delta_bytes_per_sec
         let snap2 = MemorySnapshot {
-            ram_total_bytes: 16_000_000_000, // Same total
-            ram_used_bytes: 8_500_000_000,   // Different used
+            ram_total_bytes: 16_000_000_000,
+            ram_used_bytes: 8_500_000_000,
             ram_available_bytes: 7_500_000_000,
             swap_used_bytes: 1_000_000_000,
             processes: vec![
-                (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 50_000_000), // Delta changed!
-                (200, "game.exe".to_owned(), 3_000_000_000, 4_000_000_000, 0),
+                row(100, "chrome.exe", 1_000_000_000, 2_000_000_000, 50_000_000),
+                row(200, "game.exe", 3_000_000_000, 4_000_000_000, 0),
             ],
             ..Default::default()
         };
 
-        // Should recompute because signature changed (ram_used_bytes + delta)
         let rows2 = state.get_or_compute_rows(&snap2, 1);
         assert_eq!(rows2.len(), 2);
-
-        // Verify cache was actually recomputed (not returning stale data)
-        // The delta for chrome should now be 50_000_000 in the computed rows
         let chrome_row = rows2.iter().find(|r| r.name == "chrome.exe").unwrap();
         assert_eq!(chrome_row.delta_bytes_per_sec, 50_000_000);
     }

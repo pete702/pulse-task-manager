@@ -1,6 +1,6 @@
 //! Unit tests for the Obsidian HUD theme.
 
-use super::{self as theme, colors};
+use crate::theme::{self, colors};
 use egui::Color32;
 
 #[test]

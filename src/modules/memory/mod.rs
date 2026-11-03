@@ -2,12 +2,16 @@
 //! multi-horizon chart, and the virtualized process table.
 
 pub mod action_bar;
+pub mod action_bar_status;
 pub mod action_bar_tests;
+pub mod action_bar_view;
 pub mod actions;
+pub mod chart_axis;
 pub mod chart_view;
 pub mod collector;
 pub mod composition_bar;
 pub mod delta_tracker;
+pub mod delta_tracker_tests;
 pub mod formatters;
 pub mod history;
 pub mod kernel_tiles;
@@ -18,6 +22,8 @@ pub mod process_model;
 pub mod process_model_tests;
 pub mod ram_card;
 pub mod safe_handle;
+pub mod selection;
+pub mod selection_tests;
 pub mod swap_commit_card;
 mod table_body;
 pub mod table_body_tests;
@@ -30,3 +36,6 @@ pub mod win32_api;
 
 #[cfg(test)]
 mod actions_tests;
+
+#[cfg(test)]
+mod chart_tests;

@@ -2,7 +2,8 @@
 
 use eframe::egui;
 
-use crate::modules::memory::action_bar::{self, MemoryActionBarState};
+use crate::modules::memory::action_bar::MemoryActionBarState;
+use crate::modules::memory::action_bar_view::render_action_bar;
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::modules::memory::table_view::{render_memory_table, MemoryTableState};
@@ -72,8 +73,7 @@ pub fn render_memory_page(
         MemorySubView::Processes => {
             render_compact_ram_bar(ui, mem);
             ui.add_space(8.0);
-            let rows = table_state.get_or_compute_rows(mem, uptime_secs);
-            action_bar::render_action_bar(ui, mem, rows.as_ref(), table_state, action_state);
+            render_action_bar(ui, mem, table_state, action_state);
             ui.add_space(6.0);
             render_memory_table(ui, mem, table_state, uptime_secs);
         }
@@ -82,6 +82,7 @@ pub fn render_memory_page(
 
 fn render_compact_ram_bar(ui: &mut egui::Ui, mem: &MemorySnapshot) {
     card_frame().show(ui, |ui| {
+        ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
             let pct = mem.ram_usage_percent();
             let color = load_color(pct);

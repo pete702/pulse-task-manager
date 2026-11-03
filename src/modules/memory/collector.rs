@@ -5,7 +5,7 @@
 use sysinfo::{ProcessRefreshKind, System, UpdateKind};
 
 use crate::modules::memory::delta_tracker::{ProcessDeltaTracker, ProcessMemoryScan};
-use crate::modules::memory::model::MemorySnapshot;
+use crate::modules::memory::model::{MemorySnapshot, ProcessSample};
 use crate::modules::memory::win32_api::{collect_windows_kernel_metrics, KernelMetrics};
 
 /// Collects current system memory state into a `MemorySnapshot`.
@@ -65,7 +65,7 @@ pub fn collect_process_memory(
         ProcessRefreshKind::new().with_memory().with_exe(UpdateKind::OnlyIfNotSet),
     );
 
-    let processes: Vec<(u32, String, u64, u64)> = sys
+    let processes: Vec<ProcessSample> = sys
         .processes()
         .iter()
         .map(|(pid, process)| {
@@ -75,13 +75,15 @@ pub fn collect_process_memory(
             if virt >= (1_u64 << 40) {
                 virt = ram;
             }
-            (pid.as_u32(), process.name().to_string(), ram, virt)
+            let exe_path =
+                process.exe().and_then(|p| p.to_str()).filter(|s| !s.is_empty()).map(str::to_owned);
+            (pid.as_u32(), process.name().to_string(), ram, virt, exe_path)
         })
         .collect();
 
     // Precompute heavy process flag for O(1) status bar access
     const HEAVY_THRESHOLD: u64 = 2560_u64 << 20; // 2.5 GiB
-    let has_heavy_process = processes.iter().any(|(_, _, ram, _)| *ram >= HEAVY_THRESHOLD);
+    let has_heavy_process = processes.iter().any(|(_, _, ram, _, _)| *ram >= HEAVY_THRESHOLD);
 
     // Track deltas
     let processes_with_delta = delta_tracker.track(&processes);

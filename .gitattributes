@@ -1,5 +1,5 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Auto detect text files and normalize to LF
+* text=auto eol=lf
 
 # Explicitly declare text files to use LF
 *.rs text eol=lf

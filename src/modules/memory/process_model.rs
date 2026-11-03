@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 
+use crate::modules::memory::model::RawProcessRow;
 use crate::util::format_timestamp_now;
 
 /// A single process memory entry for display and analysis.
@@ -63,10 +64,20 @@ impl ProcessMemoryItem {
     }
 }
 
+/// Builds a display item from one raw process row, keeping its executable path.
+pub fn item_from_raw(row: &RawProcessRow, total_ram: u64) -> ProcessMemoryItem {
+    let (pid, name, ram_bytes, virtual_bytes, delta, exe_path) = row;
+    let mut item =
+        ProcessMemoryItem::new(*pid, name.clone(), *ram_bytes, *virtual_bytes, total_ram);
+    item.delta_bytes_per_sec = *delta;
+    item.exe_path.clone_from(exe_path);
+    item
+}
+
 /// Filters, groups (by name), and sorts process memory items.
 #[allow(dead_code)]
 pub fn filter_group_and_sort(
-    processes: &[(u32, String, u64, u64, i64)],
+    processes: &[RawProcessRow],
     total_ram: u64,
     search: &str,
     group_clones: bool,
@@ -76,17 +87,12 @@ pub fn filter_group_and_sort(
     let search_lower = search.to_lowercase();
     let mut items: Vec<ProcessMemoryItem> = processes
         .iter()
-        .filter(|(pid, name, _, _, _)| {
+        .filter(|(pid, name, _, _, _, _)| {
             search.is_empty()
                 || search_lower == pid.to_string()
                 || name.to_lowercase().contains(&search_lower)
         })
-        .map(|(pid, name, ram_bytes, virtual_bytes, delta_bytes_per_sec)| {
-            let mut item =
-                ProcessMemoryItem::new(*pid, name.clone(), *ram_bytes, *virtual_bytes, total_ram);
-            item.delta_bytes_per_sec = *delta_bytes_per_sec;
-            item
-        })
+        .map(|row| item_from_raw(row, total_ram))
         .collect();
     if group_clones {
         let mut grouped: HashMap<String, ProcessMemoryItem> = HashMap::new();
@@ -105,6 +111,9 @@ pub fn filter_group_and_sort(
                         0.0
                     };
                     ex.is_hog = ex.ram_pct >= 15.0;
+                    if ex.exe_path.is_none() {
+                        ex.exe_path.clone_from(&item.exe_path);
+                    }
                     if item.pid < ex.pid {
                         ex.pid = item.pid;
                     }
@@ -135,15 +144,15 @@ pub fn filter_group_and_sort(
 /// Detects memory spike events (RAM usage >= 85%).
 #[allow(dead_code)]
 pub fn detect_memory_spike(
-    processes: &[(u32, String, u64, u64, i64)],
+    processes: &[RawProcessRow],
     total_ram: u64,
     current_ram_pct: f32,
 ) -> Option<MemorySpikeEvent> {
     if current_ram_pct < 85.0 || total_ram == 0 {
         return None;
     }
-    let culprit = processes.iter().max_by_key(|(_, _, rb, _, _)| *rb);
-    culprit.map(|(pid, name, rb, _, _)| MemorySpikeEvent {
+    let culprit = processes.iter().max_by_key(|(_, _, rb, _, _, _)| *rb);
+    culprit.map(|(pid, name, rb, _, _, _)| MemorySpikeEvent {
         timestamp: format_timestamp_now(),
         peak_ram_pct: current_ram_pct,
         culprit_name: name.clone(),

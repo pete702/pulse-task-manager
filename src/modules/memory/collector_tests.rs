@@ -16,11 +16,7 @@ mod tests {
         assert!(snap.ram_used_bytes > 0, "RAM used > 0");
         assert!(snap.ram_available_bytes > 0, "RAM available > 0");
         let usage = snap.ram_usage_percent();
-        assert!(
-            usage > 0.0 && usage <= 100.0,
-            "RAM usage% in (0,100], got {}",
-            usage
-        );
+        assert!(usage > 0.0 && usage <= 100.0, "RAM usage% in (0,100], got {}", usage);
     }
 
     #[test]
@@ -51,10 +47,7 @@ mod tests {
         let mut sys = System::new_all();
         let snap = collect_memory(&mut sys);
         let sum_used_free = snap.ram_used_bytes + snap.ram_free_bytes;
-        assert!(
-            sum_used_free <= snap.ram_total_bytes * 2,
-            "used+free <= 2x total"
-        );
+        assert!(sum_used_free <= snap.ram_total_bytes * 2, "used+free <= 2x total");
         let cached = snap.ram_cached_bytes();
         assert!(cached <= snap.ram_total_bytes, "cached <= total");
     }
@@ -88,14 +81,19 @@ mod tests {
         let (processes, _spike) =
             collect_process_memory(&mut sys, total_ram, 0.0, &mut delta_tracker);
         assert!(!processes.is_empty(), "at least one process");
-        for (pid, name, ram_bytes, virtual_bytes, _delta) in processes {
-            if pid == 0 {
+        for (pid, name, ram_bytes, virtual_bytes, _delta, _exe) in &processes {
+            if *pid == 0 {
                 continue;
             }
-            assert!(pid > 0, "PID > 0");
+            assert!(*pid > 0, "PID > 0");
             assert!(!name.is_empty(), "name not empty");
-            assert!(ram_bytes > 0 || virtual_bytes > 0, "has memory");
+            assert!(*ram_bytes > 0 || *virtual_bytes > 0, "has memory");
         }
+        #[cfg(target_os = "windows")]
+        assert!(
+            processes.iter().any(|row| row.5.is_some()),
+            "at least one process exposes an exe path"
+        );
     }
 
     #[test]

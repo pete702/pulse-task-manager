@@ -10,7 +10,7 @@ use windows_sys::Win32::System::Threading::{
 pub struct SafeHandle(HANDLE);
 impl SafeHandle {
     #[inline]
-    pub fn from_raw(h: HANDLE) -> Option<Self> {
+    pub(crate) fn from_raw(h: HANDLE) -> Option<Self> {
         if h == 0 || h == -1isize as HANDLE {
             None
         } else {
@@ -133,15 +133,17 @@ pub fn is_protected_process(pid: u32, process_name: &str) -> bool {
     verify_pid_safety_gate(pid, process_name).is_err()
 }
 
+/// Fail-closed critical check: a failed Win32 query blocks the mutation.
 #[allow(unsafe_code)]
 pub fn is_handle_critical(handle: &SafeHandle) -> bool {
     let mut critical: i32 = 0;
     let ok = unsafe {
         windows_sys::Win32::System::Threading::IsProcessCritical(handle.as_raw(), &mut critical)
     };
-    ok != 0 && critical != 0
+    ok == 0 || critical != 0
 }
 
+/// Fail-closed identity check: any Win32 failure returns `false`, so callers skip.
 #[allow(unsafe_code)]
 pub fn verify_handle_identity(handle: &SafeHandle, expected_name: &str) -> bool {
     #[cfg(target_os = "windows")]

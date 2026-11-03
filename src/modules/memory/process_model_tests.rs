@@ -10,23 +10,54 @@ mod tests {
     fn test_filter_group_and_sort_delta_aggregation() {
         let total_ram = 16_000_000_000u64;
         let processes = vec![
-            (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 5_000_000), // +5 MB/s
-            (101, "chrome.exe".to_owned(), 2_000_000_000, 3_000_000_000, -3_000_000), // -3 MB/s
-            (200, "game.exe".to_owned(), 3_000_000_000, 4_000_000_000, 10_000_000),  // +10 MB/s
+            (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 5_000_000, None),
+            (101, "chrome.exe".to_owned(), 2_000_000_000, 3_000_000_000, -3_000_000, None),
+            (200, "game.exe".to_owned(), 3_000_000_000, 4_000_000_000, 10_000_000, None),
         ];
 
         let result =
             filter_group_and_sort(&processes, total_ram, "", true, MemorySortCol::RamBytes, false);
 
-        // chrome.exe should be grouped with delta = +5 - 3 = +2 MB/s
         let chrome = result.iter().find(|p| p.name == "chrome.exe").unwrap();
         assert_eq!(chrome.process_count, 2);
         assert_eq!(chrome.delta_bytes_per_sec, 2_000_000);
 
-        // game.exe should have delta = +10 MB/s
         let game = result.iter().find(|p| p.name == "game.exe").unwrap();
         assert_eq!(game.process_count, 1);
         assert_eq!(game.delta_bytes_per_sec, 10_000_000);
+    }
+
+    #[test]
+    fn test_grouping_preserves_first_available_exe_path() {
+        let processes = vec![
+            (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 0, None),
+            (
+                101,
+                "chrome.exe".to_owned(),
+                1_000_000_000,
+                2_000_000_000,
+                0,
+                Some(r"C:\Program Files\Chrome\chrome.exe".to_owned()),
+            ),
+        ];
+        let items =
+            filter_group_and_sort(&processes, 16_000_000_000, "", true, MemorySortCol::Name, true);
+        let chrome = items.iter().find(|p| p.name == "chrome.exe").unwrap();
+        assert_eq!(chrome.process_count, 2);
+        assert_eq!(chrome.exe_path.as_deref(), Some(r"C:\Program Files\Chrome\chrome.exe"));
+    }
+
+    #[test]
+    fn test_ungrouped_items_keep_their_exe_path() {
+        let processes = vec![
+            (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 0, Some("a".to_owned())),
+            (200, "game.exe".to_owned(), 3_000_000_000, 4_000_000_000, 0, Some("b".to_owned())),
+        ];
+        let items =
+            filter_group_and_sort(&processes, 16_000_000_000, "", false, MemorySortCol::Name, true);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].exe_path.as_deref(), Some("a"));
+        assert_eq!(items[1].exe_path.as_deref(), Some("b"));
     }
 
     #[test]
@@ -51,8 +82,8 @@ mod tests {
     fn test_detect_memory_spike_above_threshold() {
         let total_ram = 16_000_000_000u64;
         let processes = vec![
-            (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 0),
-            (200, "game.exe".to_owned(), 14_000_000_000, 16_000_000_000, 0), // 87.5% > 85%
+            (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 0, None),
+            (200, "game.exe".to_owned(), 14_000_000_000, 16_000_000_000, 0, None),
         ];
 
         let spike = detect_memory_spike(&processes, total_ram, 87.5);
@@ -68,8 +99,8 @@ mod tests {
     fn test_detect_memory_spike_below_threshold() {
         let total_ram = 16_000_000_000u64;
         let processes = vec![
-            (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 0),
-            (200, "game.exe".to_owned(), 10_000_000_000, 12_000_000_000, 0), // 62.5% < 85%
+            (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 0, None),
+            (200, "game.exe".to_owned(), 10_000_000_000, 12_000_000_000, 0, None),
         ];
 
         let spike = detect_memory_spike(&processes, total_ram, 62.5);

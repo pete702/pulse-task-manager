@@ -65,7 +65,7 @@ pub fn render_ram_card(ui: &mut egui::Ui, mem: &MemorySnapshot, history: &Memory
                 );
                 ui.end_row();
 
-                // Available / Free
+                // Available / Free (Free = available minus system cache)
                 ui.label(
                     egui::RichText::new(Key::AvailableFree.t())
                         .monospace()
@@ -76,7 +76,7 @@ pub fn render_ram_card(ui: &mut egui::Ui, mem: &MemorySnapshot, history: &Memory
                     egui::RichText::new(format!(
                         "{:.2} GiB / {:.2} GiB",
                         mem.ram_available_gib(),
-                        mem.ram_free_bytes as f64 / 1_073_741_824.0
+                        crate::modules::memory::view::true_free_bytes(mem) as f64 / 1_073_741_824.0
                     ))
                     .monospace()
                     .size(13.0)

@@ -29,3 +29,12 @@ pub fn render_memory_cards(ui: &mut egui::Ui, mem: &MemorySnapshot, history: &mu
     // ----- Row 4: History Chart -----
     chart_view::render_memory_chart(ui, history);
 }
+
+/// True free physical memory: available memory minus the reclaimable system cache.
+///
+/// `ram_available_bytes` includes both truly free pages and system cache, so
+/// subtracting the cached portion yields the genuinely unused RAM.
+#[inline]
+pub fn true_free_bytes(mem: &MemorySnapshot) -> u64 {
+    mem.ram_available_bytes.saturating_sub(mem.ram_cached_bytes())
+}

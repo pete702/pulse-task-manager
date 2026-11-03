@@ -1,12 +1,12 @@
 # 🏗️ PULSE Architecture & Engineering Rules
 
-PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, MSRV `1.87`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.1.0**.
+PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.78"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.1.1**.
 
 ## 1. Core Architectural Principles
 
 1. **Decoupled Two-Thread Telemetry Model**:
-   - **UI Thread (`src/app.rs`, `src/ui/`)**: Renders immediate-mode `egui` widgets and handles user input. Never calls blocking Win32 or `sysinfo` APIs directly. Holds `Arc<SystemSnapshot>` for zero-copy per-frame access. Early-returns on minimized viewport (`request_repaint_after(1000 ms)`).
-   - **Background Worker Thread (`src/core/worker.rs`)**: Runs a fixed 1 Hz (`1000 ms`) polling loop, collects Win32 and process metrics, computes per-PID deltas, and sends `SystemSnapshot` payloads over **bounded** `std::sync::mpsc::sync_channel(2)` (capacity 2). Uses `try_send` to skip snapshots on slow UI and cleanly breaks on receiver disconnect.
+   - **UI Thread (`src/app.rs`, `src/ui/`)**: Renders immediate-mode `egui` widgets and handles user input. Never calls blocking Win32 or `sysinfo` APIs directly. Holds `Arc<SystemSnapshot>` for zero-copy per-frame access. When the window is idle or minimized, repaints are throttled to 1 Hz via `request_repaint_after(1000 ms)`.
+   - **Background Worker Thread (`src/core/worker.rs`)**: Runs a fixed 1 Hz (`1000 ms`) polling loop, collects Win32 and process metrics, computes per-PID deltas, and sends `SystemSnapshot` payloads over **bounded** `std::sync::mpsc::sync_channel(2)` (capacity 2). Every tick also stores the latest snapshot in `LatestSlot`; if the channel is full, no dummy snapshot is generated and the UI reads the newer slot instead. Process enumeration runs every tick normally and every 5th tick while minimized, with a forced scan on the minimize transition. Worker exits cleanly on receiver disconnect.
 2. **1 Hz Process Table Cache**:
    - Filtered, grouped (`[Nx]`), and sorted process rows are cached in `MemoryTableState` keyed by a **64-bit dynamic telemetry signature** (`ram_used_bytes`, `ram_available_bytes`, `swap_used_bytes`, `ram_cached_bytes`, rolling hash of per-process `delta_bytes_per_sec / used_bytes`). Cached rows are stored as `Arc<[ProcessMemoryItem]>` so 60 FPS frames perform zero row or `String` clones (only an atomic `Arc` refcount increment).
 3. **Viewport Hibernation & Edge-Triggered Self-Trim**:
@@ -30,9 +30,9 @@ PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and pro
 
 ## 4. Win32 FFI & Safety Invariants
 
-- `#![deny(unsafe_code)]` is active at the crate root (`src/main.rs`). All Win32 FFI calls are wrapped in localized `#[allow(unsafe_code)]` blocks for: `K32GetPerformanceInfo`, `K32GetProcessMemoryInfo`, `K32EmptyWorkingSet`, `OpenProcess`, `IsProcessCritical`, `QueryFullProcessImageNameW`, `OpenProcessToken`, `GetTokenInformation`, `CloseHandle`, `TerminateProcess`, and `GetUserDefaultUILanguage`. Total `#[allow(unsafe_code)]` attributes in `src/`: **15** (verified at v0.1.0).
+- `#![deny(unsafe_code)]` is active at the crate root (`src/main.rs`). All Win32 FFI calls are wrapped in localized `#[allow(unsafe_code)]` blocks for: `K32GetPerformanceInfo`, `K32GetProcessMemoryInfo`, `K32EmptyWorkingSet`, `OpenProcess`, `IsProcessCritical`, `QueryFullProcessImageNameW`, `OpenProcessToken`, `GetTokenInformation`, `CloseHandle`, `TerminateProcess`, and `GetUserDefaultUILanguage`. Total `#[allow(unsafe_code)]` attributes in `src/`: **15** (verified at v0.1.1).
 - Every Win32 FFI block is isolated in dedicated helper functions with explicit return-code checks and `std::mem::zeroed()` initialization.
-- **TOCTOU Handle Identity Protection (`v0.0.16`)**: Both `trim_single_pid` and `terminate_process_group` enforce `IsProcessCritical` and `QueryFullProcessImageNameW` via `verify_handle_identity` before any mutating operation. The `actions.rs` module is engine-only in `v0.0.16` (UI wiring scheduled for `v0.1.0`).
+- **TOCTOU Handle Identity Protection**: `trim_single_pid` and `terminate_process_group` enforce `IsProcessCritical` and `QueryFullProcessImageNameW` via `verify_handle_identity` before any mutating operation. Both checks fail closed: a Win32 query failure or unresolvable image path blocks the mutation.
 - **Windows x64 CFG Virtual Memory Normalization**: On 64-bit Windows 11, Control Flow Guard reserves `2 TiB` of virtual address space per system process. PULSE normalizes `virtual_memory() >= (1_u64 << 40)` (`1 TiB`) to the process working set so grouped system services report realistic commit values.
 
 ## 5. Obsidian Theme Tokens (`src/theme.rs`)

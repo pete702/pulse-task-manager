@@ -1,5 +1,6 @@
 //! PULSE main application state: UI, telemetry handling, tabs.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::Instant;
 
@@ -8,7 +9,6 @@ use eframe::egui;
 use crate::core::{spawn_telemetry_worker, LatestSlot, SystemSnapshot};
 use crate::i18n::Key;
 use crate::modules::memory::action_bar::MemoryActionBarState;
-use crate::modules::memory::collector::trim_own_working_set;
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::page::{self, MemorySubView};
 use crate::modules::memory::table_view::MemoryTableState;
@@ -16,7 +16,8 @@ use crate::ui::{chrome, sidebar};
 
 pub struct PulseApp {
     snapshot_rx: mpsc::Receiver<Arc<SystemSnapshot>>,
-    _latest_slot: LatestSlot,
+    latest_slot: LatestSlot,
+    worker_minimized: Arc<AtomicBool>,
     latest_snapshot: Option<Arc<SystemSnapshot>>,
     active_tab: crate::app_tabs::ActiveTab,
     memory_sub_view: MemorySubView,
@@ -26,15 +27,15 @@ pub struct PulseApp {
     startup_frames: u8,
     last_ui_ms: f32,
     memory_history: MemoryHistory,
-    was_minimized: bool,
 }
 
 impl Default for PulseApp {
     fn default() -> Self {
-        let (snapshot_rx, latest_slot) = spawn_telemetry_worker();
+        let worker = spawn_telemetry_worker();
         Self {
-            snapshot_rx,
-            _latest_slot: latest_slot,
+            snapshot_rx: worker.rx,
+            latest_slot: worker.latest,
+            worker_minimized: worker.is_minimized,
             latest_snapshot: None,
             active_tab: crate::app_tabs::ActiveTab::Memory,
             memory_sub_view: MemorySubView::default(),
@@ -44,12 +45,33 @@ impl Default for PulseApp {
             startup_frames: 0,
             last_ui_ms: 0.0,
             memory_history: MemoryHistory::new(),
-            was_minimized: false,
         }
     }
 }
 
 impl PulseApp {
+    /// Applies a snapshot and pushes exactly one history point per distinct sample.
+    fn ingest_snapshot(&mut self, snap: Arc<SystemSnapshot>) {
+        let is_new = self.latest_snapshot.as_ref().map_or(true, |prev| !Arc::ptr_eq(prev, &snap));
+        if !is_new {
+            return;
+        }
+        if let Some(ref mem) = snap.memory {
+            self.memory_history.push(mem);
+        }
+        self.latest_snapshot = Some(snap);
+    }
+
+    /// Drains the channel, then reads the overflow slot for the newest snapshot.
+    fn collect_snapshots(&mut self) {
+        while let Ok(snap) = self.snapshot_rx.try_recv() {
+            self.ingest_snapshot(snap);
+        }
+        if let Some(snap) = self.latest_slot.lock().ok().and_then(|slot| slot.clone()) {
+            self.ingest_snapshot(snap);
+        }
+    }
+
     fn render_central_panel(&mut self, ui: &mut egui::Ui, snapshot: &Option<Arc<SystemSnapshot>>) {
         ui.add_space(16.0);
         match self.active_tab {
@@ -112,17 +134,9 @@ impl eframe::App for PulseApp {
             return;
         }
         self.frame_count = self.frame_count.wrapping_add(1);
-        while let Ok(snap) = self.snapshot_rx.try_recv() {
-            if let Some(ref mem) = snap.memory {
-                self.memory_history.push(mem);
-            }
-            self.latest_snapshot = Some(snap);
-        }
+        self.collect_snapshots();
         let is_minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
-        if is_minimized && !self.was_minimized {
-            trim_own_working_set();
-        }
-        self.was_minimized = is_minimized;
+        self.worker_minimized.store(is_minimized, Ordering::Relaxed);
         if is_minimized {
             ctx.request_repaint_after(std::time::Duration::from_millis(1000));
             return;

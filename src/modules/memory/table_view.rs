@@ -58,7 +58,7 @@ fn compute_snapshot_signature(snap: &MemorySnapshot, uptime_secs: u64) -> u64 {
     h = h.wrapping_add(snap.ram_available_bytes.rotate_left(29));
     h = h.wrapping_add(snap.swap_used_bytes.rotate_left(41));
     h = h.wrapping_add(snap.ram_cached_bytes().rotate_left(53));
-    for (_, _, ram, _, delta) in &snap.processes {
+    for (_, _, ram, _, delta, _) in &snap.processes {
         if *ram > 0 {
             let ratio = (*delta as i128 * 1_000_000) / (*ram as i128);
             h = h.wrapping_add((ratio as u64).rotate_left(7));
@@ -110,11 +110,12 @@ impl MemoryTableState {
         self.cache_key = None;
     }
 
-    /// Toggles name-based row selection (clicked row in the table body).
+    /// Toggles name-based row selection, storing the clean base group key.
     pub fn toggle_selection(&mut self, item: &ProcessMemoryItem) {
-        let same = self.selected_group.as_deref() == Some(item.name.as_str());
+        let key = crate::modules::memory::selection::base_group_key(&item.name);
+        let same = self.selected_group.as_deref() == Some(key);
         self.selected_pid = if same { None } else { Some(item.pid) };
-        self.selected_group = if same { None } else { Some(item.name.clone()) };
+        self.selected_group = if same { None } else { Some(key.to_owned()) };
     }
 
     #[cfg(test)]
@@ -135,6 +136,7 @@ pub fn render_memory_table(
     let total_processes = snap.processes.len();
     let shown_rows = rows.len();
     crate::theme::card_frame().show(ui, |ui| {
+        ui.set_width(ui.available_width());
         ui.vertical(|ui| {
             if let Some(ref spike) = snap.latest_spike {
                 render_spike_banner(ui, spike);

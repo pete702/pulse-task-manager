@@ -35,11 +35,11 @@ fn test_key_translation_en() {
     // Memory module - Grid labels (Card 1: RAM)
     assert_eq!(Key::UsedTotal.t(), "Used / Total");
     assert_eq!(Key::AvailableFree.t(), "Available / Free");
-    assert_eq!(Key::CachedStandby.t(), "Cached (Standby)");
+    assert_eq!(Key::CachedStandby.t(), "Cached (System)");
     assert_eq!(Key::PeakSession.t(), "Peak (Session)");
 
     // Memory module - Grid labels (Card 2: Swap/Commit)
-    assert_eq!(Key::SwapUsedTotal.t(), "Swap Used / Total");
+    assert_eq!(Key::SwapUsedTotal.t(), "Swap (Pagefile) Used");
     assert_eq!(Key::CommitChargeLimit.t(), "Commit Charge / Limit");
     assert_eq!(Key::CommitPercent.t(), "Commit %");
 

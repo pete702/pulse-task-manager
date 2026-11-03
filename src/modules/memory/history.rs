@@ -23,6 +23,10 @@ pub struct MemoryHistory {
     pub peak_swap_percent: f32,
     /// Currently selected chart time window.
     pub chart_window: ChartWindow,
+    /// Monotonic revision counter, incremented on every push/clear.
+    pub revision: u64,
+    /// Unix timestamp (seconds) for each stored sample.
+    pub timestamps: VecDeque<f64>,
 }
 
 impl MemoryHistory {
@@ -36,6 +40,8 @@ impl MemoryHistory {
             peak_ram_percent: 0.0,
             peak_swap_percent: 0.0,
             chart_window: ChartWindow::default(),
+            revision: 0,
+            timestamps: VecDeque::with_capacity(HISTORY_CAPACITY),
         }
     }
 
@@ -64,9 +70,19 @@ impl MemoryHistory {
         if self.swap_points.len() == HISTORY_CAPACITY {
             self.swap_points.pop_front();
         }
+        if self.timestamps.len() == HISTORY_CAPACITY {
+            self.timestamps.pop_front();
+        }
+
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
 
         self.ram_points.push_back(ram_pct);
         self.swap_points.push_back(swap_pct);
+        self.timestamps.push_back(ts);
+        self.revision = self.revision.wrapping_add(1);
     }
 
     /// Returns the current number of stored points.
@@ -113,12 +129,49 @@ impl MemoryHistory {
         self.swap_points.iter().skip(skip).copied()
     }
 
+    /// Returns the monotonic revision counter (cache invalidation key).
+    #[allow(dead_code)]
+    #[inline]
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// Unix timestamp (seconds) of the newest sample, or `0.0` when empty.
+    #[inline]
+    pub fn latest_timestamp(&self) -> f64 {
+        self.timestamps.back().copied().unwrap_or(0.0)
+    }
+
+    /// RAM samples inside the selected window as `(unix_seconds, percent)`.
+    pub fn windowed_ram_timed(&self) -> impl Iterator<Item = (f64, f32)> + '_ {
+        let now = self.latest_timestamp();
+        let window = self.chart_window.seconds() as f64;
+        self.timestamps
+            .iter()
+            .zip(self.ram_points.iter())
+            .filter(move |(t, _)| now - **t <= window)
+            .map(|(t, v)| (*t, *v))
+    }
+
+    /// Swap samples inside the selected window as `(unix_seconds, percent)`.
+    pub fn windowed_swap_timed(&self) -> impl Iterator<Item = (f64, f32)> + '_ {
+        let now = self.latest_timestamp();
+        let window = self.chart_window.seconds() as f64;
+        self.timestamps
+            .iter()
+            .zip(self.swap_points.iter())
+            .filter(move |(t, _)| now - **t <= window)
+            .map(|(t, v)| (*t, *v))
+    }
+
     /// Clears all history and resets peaks.
     #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.ram_points.clear();
         self.swap_points.clear();
+        self.timestamps.clear();
         self.peak_ram_percent = 0.0;
         self.peak_swap_percent = 0.0;
+        self.revision = self.revision.wrapping_add(1);
     }
 }

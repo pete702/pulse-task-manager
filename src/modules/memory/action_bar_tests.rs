@@ -37,6 +37,24 @@ mod tests {
     }
 
     #[test]
+    fn test_action_bar_moves_from_empty_to_protected_selection() {
+        use crate::modules::memory::action_bar_view::render_action_bar;
+        use crate::modules::memory::model::MemorySnapshot;
+        use crate::modules::memory::table_view::MemoryTableState;
+
+        let mem = MemorySnapshot {
+            ram_total_bytes: 16_000_000_000,
+            processes: vec![(900, "svchost.exe".to_owned(), 1_000_000, 2_000_000, 0, None)],
+            ..Default::default()
+        };
+        let mut ts = MemoryTableState::default();
+        let mut st = MemoryActionBarState::default();
+        egui::__run_test_ui(|ui| render_action_bar(ui, &mem, &ts, &mut st));
+        ts.selected_group = Some("svchost.exe".to_owned());
+        egui::__run_test_ui(|ui| render_action_bar(ui, &mem, &ts, &mut st));
+    }
+
+    #[test]
     fn test_honest_trim_status_format() {
         let report = ReclaimReport {
             trimmed_count: 4,

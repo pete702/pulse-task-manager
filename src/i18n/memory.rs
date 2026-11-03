@@ -16,11 +16,11 @@ impl Lang {
             // Memory module - Grid labels (Card 1: RAM)
             (Lang::En, Key::UsedTotal) => Some("Used / Total"),
             (Lang::En, Key::AvailableFree) => Some("Available / Free"),
-            (Lang::En, Key::CachedStandby) => Some("Cached (Standby)"),
+            (Lang::En, Key::CachedStandby) => Some("Cached (System)"),
             (Lang::En, Key::PeakSession) => Some("Peak (Session)"),
 
             // Memory module - Grid labels (Card 2: Swap/Commit)
-            (Lang::En, Key::SwapUsedTotal) => Some("Swap Used / Total"),
+            (Lang::En, Key::SwapUsedTotal) => Some("Swap (Pagefile) Used"),
             (Lang::En, Key::CommitChargeLimit) => Some("Commit Charge / Limit"),
             (Lang::En, Key::CommitPercent) => Some("Commit %"),
 

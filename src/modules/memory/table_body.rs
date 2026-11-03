@@ -50,9 +50,11 @@ pub(super) fn render_table(
         .body(|body| {
             body.rows(24.0, rows.len(), |mut row| {
                 let item = &rows[row.index()];
+                let mut clicked = false;
                 row.set_selected(state.selected_pid == Some(item.pid));
-                row.col(|ui| render_name_cell(ui, item));
-                row.col(|ui| {
+                let (_, resp) = row.col(|ui| render_name_cell(ui, item));
+                clicked |= resp.clicked();
+                let (_, resp) = row.col(|ui| {
                     ui.label(
                         egui::RichText::new(item.pid.to_string())
                             .monospace()
@@ -60,7 +62,8 @@ pub(super) fn render_table(
                             .color(colors::TEXT_SECONDARY),
                     );
                 });
-                row.col(|ui| {
+                clicked |= resp.clicked();
+                let (_, resp) = row.col(|ui| {
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new(format_bytes(item.ram_bytes))
@@ -84,7 +87,8 @@ pub(super) fn render_table(
                         }
                     });
                 });
-                row.col(|ui| {
+                clicked |= resp.clicked();
+                let (_, resp) = row.col(|ui| {
                     ui.label(
                         egui::RichText::new(format_bytes(item.virtual_bytes))
                             .monospace()
@@ -92,7 +96,8 @@ pub(super) fn render_table(
                             .color(colors::TEXT_PRIMARY),
                     );
                 });
-                row.col(|ui| {
+                clicked |= resp.clicked();
+                let (_, resp) = row.col(|ui| {
                     ui.label(
                         egui::RichText::new(format!("{:.1}%", item.ram_pct))
                             .monospace()
@@ -100,7 +105,9 @@ pub(super) fn render_table(
                             .color(crate::theme::load_color(item.ram_pct)),
                     );
                 });
-                if row.response().clicked() {
+                clicked |= resp.clicked();
+                // Any of the five cells selects the row; the row union is a fallback.
+                if clicked || row.response().clicked() {
                     state.toggle_selection(item);
                 }
             });

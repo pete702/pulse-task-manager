@@ -29,12 +29,12 @@ fn render_tile(
     });
 }
 
-/// Renders the 4 kernel metrics mini-tiles (Standby Cache, Kernel Pool, Commit Charge, OS Activity).
+/// Renders the 4 kernel metrics mini-tiles (System Cache, Kernel Pool, Commit Charge, OS Activity).
 pub fn render_kernel_tiles(ui: &mut egui::Ui, mem: &MemorySnapshot) {
     let width = ui.available_width() / 4.0 - 4.0; // Account for column spacing
 
     ui.columns(4, |cols| {
-        // Tile 1: Standby Cache
+        // Tile 1: System Cache
         card_frame().show(&mut cols[0], |ui| {
             let cache_pct = if mem.ram_total_bytes > 0 {
                 (mem.ram_cached_bytes() as f64 / mem.ram_total_bytes as f64) * 100.0
@@ -44,7 +44,7 @@ pub fn render_kernel_tiles(ui: &mut egui::Ui, mem: &MemorySnapshot) {
             render_tile(
                 ui,
                 width,
-                "Standby Cache",
+                "System Cache",
                 &format_bytes(mem.ram_cached_bytes()),
                 colors::ACCENT_CYAN,
                 &format!("OS Cache • {:.1}% of RAM", cache_pct),

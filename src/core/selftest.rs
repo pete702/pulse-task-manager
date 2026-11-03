@@ -21,7 +21,7 @@ use crate::modules::memory::safe_handle::{
 /// Validates: live snapshot (pulse_ram_mb > 0), MemorySnapshot fields, MemoryHistory, i18n toggle.
 pub fn run_headless_self_test() -> Result<(), String> {
     println!("[SelfTest] Starting headless self-test...");
-    let (rx, _latest) = spawn_telemetry_worker();
+    let rx = spawn_telemetry_worker().rx;
     let mut snapshot = None;
     let start = std::time::Instant::now();
     while start.elapsed() < Duration::from_secs(5) {
@@ -107,15 +107,12 @@ pub fn run_self_test(options: eframe::NativeOptions) -> eframe::Result<()> {
         });
         return Ok(());
     }
-    match eframe::run_native(
-        "PULSE Self-Test",
-        options,
-        Box::new(|cc| {
-            crate::theme::setup_fonts(&cc.egui_ctx);
-            crate::theme::apply_obsidian_theme(&cc.egui_ctx);
-            Box::new(SelfTestApp::new(false)) as Box<dyn eframe::App>
-        }),
-    ) {
+    let app_creator = Box::new(|cc: &eframe::CreationContext<'_>| {
+        crate::theme::setup_fonts(&cc.egui_ctx);
+        crate::theme::apply_obsidian_theme(&cc.egui_ctx);
+        Box::new(SelfTestApp::new(false)) as Box<dyn eframe::App>
+    });
+    match eframe::run_native("PULSE Self-Test", options, app_creator) {
         Ok(()) => Ok(()),
         Err(e) => {
             eprintln!("[SelfTest] eframe failed: {}. Falling back to headless mode.", e);

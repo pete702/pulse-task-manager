@@ -52,13 +52,14 @@ impl SystemSnapshot {
 
 /// Channel type for snapshot transmission: `Sender` in background thread, `Receiver` in UI.
 pub type SnapshotTx = mpsc::SyncSender<Arc<SystemSnapshot>>;
-pub type SnapshotRx = mpsc::Receiver<Arc<SystemSnapshot>>;
 
 /// Shared slot for the latest snapshot (newest always wins).
 pub type LatestSlot = Arc<Mutex<Option<Arc<SystemSnapshot>>>>;
 
+pub use worker::TelemetryWorker;
+
 /// Spawns the background telemetry worker thread.
-/// Returns a `Receiver` for reading snapshots in the main thread and a shared `LatestSlot`.
-pub fn spawn_telemetry_worker() -> (SnapshotRx, LatestSlot) {
+/// Returns the worker handle (receiver, latest slot, minimized flag).
+pub fn spawn_telemetry_worker() -> TelemetryWorker {
     worker::spawn()
 }

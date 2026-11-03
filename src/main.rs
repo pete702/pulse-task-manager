@@ -72,7 +72,7 @@ fn main() -> eframe::Result<()> {
         let msg = format!("PANIC: {}", info);
         eprintln!("{}", msg);
         let path = std::env::temp_dir().join("pulse_panic.log");
-        let _ = std::fs::write(&path, msg);
+        let _ = std::fs::write(path, msg);
     }));
 
     // Parse CLI arguments
@@ -104,7 +104,7 @@ fn main() -> eframe::Result<()> {
             Box::new(|cc| {
                 theme::setup_fonts(&cc.egui_ctx);
                 theme::apply_obsidian_theme(&cc.egui_ctx);
-                Box::new(app::PulseApp::default()) as Box<dyn eframe::App>
+                Box::<app::PulseApp>::default() as Box<dyn eframe::App>
             }),
         )
     }

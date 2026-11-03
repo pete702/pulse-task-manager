@@ -3,6 +3,14 @@
 All notable changes to **PULSE** (`pulse_manager`) are documented in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
 
+## [0.1.1] - 2026-11-03
+
+- **Raw Process Actions**: `Trim Working Sets`, `Trim Selected`, `Open Location`, and `End Task` now target raw process rows with explicit PID; `exe_path` feeds `Open Location`.
+- **`dt`-Normalized `Δ RAM/s`**: Per-process deltas divide by the real sample interval, removing 1 Hz drift from the leak hunter.
+- **Minute-Based `1m/5m/15m` Chart**: X-axis is labeled in minutes; the 1m view shows only `-1m`, `-0.5m`, and `0m` with right-edge padding.
+- **Worker `LatestSlot` + Minimized Throttling**: Full bounded channels fall back to the newest-slot cache without dummy snapshots; process scans run every 5th tick while minimized.
+- **Rust 1.78.0 CI Lockfile Fix**: MSRV pinned to `rust-version = "1.78"`; locked dependencies, fmt/clippy/test/build all run on `1.78.0`.
+
 ## [0.1.0] - 2026-11-03
 
 - **Phase 1 Memory Subsystem Complete**: Non-blocking Memory Action Bar (`action_bar.rs`) with working-set trim (`K32EmptyWorkingSet`), trim selected, end task, open file location, and Before/After `ReclaimReport` audit.
@@ -44,10 +52,4 @@ Binary assets and checksums are published on [GitHub Releases](https://github.co
 - **Real-Time Leak Hunter (`Δ RAM/s`)**: Added per-PID working-set delta tracking (`delta_bytes_per_sec`) and live `▲ +X.X M/s` / `▼ -X.X M/s` indicators in the process table.
 - **1 Hz Table Cache & Minimize Edge Trim**: Cached filtered/sorted process rows at 1 Hz to eliminate 60 FPS re-sorting overhead, and restricted `K32EmptyWorkingSet` self-trim to startup and window minimize transitions.
 - **Dependency & Documentation Cleanup**: Removed 7 unused crates from `Cargo.toml` (leaving 6 core crates), added the 85% chart threshold line, fixed sidebar card rendering, and introduced `tests/docs_guard.rs`.
-
-## [0.0.11] - 2026-11-02
-
-- **OS Jitter Probe & Workload Mode**: Added 1 Hz timer sleep-overshoot jitter tracking (`Δ ms`), workload classification (`Idle` / `Everyday` / `Heavy`), and viewport hibernation when minimized.
-- **Keyboard Shortcuts & Clone Grouping**: Added `Ctrl+F` search focus, `Esc` filter clear, `[Nx]` process clone aggregation, and geometric `▲ HOG` badges.
-- **Windows x64 CFG Normalization**: Normalized `>= 1 TiB` Control Flow Guard virtual memory reservations on 64-bit Windows 11 system processes.
 

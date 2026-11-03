@@ -120,17 +120,18 @@ fn all_text_files_no_nul_or_cyrillic() {
 }
 
 #[test]
-fn all_rs_files_under_src_under_line_limit() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+fn all_rs_files_under_src_and_tests_respect_line_limit() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
-    walk_text_files(&root, &mut files);
+    for dir in ["src", "tests"] {
+        walk_text_files(&root.join(dir), &mut files);
+    }
     for path in &files {
         if path.extension().and_then(|e| e.to_str()) == Some("rs") {
             let content = fs::read_to_string(path)
                 .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
             let line_count = content.lines().count();
-            let rel =
-                path.strip_prefix(root.parent().unwrap()).unwrap_or(path).display().to_string();
+            let rel = path.strip_prefix(root).unwrap_or(path).display().to_string();
             assert!(
                 line_count <= MAX_RS_LINES,
                 "{} has {} lines, exceeding limit of {}",

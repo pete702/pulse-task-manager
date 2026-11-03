@@ -6,6 +6,12 @@
 
 use crate::modules::memory::process_model::MemorySpikeEvent;
 
+/// Raw process row: (PID, name, RAM bytes, virtual bytes, delta bytes/sec, exe path).
+pub type RawProcessRow = (u32, String, u64, u64, i64, Option<String>);
+
+/// Incoming process sample: (PID, name, RAM bytes, virtual bytes, exe path).
+pub type ProcessSample = (u32, String, u64, u64, Option<String>);
+
 /// Number of history points to retain (900 points = 15 minutes at 1s interval).
 #[allow(dead_code)]
 pub const HISTORY_CAPACITY: usize = 900;
@@ -49,7 +55,7 @@ pub struct MemorySnapshot {
     pub ram_total_bytes: u64,
     /// Currently used physical RAM in bytes.
     pub ram_used_bytes: u64,
-    /// Available physical RAM in bytes (free + standby/cached).
+    /// Available physical RAM in bytes (free + reclaimable system cache).
     pub ram_available_bytes: u64,
     /// Free physical RAM in bytes (completely unused).
     pub ram_free_bytes: u64,
@@ -80,8 +86,8 @@ pub struct MemorySnapshot {
     pub ram_cached_bytes_override: u64,
 
     // ===== v0.0.9: Process table data =====
-    /// Process memory rows: (PID, name, physical RAM bytes, virtual bytes, delta bytes/sec).
-    pub processes: Vec<(u32, String, u64, u64, i64)>,
+    /// Process memory rows, including the executable path used by `Open Location`.
+    pub processes: Vec<RawProcessRow>,
     /// Most recent memory spike (RAM >= 85%), kept as a "black box" event.
     pub latest_spike: Option<MemorySpikeEvent>,
     /// Precomputed flag: true if any process has RAM >= 2.5 GiB (for O(1) status bar heuristic).
@@ -89,7 +95,7 @@ pub struct MemorySnapshot {
 }
 
 impl MemorySnapshot {
-    /// Returns the system cache (Standby / Cached RAM) in bytes.
+    /// Returns the system cache (cached RAM) in bytes.
     ///
     /// If `ram_cached_bytes_override` is set (from K32GetPerformanceInfo on Windows),
     /// returns that real kernel value. Otherwise falls back to calculated
