@@ -6,7 +6,7 @@ PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and pro
 
 1. **Decoupled Two-Thread Telemetry Model**:
    - **UI Thread (`src/app.rs`, `src/ui/`)**: Renders immediate-mode `egui` widgets and handles user input. Never calls blocking Win32 or `sysinfo` APIs directly.
-   - **Background Worker Thread (`src/core/worker.rs`)**: Runs an adaptive 1 Hz polling loop (`1000 ms` active, `2000 ms` heavy workload, `5000 ms` minimized hibernation), collects Win32 and process metrics, computes per-PID deltas, and sends `SystemSnapshot` payloads over `std::sync::mpsc::channel()`.
+   - **Background Worker Thread (`src/core/worker.rs`)**: Runs a fixed 1 Hz (`1000 ms`) polling loop, collects Win32 and process metrics, computes per-PID deltas, and sends `SystemSnapshot` payloads over `std::sync::mpsc::channel()` (while minimized, the UI thread skips rendering via `request_repaint_after(1000 ms)`).
 2. **1 Hz Process Table Cache**:
    - Filtered, grouped (`[Nx]`), and sorted process rows are cached in `MemoryTableState` keyed by `(snapshot_id, search_query, sort_col, sort_asc, group_clones)`. Mouse movement at 60 FPS performs zero sorting or string allocations.
 3. **Viewport Hibernation & Edge-Triggered Self-Trim**:

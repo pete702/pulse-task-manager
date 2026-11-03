@@ -3,6 +3,11 @@
 All notable changes to **PULSE** (`pulse_manager`) are documented in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
 
+## [0.0.13] - 2026-11-03
+
+- **Win32 RAII SafeHandle & PID Safety Gate**: Added `SafeHandle` (`CloseHandle` on `Drop`), non-blocking elevation check (`is_app_elevated`), and `verify_pid_safety_gate` protecting critical Windows OS and anti-cheat processes (`src/modules/memory/safe_handle.rs`).
+- **Deterministic Memory Actions Engine**: Added per-process working-set trim (`K32GetProcessMemoryInfo` before/after `K32EmptyWorkingSet`), batch `ReclaimReport` auditing, safe group termination, and file location launcher (`src/modules/memory/actions.rs`).
+
 ## [0.0.12] - 2026-11-03
 
 - **RAM Composition Bar**: Added a 3-segment horizontal RAMMap-style bar (`In Use`, `Standby Cache`, `Free`) with hover breakdown tooltip (`src/modules/memory/composition_bar.rs`).
@@ -28,7 +33,3 @@ Binary assets and checksums are published on [GitHub Releases](https://github.co
 ## [0.0.8] - 2026-11-02
 
 - **Win32 Kernel Telemetry & Virtualized Table**: Integrated `K32GetPerformanceInfo` for Paged/Non-Paged Pool and Standby Cache metrics, virtualized `TableBuilder` process rows, and the Memory Spike Blackbox detector.
-
-## [0.0.7] - 2026-11-01
-
-- **Foundation Releases (`v0.0.1`–`v0.0.7`)**: Initial project scaffolding (`v0.0.1`), 1 Hz background `mpsc` telemetry worker (`v0.0.2`), UI string dictionary (`v0.0.3`), Obsidian dark theme and load bars (`v0.0.4`–`v0.0.5`), RAM/Swap dashboard (`v0.0.6`), and `egui_plot` memory history chart (`v0.0.7`).

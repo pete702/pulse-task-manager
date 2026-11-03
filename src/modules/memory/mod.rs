@@ -1,6 +1,7 @@
 //! Memory module for PULSE: pure math model, sysinfo collector, HUD view,
 //! multi-horizon chart, and the virtualized process table.
 
+pub mod actions;
 pub mod chart_view;
 pub mod collector;
 pub mod composition_bar;
@@ -14,6 +15,7 @@ pub mod page;
 pub mod process_model;
 pub mod process_model_tests;
 pub mod ram_card;
+pub mod safe_handle;
 pub mod swap_commit_card;
 mod table_body;
 pub mod table_body_tests;
@@ -23,3 +25,6 @@ mod table_widgets;
 pub mod view;
 pub mod view_cards;
 pub mod win32_api;
+
+#[cfg(test)]
+mod actions_tests;

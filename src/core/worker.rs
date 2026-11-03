@@ -22,7 +22,7 @@ const WORKER_INTERVAL: Duration = Duration::from_millis(1000);
 /// Optimization: starts with `System::new()` and refreshes only memory and process
 /// memory, avoiding a full system scan. Own RSS is measured directly with Win32
 /// `K32GetProcessMemoryInfo` after trimming the working set.
-/// Trim is performed ONLY ONCE at startup to avoid page-fault thrashing while the GUI window is open.
+// Working-set self-trim runs once at worker startup and on window minimize transition.
 pub fn spawn() -> mpsc::Receiver<SystemSnapshot> {
     let (tx, rx): (SnapshotTx, mpsc::Receiver<SystemSnapshot>) = mpsc::channel();
 

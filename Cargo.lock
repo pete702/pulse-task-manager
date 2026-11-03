@@ -2511,7 +2511,7 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "pulse_manager"
-version = "0.0.12"
+version = "0.0.13"
 dependencies = [
  "eframe",
  "egui",

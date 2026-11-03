@@ -7,7 +7,14 @@ use std::time::Duration;
 use crate::core::selftest_app::SelfTestApp;
 use crate::core::spawn_telemetry_worker;
 use crate::i18n::{current_lang, set_lang, Lang};
+use crate::modules::memory::actions::{
+    open_process_file_location, purge_system_working_sets, terminate_process_group,
+    trim_process_group, ReclaimReport, TrimSkipReason,
+};
 use crate::modules::memory::history::MemoryHistory;
+use crate::modules::memory::safe_handle::{
+    is_app_elevated, is_protected_process, verify_pid_safety_gate, SafeHandle,
+};
 
 /// Runs a completely headless self-test without eframe/OpenGL.
 /// Validates: live snapshot (pulse_ram_mb > 0), MemorySnapshot fields, MemoryHistory, i18n toggle.
@@ -98,6 +105,19 @@ pub fn run_headless_self_test() -> Result<(), String> {
         return Err("i18n set_lang En failed".to_string());
     }
     println!("[SelfTest] i18n set_lang: En OK");
+
+    // Sanity check: Memory Actions Engine & Safety Gate (compile-time / dead-code guard)
+    let _ = is_app_elevated();
+    let _ = is_protected_process(0, "system");
+    let _ = verify_pid_safety_gate(0, "system");
+    let _ = SafeHandle::open(0, 0);
+    let _targets: &[(u32, String)] = &[];
+    let _report: ReclaimReport = trim_process_group(_targets);
+    let _ = purge_system_working_sets(_targets);
+    let _ = terminate_process_group(_targets);
+    let _ = open_process_file_location(std::path::Path::new(""));
+    let _ = TrimSkipReason::Protected;
+    println!("[SelfTest] Memory Actions Engine & Safety Gate: API surface OK");
 
     println!("[SelfTest] SELF-TEST PASSED (HEADLESS CI)");
     Ok(())
