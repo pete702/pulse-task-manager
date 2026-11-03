@@ -1,6 +1,6 @@
 # Contributing to PULSE
 
-## Pinned 6-Crate Stack (MSRV 1.85)
+## Pinned 6-Crate Stack (MSRV 1.87)
 
 | Crate | Version | Purpose |
 |-------|---------|---------|
@@ -11,7 +11,7 @@
 | `sysinfo` | `=0.30.12` | System/process metrics (default-features=false) |
 | `windows-sys` | `=0.52.0` | Win32 FFI (ProcessStatus, Threading, Foundation, Globalization, Security) |
 
-**No other dependencies are accepted.** Version pins are exact (`=`). MSRV is **1.85.0** — do not use features stabilized after 1.85 (e.g., `LazyLock`, `is_multiple_of`).
+**No other dependencies are accepted.** Version pins are exact (`=`). MSRV is **1.87.0** — do not use features stabilized after 1.87 (e.g., `LazyLock`, `is_multiple_of`).
 
 ## Code Structure & Hygiene
 

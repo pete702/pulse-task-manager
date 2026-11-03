@@ -11,7 +11,7 @@ Binary assets and checksums are published on [GitHub Releases](https://github.co
 - **5-Column Aligned Process Table** (`table_view.rs`, `table_body.rs`): Column definitions match header/row cells 1-to-1; row selection via click on Process Name cell.
 - **Worker `LatestSlot` Channel** (`worker.rs`): `Arc<Mutex<Option<Arc<SystemSnapshot>>>>` for newest-snapshot access; on channel Full, drains and retries once.
 - **Panic Log Hook** (`main.rs`): Custom panic hook writes to `%TEMP%\pulse_panic.log` for headless CI diagnostics.
-- **Audit Fixes**: Removed all 24 `rustfmt` skip attributes; unified line limit to 180 for all `.rs` files in `src/` and `tests/`; CI workflow uses stable-only main job with separate MSRV `1.85.0` job; `--locked` on self-test.
+- **Audit Fixes**: Removed all 24 `rustfmt` skip attributes; unified line limit to 180 for all `.rs` files in `src/` and `tests/`; CI workflow uses stable-only main job with separate MSRV `1.87.0` job; `--locked` on self-test.
 - **SafeHandle 1024 Buffer** (`safe_handle.rs`): `verify_handle_identity` uses `[0u16; 1024]` buffer for `QueryFullProcessImageNameW`.
 
 ## [0.0.16] - 2026-11-03

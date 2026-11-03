@@ -49,7 +49,7 @@ PULSE provides a dark-mode telemetry HUD with a **Memory Spike Blackbox**, a **3
 
 ## Build from Source
 
-Requires Rust `1.85+` on Windows 10/11 (x64 MSVC toolchain):
+Requires Rust `1.87+` on Windows 10/11 (x64 MSVC toolchain):
 
 ```powershell
 git clone https://github.com/pete702/pulse-task-manager.git
