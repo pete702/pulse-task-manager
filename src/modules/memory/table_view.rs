@@ -2,7 +2,6 @@
 
 use eframe::egui;
 
-use crate::i18n::Lang;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::modules::memory::process_model::{filter_group_and_sort, MemorySortCol};
 use crate::theme::colors;
@@ -38,12 +37,7 @@ impl Default for MemoryTableState {
 }
 
 /// Renders the spike banner, toolbar, and virtualized process table.
-pub fn render_memory_table(
-    ui: &mut egui::Ui,
-    snap: &MemorySnapshot,
-    state: &mut MemoryTableState,
-    lang: Lang,
-) {
+pub fn render_memory_table(ui: &mut egui::Ui, snap: &MemorySnapshot, state: &mut MemoryTableState) {
     let rows = filter_group_and_sort(
         &snap.processes,
         snap.ram_total_bytes,
@@ -57,23 +51,16 @@ pub fn render_memory_table(
     crate::theme::card_frame().show(ui, |ui| {
         ui.vertical(|ui| {
             if let Some(ref spike) = snap.latest_spike {
-                render_spike_banner(ui, spike, lang);
+                render_spike_banner(ui, spike);
                 ui.add_space(8.0);
             }
-            render_toolbar(
-                ui,
-                snap.processes.len(),
-                rows.len(),
-                clone_groups,
-                state,
-                lang,
-            );
+            render_toolbar(ui, snap.processes.len(), rows.len(), clone_groups, state);
             ui.add_space(6.0);
 
             if rows.is_empty() {
                 ui.centered_and_justified(|ui| {
                     ui.label(
-                        egui::RichText::new(empty_label(lang))
+                        egui::RichText::new(empty_label())
                             .monospace()
                             .size(12.0)
                             .color(colors::TEXT_SECONDARY),
@@ -81,7 +68,7 @@ pub fn render_memory_table(
                 });
             } else {
                 let height = (ui.available_height() - 4.0).max(120.0);
-                render_table(ui, &rows, state, lang, height);
+                render_table(ui, &rows, state, height);
             }
         });
     });
@@ -123,7 +110,7 @@ mod tests {
         let mut state = MemoryTableState::default();
 
         egui::__run_test_ui(|ui| {
-            render_memory_table(ui, &snap, &mut state, Lang::En);
+            render_memory_table(ui, &snap, &mut state);
         });
     }
 }

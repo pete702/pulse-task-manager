@@ -2,9 +2,9 @@
 
 use eframe::egui;
 
-use crate::i18n::Lang;
 use crate::modules::memory::chart_view;
-use crate::modules::memory::model::{MemoryHistory, MemorySnapshot};
+use crate::modules::memory::history::MemoryHistory;
+use crate::modules::memory::model::MemorySnapshot;
 use crate::modules::memory::table_view::{render_memory_table, MemoryTableState};
 use crate::modules::memory::view;
 use crate::theme::{card_frame, colors, load_color};
@@ -20,13 +20,11 @@ pub enum MemorySubView {
 }
 
 impl MemorySubView {
-    /// Localized switcher label with the live process count.
-    pub fn label(self, lang: Lang, process_count: usize) -> String {
-        match (lang, self) {
-            (Lang::Uk, Self::Overview) => "◈ Дашборд та Графік".to_owned(),
-            (Lang::En, Self::Overview) => "◈ Telemetry Overview".to_owned(),
-            (Lang::Uk, Self::Processes) => format!("📋 Процеси ОЗП ({process_count})"),
-            (Lang::En, Self::Processes) => format!("📋 Memory Processes ({process_count})"),
+    /// Switcher label with the live process count.
+    pub fn label(self, process_count: usize) -> String {
+        match self {
+            Self::Overview => "◈ Overview & Charts".to_owned(),
+            Self::Processes => format!("📋 RAM Processes ({process_count})"),
         }
     }
 }
@@ -38,13 +36,12 @@ pub fn render_memory_page(
     history: &mut MemoryHistory,
     sub_view: &mut MemorySubView,
     table_state: &mut MemoryTableState,
-    lang: Lang,
 ) {
     card_frame().show(ui, |ui| {
         ui.horizontal(|ui| {
             for view in [MemorySubView::Overview, MemorySubView::Processes] {
                 let active = *sub_view == view;
-                let text = view.label(lang, mem.processes.len());
+                let text = view.label(mem.processes.len());
                 let button =
                     egui::Button::new(egui::RichText::new(text).monospace().size(12.0).color(
                         if active {
@@ -76,7 +73,7 @@ pub fn render_memory_page(
         MemorySubView::Processes => {
             render_compact_ram_bar(ui, mem);
             ui.add_space(8.0);
-            render_memory_table(ui, mem, table_state, lang);
+            render_memory_table(ui, mem, table_state);
         }
     }
 }
@@ -138,21 +135,10 @@ mod tests {
 
     #[test]
     fn test_subview_labels() {
+        assert_eq!(MemorySubView::Overview.label(0), "◈ Overview & Charts");
         assert_eq!(
-            MemorySubView::Overview.label(Lang::Uk, 0),
-            "◈ Дашборд та Графік"
-        );
-        assert_eq!(
-            MemorySubView::Overview.label(Lang::En, 0),
-            "◈ Telemetry Overview"
-        );
-        assert_eq!(
-            MemorySubView::Processes.label(Lang::Uk, 123),
-            "📋 Процеси ОЗП (123)"
-        );
-        assert_eq!(
-            MemorySubView::Processes.label(Lang::En, 123),
-            "📋 Memory Processes (123)"
+            MemorySubView::Processes.label(123),
+            "📋 RAM Processes (123)"
         );
     }
 }

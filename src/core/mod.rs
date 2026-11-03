@@ -1,5 +1,7 @@
 //! PULSE telemetry core: background worker, system snapshots, communication channels.
 
+pub mod selftest;
+pub mod selftest_app;
 pub mod worker;
 
 use std::sync::mpsc;
@@ -16,16 +18,36 @@ pub struct SystemSnapshot {
     pub pulse_ram_mb: f32,
     /// OS-level memory snapshot (RAM/Swap totals, usage, cached).
     pub memory: Option<MemSnapshot>,
+    /// OS scheduler jitter in milliseconds (how much the 1000ms sleep overshot).
+    pub os_scheduler_jitter_ms: u32,
 }
 
 impl SystemSnapshot {
     /// Creates a new snapshot with the given uptime, process RAM, and memory.
+    #[allow(dead_code)]
     #[inline]
     pub fn new(uptime_secs: u64, pulse_ram_mb: f32, memory: Option<MemSnapshot>) -> Self {
         Self {
             uptime_secs,
             pulse_ram_mb,
             memory,
+            os_scheduler_jitter_ms: 0,
+        }
+    }
+
+    /// Creates a new snapshot with OS scheduler jitter.
+    #[inline]
+    pub fn new_with_jitter(
+        uptime_secs: u64,
+        pulse_ram_mb: f32,
+        memory: Option<MemSnapshot>,
+        jitter_ms: u32,
+    ) -> Self {
+        Self {
+            uptime_secs,
+            pulse_ram_mb,
+            memory,
+            os_scheduler_jitter_ms: jitter_ms,
         }
     }
 
@@ -37,6 +59,7 @@ impl SystemSnapshot {
             uptime_secs,
             pulse_ram_mb,
             memory: None,
+            os_scheduler_jitter_ms: 0,
         }
     }
 }

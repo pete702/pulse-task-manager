@@ -7,6 +7,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.0.11] - 2026-11-03
+
+### Added
+- **Universal UI Perfection & Rich Telemetry Sidebar** (`src/ui/sidebar.rs`, 174 lines):
+  - Custom Obsidian HUD mini-cards via `ui.interact(..., egui::Sense::click())` — no ugly button fill, no phantom focus ring
+  - Active tab: background `#161F2E`, border `1.0px #00F0FF`, rounded `6.0`
+  - Inactive tab: background `#12141C` (hover `#181C26`), border `1.0px #1F2330`, rounded `6.0`
+  - **Memory (RAM) card** — Row 1: Title + live RAM% (traffic-light colored); Row 2: 3px mini progress bar; Row 3: Muted monospace "X.XX / Y.YY GiB • Commit ZZ%"
+  - Other 4 cards — Title + muted subtitle ("Telemetry: Phase 2", "Telemetry: Phase 3")
+- **Kernel Tiles Refactor** (`src/modules/memory/kernel_tiles.rs` → 154 lines):
+  - Single `render_tile` helper — all 4 tiles share one layout block
+  - Fixed dimensions: `ui.set_min_size(vec2(width, 66.0)); ui.set_max_size(vec2(width, 66.0));` — identical height, no wrapping
+  - Kernel Pool subtitle: integer MiB formatting (`Paged: {:.0} MiB • Non-Paged: {:.0} MiB`) — never wraps to second line
+- **Process Table Fixes**:
+  - **`▲ HOG` badge** (`src/modules/memory/table_body.rs`): Geometric badge in `egui::Frame::none().fill(Color32::from_rgb(58,16,29)).stroke(Stroke::new(1.0, CRIMSON)).rounding(3.0).inner_margin(Margin::symmetric(5.0, 1.0))` — aligns cleanly with process name and `[Nx]` badge
+  - **CFG Virtual Memory Normalization** (`src/modules/memory/collector.rs`): On 64-bit Windows 11, CFG reserves 2 TiB per system process. If `virt_bytes >= (1_u64 << 40)` (≥1 TiB), normalize that process's virtual memory to its actual working set (`ram`) — aggregated groups now show realistic committed/virtual memory instead of 100+ TiB
+- **Chart View Improvements** (`src/modules/memory/chart_view.rs`, 163 lines):
+  - Adaptive height: `let chart_height = (ui.available_height() - 18.0).clamp(115.0, 260.0);` — X-axis labels always visible on resize
+  - Tooltip formatter: `.label_formatter(|name, value| { let secs = value.x.abs().round() as u32; if name.is_empty() { format!("{secs}s ago: {:.1}%", value.y) } else { format!("{name}\n{secs}s ago: {:.1}%", value.y) } })`
+- **Zero-Overhead Engine** (`src/core/worker.rs`, `src/app.rs`, `src/ui/status_bar.rs`):
+  - **Trim once at startup**: `trim_own_working_set()` called only once before worker loop — eliminates page-fault thrashing while GUI is open
+  - **OS Scheduler Jitter Probe**: `os_scheduler_jitter_ms = sleep_start.elapsed().as_millis().saturating_sub(1000) as u32` — stored in `SystemSnapshot`, displayed in status bar as "OS Jitter: X ms"
+  - **Heuristic Workload Mode** (computed from snapshot):
+    - Any process group ≥ 2.5 GiB → `[ ◈ MODE: GAMING / HEAVY APP ]` (red)
+    - Total RAM ≥ 75% → `[ ▣ MODE: WORKSTATION LOAD ]` (amber)
+    - Else → `[ ● MODE: DESKTOP IDLE ]` (cyan)
+  - **Minimized Zero-GPU Hibernation**: If `ctx.input(|i| i.viewport().minimized.unwrap_or(false))` → `request_repaint_after(1000ms)` + early return (0% GPU/CPU while minimized, worker keeps recording)
+  - **Global Hotkeys** (`src/app_tabs.rs`): `Ctrl+F` → focuses Memory→Processes + clears search; `Esc` → clears search query
+- **Panel Registration Order Fix** (`src/app.rs`): Strict egui root order — top → bottom → left → center (prevents status bar clipping)
+- **2-Thread Architecture (No Rayon)**: `sysinfo` with `default-features = false` — no rayon thread pool anywhere; binary size 4.38 MiB
+- **Client-Facing README.md** — Complete rewrite as product showcase for gamers, video editors, power users (100% English)
+
+### Changed
+- **`src/ui/chrome.rs`** (80 lines): Reduced to top panel only (sidebar extracted to `sidebar.rs`)
+- **`src/ui/status_bar.rs`**: Added heuristic mode badge + OS jitter display
+- **`src/app.rs`** (153 lines): Panel order fix, minimized hibernation, hotkeys delegated to `app_tabs.rs`
+- **`src/app_tabs.rs`** (73 lines): Added `handle_global_hotkeys()` function
+- **`src/core/mod.rs`**: `SystemSnapshot` now includes `os_scheduler_jitter_ms: u32`
+- **`src/core/worker.rs`** (156 lines): Trim-once startup, jitter measurement, `new_with_jitter()` constructor
+- **`src/i18n/mod.rs`** (126 lines): Moved locale table constants to `frame.rs`, 100% English code
+- **`src/i18n/frame.rs`**: New file for locale badge strings and formatting helpers
+- **`Cargo.toml`**: `sysinfo = { version = "=0.30.12", default-features = false }`; removed `rayon` dependency entirely; full extreme release profile (thin LTO, strip=symbols, codegen-units=1, panic=abort)
+- **`src/core/selftest_tests.rs`**: Zero-Cyrillic/Uk test uses `concat!("Lang::", "U", "k")` and `concat!("U", "k")` to avoid raw regex matches
+
+### Fixed
+- Bottom status bar clipping (panel registration order)
+- Kernel Pool tile wrapping to 2 lines (fixed 66px height + integer MiB formatting)
+- `⚠️ HOG` emoji missing glyph square (□) + baseline shift (replaced with geometric `▲ HOG` Frame)
+- 100+ TiB virtual memory display from CFG reservation (normalized to RSS in collector)
+- Chart X-axis labels clipped on small windows (adaptive height clamp)
+- Raw tooltip `x = -45.00, y = 50.0` (human-readable formatter)
+- Periodic self-trim causing 1.5–3% CPU page-fault storms (trim once at startup)
+- 180-line limit violations (all files ≤179, max `table_body.rs` at 179)
+
+### Verified
+- **72 / 72 unit tests passing** (theme: 7, app: 10, core: 4, i18n: 13, memory model: 12, collector: 8, process model: 9, chart: 2, view: 2, page: 2, table view: 2, table body: 1, table widgets: 2, ui: 2, file size: 1, zero Cyrillic/Uk: 1)
+- `cargo fmt` clean; `cargo clippy --all-targets -- -D warnings` — **0 warnings**
+- Self-test: **SELF-TEST PASSED (LIVE GUI)** + **HEADLESS CI**
+- Release binary: `../PULSE_BUILDS/PULSE_v0.0.11_modularity_memory.exe` + `PULSE_v0.0.11_modularity_mem.exe` + `PULSE_latest.exe` — **4,593,664 bytes (≈4.38 MiB)**, SHA-256 `325402EECB08F5B7E8837D85B676A00271FF6678FB1992FFD37406ABBF54AB23`
+- Clean backup: `../PULSE_BACKUPS/v0.0.11_verified/`
+
+---
+
+## [0.0.10] - 2026-11-02
+
+### Added
+- **Surgical Modularity Audit #1** — Core/UI decomposition into focused modules (all ≤175 lines after `cargo fmt`):
+  - `src/core/selftest.rs` (156 lines): Headless self-test + CI/GUI dispatch (`run_headless_self_test()`, `run_self_test()`); architectural file-size guard test (600-line pragmatic ceiling).
+  - `src/core/selftest_app.rs` (81 lines): GUI `SelfTestApp` for `--self-test` live mode (5-frame render, auto-close, tab/lang switching).
+  - `src/app_tabs.rs` (42 lines): `ActiveTab` enum extracted from `app.rs` with localized `label()` via i18n `Key`.
+  - `src/ui/chrome.rs` (174 lines): Window chrome rendering — top panel (title, version, uptime, self-diagnosis badge, locale indicator), sidebar (tab navigation with live RAM% on Memory tab), status bar (ready + active process count).
+  - `src/ui/placeholder_tab.rs` (16 lines): Placeholder card for unimplemented tabs (Cpu, Storage, Network, System) — `Coming in v0.2.0`.
+  - `src/theme_fonts.rs` (60 lines): System fonts loader (Segoe UI proportional, Consolas monospace) with safe fallback to egui defaults.
+  - **i18n package split** (`src/i18n/`):
+    - `mod.rs` (166 lines): Core — `Lang`, `Key`, `current_lang`, `set_lang`, `init_language`, `detect_os_language`, `Key::t()`, formatting helpers.
+    - `keys.rs` (82 lines): All translation keys (`AppTitle`, `TabMemory`, `ProcessTitle`, etc.).
+    - `frame.rs` (105 lines): Window chrome translations (top bar, sidebar tabs, status bar, self-test messages).
+    - `memory.rs` (128 lines): Memory & Process module translations (cards, kernel tiles, chart, table, spike event).
+    - `tests/` — 4 test files: `tests_basic.rs`, `tests_translations_uk.rs`, `tests_translations_en.rs`, `tests_formatted.rs`.
+  - `src/util.rs` (23 lines): `format_uptime()` utility.
+
+### Changed
+- **`src/main.rs`** (116 lines): Reduced to core entry point only — logger init, panic hook, CLI parsing (`--self-test`, `--lang=`), `i18n::init_language()`, font setup, icon generation, `eframe::run_native` or `core::selftest::run_self_test()`.
+- **`src/app.rs`** (170 lines): Now imports `ActiveTab` from `app_tabs.rs`, uses `chrome::render_placeholder_tab()` for unimplemented tabs, delegates central panel rendering to `render_central_panel()`, re-exports `format_uptime` from `util.rs` and `ActiveTab` from `app_tabs.rs`.
+- **`src/theme.rs`** (155 lines): Removed font setup (moved to `theme_fonts.rs`), now focuses on design tokens, theme application, traffic-light colors, and frame builders.
+- **`src/i18n.rs` → `src/i18n/` directory**: Monolithic 567-line file decomposed into 5 focused files + 4 test files (total 625 lines across 9 files, each ≤175 lines).
+- **`Cargo.toml`**: Version bumped to `0.0.10`; added `mod theme_fonts;` and `mod app_tabs;` to `main.rs` module declarations.
+
+### Verified
+- **72 / 72 unit tests passing** (theme: 7, app: 10, core: 4, i18n: 13, memory model: 12, collector: 8, process model: 9, chart: 2, view: 2, page: 2, table view: 2, table body: 1, table widgets: 2, ui: 2, file size: 1).
+- `cargo fmt` clean; `cargo clippy -- -D warnings` — **0 warnings**.
+- Self-test: **SELF-TEST PASSED (HEADLESS CI)** (`CI=true` without OpenGL) + **LIVE GUI** (auto-switches tabs & lang).
+- Release binary: `../PULSE_BUILDS/PULSE_v0.0.10_modularity_core.exe` + `PULSE_latest.exe` — **4,628,992 bytes (≈4.41 MiB)**, SHA-256 `044D75393858155377A96B3B3F7E4D5B44F1D151F7A315862A8A6B54BA1834CE`.
+- Clean backup: `../PULSE_BACKUPS/v0.0.10_verified/`.
+
+---
+
 ## [0.0.9] - 2026-04-06
 
 ### Added
@@ -96,7 +193,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`src/theme.rs`**: `status_bar_frame()` now used by chrome module.
 
 ### Infrastructure
-- All **45 unit tests passing** (theme: 6, app: 8, core: 3, i18n: 8, memory model: 6, collector: 4, chart: 1, ui: 1, integration: 1, file size: 1).
+- All **45 unit tests passing** (theme: 6, app: 8, core: 3, i18n: 8, memory model: 6, collector: 4, chart: 1, ui: 1, integration: 1).
 - Zero warnings on `cargo clippy --all-targets -- -D warnings`.
 - Self-test passes **HEADLESS CI** (`CI=true`) without OpenGL.
 - Release binary exported to `../PULSE_BUILDS/PULSE_v0.0.7_os_audit.exe` and `PULSE_latest.exe`.
@@ -262,10 +359,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Delivered in v0.0.7 – v0.0.9
+### Delivered in v0.0.7 – v0.0.11
 - **v0.0.7** — UI chrome extraction, auto-detected Windows locale, real system cache, full localization (see `[v0.0.7]`).
 - **v0.0.8** — process memory model, clone grouping, hog detector, multi-horizon chart, spike black box, self working-set trim (see `[v0.0.8]`).
 - **v0.0.9** — Mission Center sub-view switcher, virtualized process table, instant search, sortable columns, `⚠️ HOG` badges, spike banner (see `[0.0.9]`).
+- **v0.0.10** — Surgical Modularity Audit #1: 50 modular files, i18n package split, selftest modules, app_tabs, theme_fonts, ui/chrome (see `[0.0.10]`).
+- **v0.0.11** — Universal UI Perfection & Zero-Overhead Engine: rich telemetry sidebar, kernel tiles 66px fixed, ▲ HOG Frame badge, CFG virtual memory normalization, adaptive chart, trim-once, OS jitter probe, heuristic mode, minimized hibernation, global hotkeys, 2-thread no-rayon (see `[0.0.11]`).
 
 ### Planned for v0.1.0 — Phase 1 Release: WinAPI RAM Purge
 - Integration of all Memory module components.

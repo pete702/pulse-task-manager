@@ -8,9 +8,8 @@ use std::time::Duration;
 use sysinfo::System;
 
 use crate::core::{SnapshotTx, SystemSnapshot};
-use crate::modules::memory::collector::{
-    collect_memory, collect_process_memory, own_working_set_mb, trim_own_working_set,
-};
+use crate::modules::memory::collector::{collect_memory, collect_process_memory};
+use crate::modules::memory::win32_api::{own_working_set_mb, trim_own_working_set};
 
 /// Telemetry update interval (1000 ms = 1 second for 15-minute chart horizon).
 const WORKER_INTERVAL: Duration = Duration::from_millis(1000);
@@ -22,12 +21,18 @@ const WORKER_INTERVAL: Duration = Duration::from_millis(1000);
 /// Optimization: starts with `System::new()` and refreshes only memory and process
 /// memory, avoiding a full system scan. Own RSS is measured directly with Win32
 /// `K32GetProcessMemoryInfo` after trimming the working set.
+/// Trim is performed ONLY ONCE at startup to avoid page-fault thrashing while the GUI window is open.
 pub fn spawn() -> mpsc::Receiver<SystemSnapshot> {
     let (tx, rx): (SnapshotTx, mpsc::Receiver<SystemSnapshot>) = mpsc::channel();
 
     thread::spawn(move || {
         let mut sys = System::new();
         let mut latest_spike = None;
+
+        // Trim working set ONCE at startup (before the loop) to avoid page-fault thrashing
+        // while the GUI window is open. Periodic trimming causes page-fault storms when
+        // the OpenGL/DirectX window is actively rendering.
+        trim_own_working_set();
 
         loop {
             let uptime = System::uptime();
@@ -45,18 +50,26 @@ pub fn spawn() -> mpsc::Receiver<SystemSnapshot> {
             }
             memory.latest_spike = latest_spike.clone();
 
-            // Trim self working set after UI/OpenGL allocations, then measure own RSS.
-            trim_own_working_set();
+            // Measure own RSS after trimming
             let pulse_ram_mb = own_working_set_mb();
 
-            let snapshot = SystemSnapshot::new(uptime, pulse_ram_mb, Some(memory));
+            // Measure OS scheduler jitter (how much the 1000ms sleep overshot)
+            let sleep_start = std::time::Instant::now();
+            thread::sleep(WORKER_INTERVAL);
+            let os_scheduler_jitter_ms =
+                sleep_start.elapsed().as_millis().saturating_sub(1000) as u32;
+
+            let snapshot = SystemSnapshot::new_with_jitter(
+                uptime,
+                pulse_ram_mb,
+                Some(memory),
+                os_scheduler_jitter_ms,
+            );
 
             // Send snapshot; if receiver is closed, terminate thread
             if tx.send(snapshot).is_err() {
                 break;
             }
-
-            thread::sleep(WORKER_INTERVAL);
         }
     });
 
@@ -129,5 +142,15 @@ mod tests {
         assert!(mem.ram_used_bytes > 0);
         assert!(mem.ram_usage_percent() > 0.0);
         assert!(mem.ram_usage_percent() <= 100.0);
+    }
+
+    #[test]
+    fn test_os_scheduler_jitter_recorded() {
+        let rx = spawn();
+        let snapshot = rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("First snapshot");
+        // Jitter should be recorded (may be 0 on precise systems)
+        let _ = snapshot.os_scheduler_jitter_ms;
     }
 }

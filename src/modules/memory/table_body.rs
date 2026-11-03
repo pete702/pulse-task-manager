@@ -1,9 +1,7 @@
 //! Virtualized table body for the memory process list.
-
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
 
-use crate::i18n::Lang;
 use crate::modules::memory::process_model::{MemorySortCol, ProcessMemoryItem};
 use crate::theme::colors;
 
@@ -15,10 +13,9 @@ pub(super) fn render_table(
     ui: &mut egui::Ui,
     rows: &[ProcessMemoryItem],
     state: &mut MemoryTableState,
-    lang: Lang,
     height: f32,
 ) {
-    let labels = header_labels(lang);
+    let labels = header_labels();
     let table = TableBuilder::new(ui)
         .striped(true)
         .resizable(true)
@@ -114,13 +111,23 @@ fn render_name_cell(ui: &mut egui::Ui, item: &ProcessMemoryItem) {
         );
     }
     if item.is_hog {
-        ui.label(
-            egui::RichText::new("⚠️ HOG")
-                .monospace()
-                .size(9.0)
-                .color(colors::BG_WINDOW)
-                .background_color(colors::ACCENT_RED),
-        );
+        // Use geometric ▲ HOG badge in a Frame instead of ⚠️ emoji
+        egui::Frame::none()
+            .fill(egui::Color32::from_rgb(0x3A, 0x10, 0x1D))
+            .stroke(egui::Stroke::new(
+                1.0_f32,
+                egui::Color32::from_rgb(0xE0, 0x2A, 0x54),
+            ))
+            .rounding(egui::Rounding::same(3.0))
+            .inner_margin(egui::Margin::symmetric(5.0, 1.0))
+            .show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new("▲ HOG")
+                        .monospace()
+                        .size(9.0)
+                        .color(egui::Color32::from_rgb(0xE0, 0x2A, 0x54)),
+                );
+            });
     }
 }
 
@@ -158,18 +165,15 @@ fn toggle_sort(state: &mut MemoryTableState, col: MemorySortCol) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn test_toggle_sort() {
-        let mut state = MemoryTableState::default();
-        toggle_sort(&mut state, MemorySortCol::RamBytes);
-        assert!(state.sort_asc);
-
-        toggle_sort(&mut state, MemorySortCol::Name);
-        assert_eq!(state.sort_col, MemorySortCol::Name);
-        assert!(state.sort_asc);
-
-        toggle_sort(&mut state, MemorySortCol::Name);
-        assert!(!state.sort_asc);
+        let mut s = MemoryTableState::default();
+        toggle_sort(&mut s, MemorySortCol::RamBytes);
+        assert!(s.sort_asc);
+        toggle_sort(&mut s, MemorySortCol::Name);
+        assert_eq!(s.sort_col, MemorySortCol::Name);
+        assert!(s.sort_asc);
+        toggle_sort(&mut s, MemorySortCol::Name);
+        assert!(!s.sort_asc);
     }
 }
