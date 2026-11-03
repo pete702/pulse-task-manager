@@ -7,22 +7,32 @@ on:
     branches: [main]
 
 jobs:
-  build-and-test:
+  fmt:
     runs-on: windows-latest
-    timeout-minutes: 15
-
-    env:
-      CARGO_TERM_COLOR: always
-
+    timeout-minutes: 5
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Install Rust toolchain (MSRV 1.78.0)
+        uses: dtolnay/rust-toolchain@1.78.0
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    needs: fmt
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
       - name: Install Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -33,27 +43,18 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
       - name: Run Clippy (deny warnings)
         run: cargo clippy --locked --all-targets -- -D warnings
-
       - name: Run cargo check (stable)
         run: cargo check --locked --all-targets
-
       - name: Run unit tests
         run: cargo test --locked --all-targets
-
       - name: Build release
         run: cargo build --release --locked
-
       - name: Run self-test (headless CI mode)
         run: cargo run --release --locked -- --self-test
         env:
           CI: true
-
       - name: Upload release binary
         uses: actions/upload-artifact@v4
         with:
@@ -64,19 +65,15 @@ jobs:
   msrv:
     runs-on: windows-latest
     timeout-minutes: 10
-
     env:
       CARGO_TERM_COLOR: always
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Install Rust toolchain (MSRV 1.78.0)
         uses: dtolnay/rust-toolchain@1.78.0
         with:
           components: rustfmt, clippy
-
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -87,6 +84,7 @@ jobs:
           key: ${{ runner.os }}-cargo-msrv-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-msrv-
-
       - name: Run cargo check (MSRV 1.78.0)
         run: cargo check --locked --all-targets
+      - name: Run Clippy (MSRV 1.78.0)
+        run: cargo clippy --locked --all-targets -- -D warnings
