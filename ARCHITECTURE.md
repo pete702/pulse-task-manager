@@ -24,23 +24,22 @@ PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and pro
 
 - `src/core/` — Background worker (`worker.rs`), `SystemSnapshot` channel (`mod.rs`), CLI `--self-test` harness (`selftest.rs`), and modularity/language guards (`selftest_tests.rs`).
 - `src/modules/memory/` — RAM/Swap collector, Win32 kernel pool FFI (`K32GetPerformanceInfo`), 3-segment composition bar, spike blackbox, delta tracker (`Δ RAM/s`), formatters, and virtualized `TableBuilder` process views.
-- `src/modules/{cpu,storage,network,system}/` — Subsystem modules scheduled across Phases 2–5.
+- `src/modules/{cpu,storage,network,system}/` — Planned subsystem modules scheduled across Phases 2–5.
 - `src/ui/` — Root panel layout (`Top` -> `Bottom` -> `Left` -> `Central`), Obsidian theme tokens, top chrome header, sidebar navigation cards, and status bar.
 - `src/i18n/` — English UI string dictionary and native Win32 OS locale badge (`GetUserDefaultUILanguage`).
 
 ## 4. Win32 FFI & Safety Invariants
 
-- `#![deny(unsafe_op_in_unsafe_fn)]` and `#![warn(unsafe_code)]` are active at the crate root (`src/main.rs`).
-- Every Win32 FFI block (`K32GetPerformanceInfo`, `K32EmptyWorkingSet`, `GetCurrentProcess`, `GetUserDefaultUILanguage`) is isolated in dedicated helper functions with explicit return-code checks and `std::mem::zeroed()` initialization.
+- `#![deny(unsafe_code)]` is active at the crate root (`src/main.rs`). All Win32 FFI calls are wrapped in localized `#[allow(unsafe_code)]` blocks for: `K32GetPerformanceInfo`, `K32GetProcessMemoryInfo`, `K32EmptyWorkingSet`, `OpenProcess`, `IsProcessCritical`, `OpenProcessToken`, `GetTokenInformation`, `CloseHandle`, `TerminateProcess`, and `GetUserDefaultUILanguage`.
+- Every Win32 FFI block is isolated in dedicated helper functions with explicit return-code checks and `std::mem::zeroed()` initialization.
 - **Windows x64 CFG Virtual Memory Normalization**: On 64-bit Windows 11, Control Flow Guard reserves `2 TiB` of virtual address space per system process. PULSE normalizes `virtual_memory() >= (1_u64 << 40)` (`1 TiB`) to the process working set so grouped system services report realistic commit values.
 
-## 5. Obsidian Theme Tokens (`src/ui/theme.rs`)
+## 5. Obsidian Theme Tokens (`src/theme.rs`)
 
 | Token | Hex | Purpose |
 | :--- | :--- | :--- |
-| `BG_PRIMARY` | `#0B0E14` | Deep Obsidian root background |
-| `BG_PANEL` | `#121721` | Card and panel surface |
-| `ACCENT_CYAN` | `#00F0FF` | Active tab indicator and primary telemetry accent |
-| `MINT` | `#00E5A3` | Optimal load (`< 60%`) and negative memory delta (`▼ -M/s`) |
-| `AMBER` | `#FFB800` | Elevated load (`60%–85%`) and moderate growth (`▲ +M/s`) |
-| `CRIMSON` | `#FF2A54` | Critical pressure (`>= 85%`), `▲ HOG` badge, and spike alerts |
+| `BG_WINDOW` | `#0B0C10` | Main window background |
+| `BG_CARD` | `#12141C` | Card/panel background |
+| `ACCENT_CYAN` | `#00F0FF` | Primary telemetry accent, active tab indicator, optimal load (`< 60%`) |
+| `ACCENT_AMBER` | `#FFB800` | Elevated load (`60%–85%`) and moderate growth (`▲ +M/s`) |
+| `ACCENT_RED` | `#FF2A54` | Critical pressure (`>= 85%`), `▲ HOG` badge, spike alerts |

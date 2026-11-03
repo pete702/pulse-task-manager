@@ -1,6 +1,7 @@
 //! Deterministic Memory Actions Engine for PULSE.
 //! Provides per-PID working set trim, batch operations, process termination, and file location opening.
 
+use std::os::windows::process::CommandExt;
 use std::path::Path;
 use windows_sys::Win32::Foundation::HANDLE;
 use windows_sys::Win32::System::ProcessStatus::{
@@ -10,7 +11,7 @@ use windows_sys::Win32::System::Threading::{
     TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
 };
 
-use crate::modules::memory::safe_handle::{verify_pid_safety_gate, SafeHandle};
+use crate::modules::memory::safe_handle::{is_handle_critical, verify_pid_safety_gate, SafeHandle};
 
 /// Report of a reclaim operation (trim/purge).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -45,6 +46,8 @@ unsafe fn query_working_set(handle: HANDLE) -> Option<u64> {
 }
 
 /// Per-PID deterministic working set trim.
+/// Checks kernel critical flag after opening handle; returns AccessDenied if post-trim query fails
+/// (never inflates reclaimed bytes with unwrap_or(0)).
 #[allow(unsafe_code)]
 pub fn trim_single_pid(pid: u32, name: &str) -> Result<u64, TrimSkipReason> {
     if verify_pid_safety_gate(pid, name).is_err() {
@@ -52,13 +55,21 @@ pub fn trim_single_pid(pid: u32, name: &str) -> Result<u64, TrimSkipReason> {
     }
     let access = PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_QUOTA;
     let handle = SafeHandle::open(access, pid).ok_or(TrimSkipReason::AccessDenied)?;
-    let ws_before = unsafe { query_working_set(handle.0) }.ok_or(TrimSkipReason::AccessDenied)?;
+    // Harden: reject kernel-critical processes even if they pass name-based gate
+    if is_handle_critical(&handle) {
+        return Err(TrimSkipReason::Protected);
+    }
+    let ws_before =
+        unsafe { query_working_set(handle.as_raw()) }.ok_or(TrimSkipReason::AccessDenied)?;
     #[allow(unsafe_code)]
-    let trim_ok = unsafe { K32EmptyWorkingSet(handle.0) };
+    let trim_ok = unsafe { K32EmptyWorkingSet(handle.as_raw()) };
     if trim_ok == 0 {
         return Err(TrimSkipReason::AccessDenied);
     }
-    let ws_after = unsafe { query_working_set(handle.0) }.unwrap_or(0);
+    // FIX: Do NOT use unwrap_or(0) — a failed post-trim query means we cannot measure,
+    // so return AccessDenied instead of inflating reclaimed = ws_before.
+    let ws_after =
+        unsafe { query_working_set(handle.as_raw()) }.ok_or(TrimSkipReason::AccessDenied)?;
     Ok(ws_before.saturating_sub(ws_after))
 }
 
@@ -94,7 +105,7 @@ pub fn terminate_process_group(targets: &[(u32, String)]) -> Result<usize, Strin
     for (pid, _) in targets {
         if let Some(h) = SafeHandle::open(PROCESS_TERMINATE, *pid) {
             #[allow(unsafe_code)]
-            if unsafe { TerminateProcess(h.0, 1) } != 0 {
+            if unsafe { TerminateProcess(h.as_raw(), 1) } != 0 {
                 terminated += 1;
             }
         }
@@ -103,14 +114,15 @@ pub fn terminate_process_group(targets: &[(u32, String)]) -> Result<usize, Strin
 }
 
 /// Opens the containing folder of an executable in Explorer with the file selected.
+/// Uses raw_arg for correct quoting of paths with spaces (e.g., "C:\Program Files\...").
 pub fn open_process_file_location(exe_path: &Path) -> Result<(), String> {
     if !exe_path.exists() {
         return Err("Executable path does not exist".to_string());
     }
-    let path_str = exe_path.display().to_string();
-    std::process::Command::new("explorer.exe")
-        .arg(format!("/select,{}", path_str))
+    let clean = exe_path.to_string_lossy().replace('"', "");
+    std::process::Command::new(r"C:\Windows\explorer.exe")
+        .raw_arg(format!("/select,\"{}\"", clean))
         .spawn()
-        .map_err(|e| format!("Failed to launch explorer: {}", e))?;
-    Ok(())
+        .map(|_| ())
+        .map_err(|e| format!("Failed to launch Explorer: {}", e))
 }

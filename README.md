@@ -36,7 +36,7 @@ PULSE provides a dark-mode telemetry HUD with a **Memory Spike Blackbox**, a **3
 
 - **Single Portable Executable**: Standalone `.exe` (`~3.9 MiB` binary size on disk), no installer, no background service.
 - **Live Self-Diagnostics**: PULSE displays its own real-time memory working set and UI frame time directly in the top header badge (`[ PULSE: XX.X MB | UI: X.XX ms ]`).
-- **Decoupled 1 Hz Collector**: Main `egui` UI thread + background telemetry worker thread (`std::sync::mpsc::channel`) with 1 Hz process table row caching.
+- **Decoupled 1 Hz Collector**: Main `egui` UI thread + background telemetry worker thread (`bounded std::sync::mpsc::sync_channel(2)`) with 1 Hz process table row caching.
 - **Minimize Hibernation**: UI rendering pauses while minimized and triggers a one-time working-set self-trim (`K32EmptyWorkingSet`).
 - **User-Mode Only**: Uses standard Win32 APIs (`K32GetPerformanceInfo`, `sysinfo`); no kernel drivers, no DLL injection, and no hooks into other processes.
 

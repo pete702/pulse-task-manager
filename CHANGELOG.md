@@ -3,11 +3,17 @@
 All notable changes to **PULSE** (`pulse_manager`) are documented in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
 
+## [0.0.15] - 2026-11-03
+
+- **Win32 Safety & Path Normalization Fixes**: Made `SafeHandle` raw field private, wrapped `OpenProcessToken` in RAII, added `IsProcessCritical` checks, and fixed full-path normalization in `verify_pid_safety_gate`.
+- **Accurate Trim Accounting & Explorer Launch**: Fixed post-trim `K32GetProcessMemoryInfo` failure handling in `ReclaimReport` and switched `open_process_file_location` to `CommandExt::raw_arg` for paths with spaces.
+- **Documentation & Placeholder Sync**: Synced `ARCHITECTURE.md` theme/FFI tokens with `src/theme.rs` and `src/main.rs`, and matched placeholder tab versions to the roadmap.
+
 ## [0.0.14] - 2026-11-03
 
 - **Zero-Clone Frame Pipeline**: Replaced per-frame `SystemSnapshot` and `Vec<ProcessMemoryItem>` clones with `Arc<SystemSnapshot>` and `Arc<[ProcessMemoryItem]>`, moved `apply_obsidian_theme` to one-time startup init, and cached Win32 `GetUserDefaultUILanguage` in `OnceLock`.
 - **Live 1 Hz Table Cache & Bounded Worker Channel**: Replaced the static table cache key with a 64-bit dynamic telemetry signature, switched the worker to `mpsc::sync_channel(2)`, and optimized `ProcessDeltaTracker` retention to `O(n)` via `HashSet`.
-- **Win32 SafeHandle & Memory Actions Engine**: Added RAII `SafeHandle`, `is_app_elevated`, `verify_pid_safety_gate` (OS & anti-cheat protection), deterministic `ReclaimReport` working-set trimming (`src/modules/memory/actions.rs`), and `clippy.toml` (`msrv = "1.78.0"`).
+- **clippy.toml** (`msrv = "1.78.0"`).
 
 ## [0.0.13] - 2026-11-03
 
@@ -35,7 +41,3 @@ Binary assets and checksums are published on [GitHub Releases](https://github.co
 ## [0.0.9] - 2026-11-02
 
 - **Live GUI `--self-test` & Top Process Analytics**: Upgraded `--self-test` to verify live frame rendering and added Top-5 RAM consumer cards alongside `1m / 5m / 15m` history chart scaling.
-
-## [0.0.8] - 2026-11-02
-
-- **Win32 Kernel Telemetry & Virtualized Table**: Integrated `K32GetPerformanceInfo` for Paged/Non-Paged Pool and Standby Cache metrics, virtualized `TableBuilder` process rows, and the Memory Spike Blackbox detector.

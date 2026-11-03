@@ -54,17 +54,17 @@ pub mod locale {
     }
 
     /// Returns the OS locale badge string for the top bar (e.g., "LOCALE: UK-UA (0x0422)").
-    /// Uses OnceLock to cache the Win32 GetUserDefaultUILanguage() result - zero FFI calls after first call.
+    /// Uses OnceLock with static string references - zero allocations after initialization.
     #[cfg(target_os = "windows")]
     pub fn os_locale_badge() -> &'static str {
-        static BADGE_CACHE: OnceLock<String> = OnceLock::new();
+        static BADGE_CACHE: OnceLock<&'static str> = OnceLock::new();
         BADGE_CACHE.get_or_init(|| {
             let lang_id = get_os_lang_id();
             let primary_lang = lang_id & 0x3FF;
             if primary_lang == 0x22 {
-                "LOCALE: UK-UA (0x0422)".to_string()
+                "LOCALE: UK-UA (0x0422)"
             } else {
-                "LOCALE: EN-US (0x0409)".to_string()
+                "LOCALE: EN-US (0x0409)"
             }
         })
     }
