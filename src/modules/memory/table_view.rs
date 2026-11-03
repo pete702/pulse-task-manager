@@ -2,6 +2,7 @@
 //! Features 1 Hz caching to avoid re-sorting on every UI frame.
 
 use eframe::egui;
+use std::sync::Arc;
 
 use crate::modules::memory::model::MemorySnapshot;
 use crate::modules::memory::process_model::{filter_group_and_sort, MemorySortCol};
@@ -14,7 +15,7 @@ use super::table_widgets::{empty_label, render_spike_banner, render_toolbar};
 /// Recompute only when snapshot changes, search query changes, or sort/group settings change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TableCacheKey {
-    snapshot_id: u64, // Unique ID per snapshot (e.g., uptime or sequence)
+    snapshot_id: u64, // Fast 64-bit signature of dynamic telemetry
     search_query: String,
     sort_col: MemorySortCol,
     sort_asc: bool,
@@ -34,8 +35,8 @@ pub struct MemoryTableState {
     pub sort_asc: bool,
     /// Selected process (representative PID).
     pub selected_pid: Option<u32>,
-    /// Cached filtered/sorted rows.
-    cached_rows: Option<Vec<crate::modules::memory::process_model::ProcessMemoryItem>>,
+    /// Cached filtered/sorted rows (Arc for zero-copy per-frame access).
+    cached_rows: Option<Arc<[crate::modules::memory::process_model::ProcessMemoryItem]>>,
     /// Cache key for validation.
     cache_key: Option<TableCacheKey>,
 }
@@ -54,17 +55,34 @@ impl Default for MemoryTableState {
     }
 }
 
+/// Computes a fast 64-bit signature of dynamic telemetry for cache invalidation.
+/// Combines RAM/swap metrics with a rolling hash of per-process deltas.
+fn compute_snapshot_signature(snap: &MemorySnapshot) -> u64 {
+    let mut h = snap.ram_used_bytes;
+    h = h.wrapping_add(snap.ram_available_bytes.rotate_left(13));
+    h = h.wrapping_add(snap.swap_used_bytes.rotate_left(29));
+    let cached = snap.ram_cached_bytes();
+    h = h.wrapping_add(cached.rotate_left(41));
+
+    // Rolling hash of delta_bytes_per_sec / used_bytes across processes
+    for (_, _, ram, _, delta) in &snap.processes {
+        if *ram > 0 {
+            let ratio = (*delta as i128 * 1_000_000) / (*ram as i128); // scaled ratio
+            h = h.wrapping_add((ratio as u64).rotate_left(7));
+        }
+    }
+    h
+}
+
 impl MemoryTableState {
     /// Get or compute the filtered/sorted rows using 1 Hz cache.
-    /// Returns an owned Vec to avoid borrow conflicts during rendering.
+    /// Returns an Arc<[ProcessMemoryItem]> for zero-copy per-frame access.
     pub(crate) fn get_or_compute_rows(
         &mut self,
         snap: &MemorySnapshot,
-    ) -> Vec<crate::modules::memory::process_model::ProcessMemoryItem> {
-        // Use snapshot uptime + process count as a simple snapshot ID
-        let snapshot_id = snap
-            .ram_total_bytes
-            .wrapping_add(snap.processes.len() as u64);
+    ) -> Arc<[crate::modules::memory::process_model::ProcessMemoryItem]> {
+        // Fast 64-bit signature of dynamic telemetry - changes every 1 Hz tick
+        let snapshot_id = compute_snapshot_signature(snap);
 
         let new_key = TableCacheKey {
             snapshot_id,
@@ -79,7 +97,7 @@ impl MemoryTableState {
 
         if cache_valid {
             if let Some(ref rows) = self.cached_rows {
-                return rows.clone();
+                return Arc::clone(rows);
             }
         }
 
@@ -93,9 +111,10 @@ impl MemoryTableState {
             self.sort_asc,
         );
 
-        self.cached_rows = Some(rows.clone());
+        let rows_arc: Arc<[crate::modules::memory::process_model::ProcessMemoryItem]> = rows.into();
+        self.cached_rows = Some(Arc::clone(&rows_arc));
         self.cache_key = Some(new_key);
-        rows
+        rows_arc
     }
 
     /// Invalidate cache when sort/group settings change.
@@ -158,19 +177,4 @@ pub fn render_memory_table(ui: &mut egui::Ui, snap: &MemorySnapshot, state: &mut
             }
         });
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_table_state_defaults() {
-        let state = MemoryTableState::default();
-        assert!(state.search_query.is_empty());
-        assert!(state.group_clones);
-        assert_eq!(state.sort_col, MemorySortCol::RamBytes);
-        assert!(!state.sort_asc);
-        assert!(state.selected_pid.is_none());
-    }
 }

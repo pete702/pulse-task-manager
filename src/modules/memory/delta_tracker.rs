@@ -1,7 +1,7 @@
 //! Process memory delta tracker for PULSE.
 //! Tracks per-process working set changes across collection ticks.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::modules::memory::process_model::MemorySpikeEvent;
 
@@ -25,6 +25,7 @@ impl ProcessDeltaTracker {
 
     /// Calculate delta for each process and update tracking.
     /// Returns vector of (PID, name, RAM bytes, virtual bytes, delta bytes/sec).
+    /// Uses O(n) HashSet for stale PID cleanup instead of O(n²) retain.
     pub fn track(&mut self, processes: &[(u32, String, u64, u64)]) -> Vec<RawProcessRow> {
         let mut result = Vec::with_capacity(processes.len());
         for (pid, name, ram, virt) in processes {
@@ -33,9 +34,10 @@ impl ProcessDeltaTracker {
             self.prev_ram_bytes.insert(*pid, *ram);
             result.push((*pid, name.clone(), *ram, *virt, delta));
         }
-        // Clean up stale PIDs (optional, keep it simple for now)
+        // Clean up stale PIDs in O(n) using HashSet of active PIDs
+        let active_pids: HashSet<u32> = processes.iter().map(|(pid, _, _, _)| *pid).collect();
         self.prev_ram_bytes
-            .retain(|pid, _| processes.iter().any(|(p, _, _, _)| p == pid));
+            .retain(|pid, _| active_pids.contains(pid));
         result
     }
 }

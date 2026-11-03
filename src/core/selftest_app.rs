@@ -1,6 +1,6 @@
 //! Self-test GUI application for PULSE.
 
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 
 use crate::core::spawn_telemetry_worker;
 use crate::core::SystemSnapshot;
@@ -12,8 +12,8 @@ pub struct SelfTestApp {
     headless: bool,
     frames_rendered: u32,
     snapshot_received: bool,
-    snapshot_rx: mpsc::Receiver<SystemSnapshot>,
-    latest_snapshot: Option<SystemSnapshot>,
+    snapshot_rx: mpsc::Receiver<Arc<SystemSnapshot>>,
+    latest_snapshot: Option<Arc<SystemSnapshot>>,
     test_passed: bool,
 }
 

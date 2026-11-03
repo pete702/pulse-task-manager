@@ -3,6 +3,12 @@
 All notable changes to **PULSE** (`pulse_manager`) are documented in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
 
+## [0.0.14] - 2026-11-03
+
+- **Zero-Clone Frame Pipeline**: Replaced per-frame `SystemSnapshot` and `Vec<ProcessMemoryItem>` clones with `Arc<SystemSnapshot>` and `Arc<[ProcessMemoryItem]>`, moved `apply_obsidian_theme` to one-time startup init, and cached Win32 `GetUserDefaultUILanguage` in `OnceLock`.
+- **Live 1 Hz Table Cache & Bounded Worker Channel**: Replaced the static table cache key with a 64-bit dynamic telemetry signature, switched the worker to `mpsc::sync_channel(2)`, and optimized `ProcessDeltaTracker` retention to `O(n)` via `HashSet`.
+- **Win32 SafeHandle & Memory Actions Engine**: Added RAII `SafeHandle`, `is_app_elevated`, `verify_pid_safety_gate` (OS & anti-cheat protection), deterministic `ReclaimReport` working-set trimming (`src/modules/memory/actions.rs`), and `clippy.toml` (`msrv = "1.78.0"`).
+
 ## [0.0.13] - 2026-11-03
 
 - **Win32 RAII SafeHandle & PID Safety Gate**: Added `SafeHandle` (`CloseHandle` on `Drop`), non-blocking elevation check (`is_app_elevated`), and `verify_pid_safety_gate` protecting critical Windows OS and anti-cheat processes (`src/modules/memory/safe_handle.rs`).

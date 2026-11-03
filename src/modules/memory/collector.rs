@@ -51,14 +51,15 @@ pub fn collect_memory(sys: &mut System) -> MemorySnapshot {
 /// Collects process memory information for the process list view.
 ///
 /// Returns a vector of (PID, name, RAM bytes, virtual bytes, delta bytes/sec) tuples,
-/// and optionally detects memory spike events (RAM >= 85%).
+/// optionally detects memory spike events (RAM >= 85%), and a precomputed
+/// `has_heavy_process` flag (any process >= 2.5 GiB) for O(1) status bar heuristic.
 #[allow(dead_code)]
 pub fn collect_process_memory(
     sys: &mut System,
     total_ram: u64,
     current_ram_pct: f32,
     delta_tracker: &mut ProcessDeltaTracker,
-) -> ProcessMemoryScan {
+) -> (ProcessMemoryScan, bool) {
     // Refresh process list with memory info only; skip exe path re-query on each cycle
     sys.refresh_processes_specifics(
         ProcessRefreshKind::new()
@@ -80,6 +81,12 @@ pub fn collect_process_memory(
         })
         .collect();
 
+    // Precompute heavy process flag for O(1) status bar access
+    const HEAVY_THRESHOLD: u64 = 2560_u64 << 20; // 2.5 GiB
+    let has_heavy_process = processes
+        .iter()
+        .any(|(_, _, ram, _)| *ram >= HEAVY_THRESHOLD);
+
     // Track deltas
     let processes_with_delta = delta_tracker.track(&processes);
 
@@ -90,7 +97,7 @@ pub fn collect_process_memory(
         current_ram_pct,
     );
 
-    (processes_with_delta, spike)
+    ((processes_with_delta, spike), has_heavy_process)
 }
 
 // Re-export Win32 API functions for backward compatibility

@@ -106,6 +106,7 @@ fn main() -> eframe::Result<()> {
             options,
             Box::new(|cc| {
                 theme::setup_fonts(&cc.egui_ctx);
+                theme::apply_obsidian_theme(&cc.egui_ctx);
                 Box::new(app::PulseApp::default()) as Box<dyn eframe::App>
             }),
         )

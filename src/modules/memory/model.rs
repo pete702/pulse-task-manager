@@ -84,6 +84,8 @@ pub struct MemorySnapshot {
     pub processes: Vec<(u32, String, u64, u64, i64)>,
     /// Most recent memory spike (RAM >= 85%), kept as a "black box" event.
     pub latest_spike: Option<MemorySpikeEvent>,
+    /// Precomputed flag: true if any process has RAM >= 2.5 GiB (for O(1) status bar heuristic).
+    pub has_heavy_process: bool,
 }
 
 impl MemorySnapshot {

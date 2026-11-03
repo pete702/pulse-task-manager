@@ -22,6 +22,8 @@ const FORBIDDEN_TOKENS: &[&str] = &[
     "free forever",
 ];
 
+const SOURCE_FILES: &[&str] = &["Cargo.toml", "tests/docs_guard.rs"];
+
 #[test]
 fn markdown_docs_respect_size_and_content_rules() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -57,6 +59,28 @@ fn markdown_docs_respect_size_and_content_rules() {
                 token
             );
         }
+
+        // NUL byte check
+        assert!(!content.contains('\0'), "{} contains NUL byte(s)", rel);
+        // Cyrillic character check
+        assert!(
+            !content
+                .chars()
+                .any(|c| ('\u{0400}'..='\u{04FF}').contains(&c)),
+            "{} contains Cyrillic characters",
+            rel
+        );
+    }
+}
+
+#[test]
+fn source_files_have_no_nul_or_cyrillic() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    for rel in SOURCE_FILES {
+        let path = root.join(rel);
+        let content = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
 
         // NUL byte check
         assert!(!content.contains('\0'), "{} contains NUL byte(s)", rel);

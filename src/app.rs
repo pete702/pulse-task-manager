@@ -1,6 +1,6 @@
 //! PULSE main application state: UI, telemetry handling, tabs.
 
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use std::time::Instant;
 
 use eframe::egui;
@@ -11,13 +11,12 @@ use crate::modules::memory::collector::trim_own_working_set;
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::page::{self, MemorySubView};
 use crate::modules::memory::table_view::MemoryTableState;
-use crate::theme::apply_obsidian_theme;
 use crate::ui::{chrome, sidebar};
 
 /// Main application state.
 pub struct PulseApp {
-    snapshot_rx: mpsc::Receiver<SystemSnapshot>,
-    latest_snapshot: Option<SystemSnapshot>,
+    snapshot_rx: mpsc::Receiver<Arc<SystemSnapshot>>,
+    latest_snapshot: Option<Arc<SystemSnapshot>>,
     active_tab: crate::app_tabs::ActiveTab,
     memory_sub_view: MemorySubView,
     table_state: MemoryTableState,
@@ -45,7 +44,7 @@ impl Default for PulseApp {
 }
 
 impl PulseApp {
-    fn render_central_panel(&mut self, ui: &mut egui::Ui, snapshot: &Option<SystemSnapshot>) {
+    fn render_central_panel(&mut self, ui: &mut egui::Ui, snapshot: &Option<Arc<SystemSnapshot>>) {
         ui.add_space(16.0);
         match self.active_tab {
             crate::app_tabs::ActiveTab::Memory => {
@@ -103,8 +102,7 @@ impl eframe::App for PulseApp {
 
         self.frame_count = self.frame_count.wrapping_add(1);
 
-        apply_obsidian_theme(ctx);
-
+        // Drain channel first - zero-copy Arc<SystemSnapshot>
         while let Ok(snap) = self.snapshot_rx.try_recv() {
             if let Some(ref mem) = snap.memory {
                 self.memory_history.push(mem);
@@ -112,13 +110,7 @@ impl eframe::App for PulseApp {
             self.latest_snapshot = Some(snap);
         }
 
-        let latest_snapshot = self.latest_snapshot.clone();
-        let active_processes = latest_snapshot
-            .as_ref()
-            .and_then(|s| s.memory.as_ref())
-            .map(|m| m.system_processes)
-            .unwrap_or(0);
-
+        // Check minimized early - before any rendering
         let is_minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
 
         // Edge-triggered minimize self-trim: only trim when transitioning TO minimized state
@@ -131,6 +123,14 @@ impl eframe::App for PulseApp {
             ctx.request_repaint_after(std::time::Duration::from_millis(1000));
             return;
         }
+
+        // Use Arc directly - cheap clone of Option<Arc<...>> (atomic refcount increment only)
+        let latest_snapshot = self.latest_snapshot.clone();
+        let active_processes = latest_snapshot
+            .as_ref()
+            .and_then(|s| s.memory.as_ref())
+            .map(|m| m.system_processes)
+            .unwrap_or(0);
 
         egui::TopBottomPanel::top("top_header").show(ctx, |ui| {
             chrome::render_top_panel(ui, &latest_snapshot, self.last_ui_ms);

@@ -4,7 +4,7 @@ pub mod selftest;
 pub mod selftest_app;
 pub mod worker;
 
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 
 use crate::modules::memory::model::MemorySnapshot as MemSnapshot;
 
@@ -65,8 +65,8 @@ impl SystemSnapshot {
 }
 
 /// Channel type for snapshot transmission: `Sender` in background thread, `Receiver` in UI.
-pub type SnapshotTx = mpsc::Sender<SystemSnapshot>;
-pub type SnapshotRx = mpsc::Receiver<SystemSnapshot>;
+pub type SnapshotTx = mpsc::SyncSender<Arc<SystemSnapshot>>;
+pub type SnapshotRx = mpsc::Receiver<Arc<SystemSnapshot>>;
 
 /// Spawns the background telemetry worker thread.
 /// Returns a `Receiver` for reading snapshots in the main thread.

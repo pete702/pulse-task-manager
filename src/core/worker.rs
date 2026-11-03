@@ -1,7 +1,7 @@
 //! Background telemetry worker: periodically collects uptime, self RAM usage, and OS memory,
-//! sends via mpsc channel.
+//! sends via bounded mpsc channel (capacity 2).
 
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::Duration;
 
@@ -17,14 +17,14 @@ const WORKER_INTERVAL: Duration = Duration::from_millis(1000);
 
 /// Spawns a background thread that reads `System::uptime()`, current process RAM,
 /// OS memory, and the process memory table every 1s and sends `SystemSnapshot`
-/// through the channel. Returns a `Receiver` for the UI thread.
+/// through a bounded channel (capacity 2). Returns a `Receiver` for the UI thread.
 ///
 /// Optimization: starts with `System::new()` and refreshes only memory and process
 /// memory, avoiding a full system scan. Own RSS is measured directly with Win32
 /// `K32GetProcessMemoryInfo` after trimming the working set.
 // Working-set self-trim runs once at worker startup and on window minimize transition.
-pub fn spawn() -> mpsc::Receiver<SystemSnapshot> {
-    let (tx, rx): (SnapshotTx, mpsc::Receiver<SystemSnapshot>) = mpsc::channel();
+pub fn spawn() -> mpsc::Receiver<Arc<SystemSnapshot>> {
+    let (tx, rx): (SnapshotTx, mpsc::Receiver<Arc<SystemSnapshot>>) = mpsc::sync_channel(2);
 
     thread::spawn(move || {
         let mut sys = System::new();
@@ -41,13 +41,14 @@ pub fn spawn() -> mpsc::Receiver<SystemSnapshot> {
 
             // Collect OS memory (RAM/Swap), then the per-process memory table.
             let mut memory = collect_memory(&mut sys);
-            let (processes, spike) = collect_process_memory(
+            let ((processes, spike), has_heavy_process) = collect_process_memory(
                 &mut sys,
                 memory.ram_total_bytes,
                 memory.ram_usage_percent(),
                 &mut delta_tracker,
             );
             memory.processes = processes;
+            memory.has_heavy_process = has_heavy_process;
             if spike.is_some() {
                 latest_spike = spike;
             }
@@ -69,9 +70,17 @@ pub fn spawn() -> mpsc::Receiver<SystemSnapshot> {
                 os_scheduler_jitter_ms,
             );
 
-            // Send snapshot; if receiver is closed, terminate thread
-            if tx.send(snapshot).is_err() {
-                break;
+            // Send snapshot via bounded channel; if receiver is closed, terminate thread.
+            // Use try_send to avoid blocking on slow UI; if full, we skip this snapshot.
+            match tx.try_send(Arc::new(snapshot)) {
+                Ok(()) => {}
+                Err(mpsc::TrySendError::Full(_)) => {
+                    // Channel full - UI is slow, skip this snapshot to avoid memory buildup
+                }
+                Err(mpsc::TrySendError::Disconnected(_)) => {
+                    // Receiver dropped - terminate worker thread
+                    break;
+                }
             }
         }
     });
@@ -105,7 +114,7 @@ mod tests {
             snapshot.memory.is_some(),
             "Memory snapshot should be present"
         );
-        let mem = snapshot.memory.unwrap();
+        let mem = snapshot.memory.as_ref().unwrap();
         assert!(mem.ram_total_bytes > 0, "RAM total should be > 0");
     }
 
@@ -140,7 +149,7 @@ mod tests {
             .recv_timeout(Duration::from_secs(3))
             .expect("First snapshot");
 
-        let mem = snapshot.memory.expect("Memory should be present");
+        let mem = snapshot.memory.as_ref().expect("Memory should be present");
         assert!(mem.ram_total_bytes > 0);
         assert!(mem.ram_used_bytes > 0);
         assert!(mem.ram_usage_percent() > 0.0);

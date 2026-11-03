@@ -59,7 +59,7 @@ pub fn run_headless_self_test() -> Result<(), String> {
     }
 
     // Validate MemorySnapshot if present
-    if let Some(mem) = snap.memory {
+    if let Some(ref mem) = snap.memory {
         println!(
             "[SelfTest] MemorySnapshot: ram_total={} bytes, ram_used={} bytes, swap_total={} bytes",
             mem.ram_total_bytes, mem.ram_used_bytes, mem.swap_total_bytes
@@ -77,7 +77,7 @@ pub fn run_headless_self_test() -> Result<(), String> {
 
         // Test MemoryHistory ring buffer
         let mut history = MemoryHistory::new();
-        history.push(&mem);
+        history.push(mem);
         if history.len() != 1 {
             return Err(format!(
                 "MemoryHistory len is {} (expected 1)",
@@ -144,6 +144,7 @@ pub fn run_self_test(options: eframe::NativeOptions) -> eframe::Result<()> {
         options,
         Box::new(|cc| {
             crate::theme::setup_fonts(&cc.egui_ctx);
+            crate::theme::apply_obsidian_theme(&cc.egui_ctx);
             Box::new(SelfTestApp::new(false)) as Box<dyn eframe::App>
         }),
     ) {

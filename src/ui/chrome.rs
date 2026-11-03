@@ -4,6 +4,7 @@ use crate::i18n::{os_locale_badge, Key};
 use crate::theme::colors;
 use crate::util::format_uptime;
 use eframe::egui;
+use std::sync::Arc;
 // Re-export for compatibility with app.rs
 pub use crate::ui::placeholder_tab::render_placeholder_tab;
 pub use crate::ui::status_bar::render_status_bar;
@@ -11,7 +12,7 @@ pub use crate::ui::status_bar::render_status_bar;
 /// Renders the top panel with title, version, uptime, and locale indicator.
 pub fn render_top_panel(
     ui: &mut egui::Ui,
-    latest_snapshot: &Option<SystemSnapshot>,
+    latest_snapshot: &Option<Arc<SystemSnapshot>>,
     last_ui_ms: f32,
 ) {
     ui.horizontal(|ui| {

@@ -3,12 +3,13 @@
 use crate::core::SystemSnapshot;
 use crate::theme::colors;
 use eframe::egui;
+use std::sync::Arc;
 
 /// Renders the left sidebar with rich navigation mini-cards.
 pub fn render_sidebar(
     ui: &mut egui::Ui,
     active_tab: &mut crate::app_tabs::ActiveTab,
-    latest_snapshot: &Option<SystemSnapshot>,
+    latest_snapshot: &Option<Arc<SystemSnapshot>>,
 ) {
     ui.vertical(|ui| {
         ui.add_space(8.0);

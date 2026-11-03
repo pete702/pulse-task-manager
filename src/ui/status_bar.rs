@@ -4,12 +4,13 @@ use crate::core::SystemSnapshot;
 use crate::i18n::Key;
 use crate::theme::colors;
 use eframe::egui;
+use std::sync::Arc;
 
 /// Renders the bottom status bar with active process count, heuristic mode, and OS jitter.
 pub fn render_status_bar(
     ui: &mut egui::Ui,
     active_processes: u32,
-    snapshot: &Option<SystemSnapshot>,
+    snapshot: &Option<Arc<SystemSnapshot>>,
 ) {
     ui.horizontal(|ui| {
         ui.label(
@@ -36,12 +37,9 @@ pub fn render_status_bar(
         if let Some(ref snap) = snapshot {
             ui.separator();
 
-            // Heuristic mode badge
+            // Heuristic mode badge - uses precomputed has_heavy_process flag (O(1))
             let (mode_badge, mode_color) = if let Some(ref mem) = snap.memory {
-                let any_heavy_process = mem
-                    .processes
-                    .iter()
-                    .any(|(_, _, ram, _, _)| *ram >= (2560_u64 << 20)); // 2.5 GiB
+                let any_heavy_process = mem.has_heavy_process;
                 let total_ram_pct = mem.ram_usage_percent();
                 if any_heavy_process {
                     ("[ ◈ MODE: GAMING / HEAVY APP ]", colors::ACCENT_RED)

@@ -5,10 +5,10 @@ PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and pro
 ## 1. Core Architectural Principles
 
 1. **Decoupled Two-Thread Telemetry Model**:
-   - **UI Thread (`src/app.rs`, `src/ui/`)**: Renders immediate-mode `egui` widgets and handles user input. Never calls blocking Win32 or `sysinfo` APIs directly.
-   - **Background Worker Thread (`src/core/worker.rs`)**: Runs a fixed 1 Hz (`1000 ms`) polling loop, collects Win32 and process metrics, computes per-PID deltas, and sends `SystemSnapshot` payloads over `std::sync::mpsc::channel()` (while minimized, the UI thread skips rendering via `request_repaint_after(1000 ms)`).
+   - **UI Thread (`src/app.rs`, `src/ui/`)**: Renders immediate-mode `egui` widgets and handles user input. Never calls blocking Win32 or `sysinfo` APIs directly. Holds `Arc<SystemSnapshot>` for zero-copy per-frame access. Early-returns on minimized viewport (`request_repaint_after(1000 ms)`).
+   - **Background Worker Thread (`src/core/worker.rs`)**: Runs a fixed 1 Hz (`1000 ms`) polling loop, collects Win32 and process metrics, computes per-PID deltas, and sends `SystemSnapshot` payloads over **bounded** `std::sync::mpsc::sync_channel(2)` (capacity 2). Uses `try_send` to skip snapshots on slow UI and cleanly breaks on receiver disconnect.
 2. **1 Hz Process Table Cache**:
-   - Filtered, grouped (`[Nx]`), and sorted process rows are cached in `MemoryTableState` keyed by `(snapshot_id, search_query, sort_col, sort_asc, group_clones)`. Mouse movement at 60 FPS performs zero sorting or string allocations.
+   - Filtered, grouped (`[Nx]`), and sorted process rows are cached in `MemoryTableState` keyed by a **64-bit dynamic telemetry signature** (`ram_used_bytes`, `ram_available_bytes`, `swap_used_bytes`, `ram_cached_bytes`, rolling hash of per-process `delta_bytes_per_sec / used_bytes`). Cached rows are stored as `Arc<[ProcessMemoryItem]>` so 60 FPS frames perform zero row or `String` clones (only an atomic `Arc` refcount increment).
 3. **Viewport Hibernation & Edge-Triggered Self-Trim**:
    - `K32EmptyWorkingSet` (`trim_own_working_set`) is called once at worker startup and once on each open-to-minimized window transition (`!was_minimized && is_minimized`) to release inactive pages without causing page-fault storms while the window is open.
 
