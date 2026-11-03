@@ -2,9 +2,10 @@
 
 pub mod selftest;
 pub mod selftest_app;
+pub mod win32;
 pub mod worker;
 
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex};
 
 use crate::modules::memory::model::MemorySnapshot as MemSnapshot;
 
@@ -27,12 +28,7 @@ impl SystemSnapshot {
     #[allow(dead_code)]
     #[inline]
     pub fn new(uptime_secs: u64, pulse_ram_mb: f32, memory: Option<MemSnapshot>) -> Self {
-        Self {
-            uptime_secs,
-            pulse_ram_mb,
-            memory,
-            os_scheduler_jitter_ms: 0,
-        }
+        Self { uptime_secs, pulse_ram_mb, memory, os_scheduler_jitter_ms: 0 }
     }
 
     /// Creates a new snapshot with OS scheduler jitter.
@@ -43,24 +39,14 @@ impl SystemSnapshot {
         memory: Option<MemSnapshot>,
         jitter_ms: u32,
     ) -> Self {
-        Self {
-            uptime_secs,
-            pulse_ram_mb,
-            memory,
-            os_scheduler_jitter_ms: jitter_ms,
-        }
+        Self { uptime_secs, pulse_ram_mb, memory, os_scheduler_jitter_ms: jitter_ms }
     }
 
     /// Creates a minimal snapshot (for backward compatibility / tests).
     #[allow(dead_code)]
     #[inline]
     pub fn minimal(uptime_secs: u64, pulse_ram_mb: f32) -> Self {
-        Self {
-            uptime_secs,
-            pulse_ram_mb,
-            memory: None,
-            os_scheduler_jitter_ms: 0,
-        }
+        Self { uptime_secs, pulse_ram_mb, memory: None, os_scheduler_jitter_ms: 0 }
     }
 }
 
@@ -68,8 +54,11 @@ impl SystemSnapshot {
 pub type SnapshotTx = mpsc::SyncSender<Arc<SystemSnapshot>>;
 pub type SnapshotRx = mpsc::Receiver<Arc<SystemSnapshot>>;
 
+/// Shared slot for the latest snapshot (newest always wins).
+pub type LatestSlot = Arc<Mutex<Option<Arc<SystemSnapshot>>>>;
+
 /// Spawns the background telemetry worker thread.
-/// Returns a `Receiver` for reading snapshots in the main thread.
-pub fn spawn_telemetry_worker() -> SnapshotRx {
+/// Returns a `Receiver` for reading snapshots in the main thread and a shared `LatestSlot`.
+pub fn spawn_telemetry_worker() -> (SnapshotRx, LatestSlot) {
     worker::spawn()
 }

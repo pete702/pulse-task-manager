@@ -63,27 +63,24 @@ fn generate_icon() -> Arc<egui::IconData> {
     }
 
     let rgba: Vec<u8> = pixels.into_iter().flatten().collect();
-    Arc::new(egui::IconData {
-        rgba,
-        width: SIZE,
-        height: SIZE,
-    })
+    Arc::new(egui::IconData { rgba, width: SIZE, height: SIZE })
 }
 
 fn main() -> eframe::Result<()> {
     // Initialize panic hook
     std::panic::set_hook(Box::new(|info| {
-        eprintln!("PANIC: {}", info);
+        let msg = format!("PANIC: {}", info);
+        eprintln!("{}", msg);
+        let path = std::env::temp_dir().join("pulse_panic.log");
+        let _ = std::fs::write(&path, msg);
     }));
 
     // Parse CLI arguments
     let args: Vec<String> = env::args().collect();
     let self_test = args.iter().any(|a| a == "--self-test");
 
-    let lang_override = args
-        .iter()
-        .find(|a| a.starts_with("--lang="))
-        .and_then(|a| a.strip_prefix("--lang="));
+    let lang_override =
+        args.iter().find(|a| a.starts_with("--lang=")).and_then(|a| a.strip_prefix("--lang="));
 
     // Initialize language from OS detection (or CLI override)
     i18n::init_language(lang_override);

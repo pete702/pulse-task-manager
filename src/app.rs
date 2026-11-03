@@ -5,22 +5,25 @@ use std::time::Instant;
 
 use eframe::egui;
 
-use crate::core::{spawn_telemetry_worker, SystemSnapshot};
+use crate::core::{spawn_telemetry_worker, LatestSlot, SystemSnapshot};
 use crate::i18n::Key;
+use crate::modules::memory::action_bar::MemoryActionBarState;
 use crate::modules::memory::collector::trim_own_working_set;
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::page::{self, MemorySubView};
 use crate::modules::memory::table_view::MemoryTableState;
 use crate::ui::{chrome, sidebar};
 
-/// Main application state.
 pub struct PulseApp {
     snapshot_rx: mpsc::Receiver<Arc<SystemSnapshot>>,
+    _latest_slot: LatestSlot,
     latest_snapshot: Option<Arc<SystemSnapshot>>,
     active_tab: crate::app_tabs::ActiveTab,
     memory_sub_view: MemorySubView,
     table_state: MemoryTableState,
+    action_state: MemoryActionBarState,
     frame_count: u64,
+    startup_frames: u8,
     last_ui_ms: f32,
     memory_history: MemoryHistory,
     was_minimized: bool,
@@ -28,13 +31,17 @@ pub struct PulseApp {
 
 impl Default for PulseApp {
     fn default() -> Self {
+        let (snapshot_rx, latest_slot) = spawn_telemetry_worker();
         Self {
-            snapshot_rx: spawn_telemetry_worker(),
+            snapshot_rx,
+            _latest_slot: latest_slot,
             latest_snapshot: None,
             active_tab: crate::app_tabs::ActiveTab::Memory,
             memory_sub_view: MemorySubView::default(),
             table_state: MemoryTableState::default(),
+            action_state: MemoryActionBarState::default(),
             frame_count: 0,
+            startup_frames: 0,
             last_ui_ms: 0.0,
             memory_history: MemoryHistory::new(),
             was_minimized: false,
@@ -55,6 +62,7 @@ impl PulseApp {
                             &mut self.memory_history,
                             &mut self.memory_sub_view,
                             &mut self.table_state,
+                            &mut self.action_state,
                             snap.uptime_secs,
                         );
                     } else {
@@ -80,17 +88,20 @@ impl PulseApp {
     }
 
     fn render_awaiting(ui: &mut egui::Ui) {
-        ui.label(
-            egui::RichText::new(Key::AwaitingMemoryModel.t())
-                .color(crate::theme::colors::TEXT_SECONDARY)
-                .size(14.0),
-        );
+        let text = egui::RichText::new(Key::AwaitingMemoryModel.t()).size(14.0);
+        ui.label(text.color(crate::theme::colors::TEXT_SECONDARY));
     }
 }
 
 impl eframe::App for PulseApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let frame_start = Instant::now();
+        if self.startup_frames < 4 {
+            self.startup_frames += 1;
+            if self.startup_frames == 3 {
+                let _ = crate::core::win32::self_trim_working_set();
+            }
+        }
         if crate::app_tabs::handle_global_hotkeys(
             ctx,
             &mut self.active_tab,
@@ -131,12 +142,9 @@ impl eframe::App for PulseApp {
             .show(ctx, |ui| {
                 chrome::render_status_bar(ui, active_processes, &latest_snapshot);
             });
-        egui::SidePanel::left("left_sidebar")
-            .resizable(false)
-            .exact_width(210.0)
-            .show(ctx, |ui| {
-                sidebar::render_sidebar(ui, &mut self.active_tab, &latest_snapshot);
-            });
+        egui::SidePanel::left("left_sidebar").resizable(false).exact_width(210.0).show(ctx, |ui| {
+            sidebar::render_sidebar(ui, &mut self.active_tab, &latest_snapshot);
+        });
         egui::CentralPanel::default()
             .frame(egui::Frame::none().inner_margin(egui::Margin {
                 left: 12.0,

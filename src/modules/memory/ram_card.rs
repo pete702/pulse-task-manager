@@ -45,78 +45,75 @@ pub fn render_ram_card(ui: &mut egui::Ui, mem: &MemorySnapshot, history: &Memory
             ui.add_space(12.0);
 
             // Grid of values (4 rows to match Swap/Commit card)
-            egui::Grid::new("ram_grid")
-                .num_columns(2)
-                .spacing([16.0, 8.0])
-                .show(ui, |ui| {
-                    // Used / Total
-                    ui.label(
-                        egui::RichText::new(Key::UsedTotal.t())
-                            .monospace()
-                            .size(12.0)
-                            .color(colors::TEXT_SECONDARY),
-                    );
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{:.2} / {:.2} GiB",
-                            mem.ram_used_gib(),
-                            mem.ram_total_gib()
-                        ))
+            egui::Grid::new("ram_grid").num_columns(2).spacing([16.0, 8.0]).show(ui, |ui| {
+                // Used / Total
+                ui.label(
+                    egui::RichText::new(Key::UsedTotal.t())
+                        .monospace()
+                        .size(12.0)
+                        .color(colors::TEXT_SECONDARY),
+                );
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{:.2} / {:.2} GiB",
+                        mem.ram_used_gib(),
+                        mem.ram_total_gib()
+                    ))
+                    .monospace()
+                    .size(13.0)
+                    .color(colors::TEXT_PRIMARY),
+                );
+                ui.end_row();
+
+                // Available / Free
+                ui.label(
+                    egui::RichText::new(Key::AvailableFree.t())
+                        .monospace()
+                        .size(12.0)
+                        .color(colors::TEXT_SECONDARY),
+                );
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{:.2} GiB / {:.2} GiB",
+                        mem.ram_available_gib(),
+                        mem.ram_free_bytes as f64 / 1_073_741_824.0
+                    ))
+                    .monospace()
+                    .size(13.0)
+                    .color(colors::TEXT_PRIMARY),
+                );
+                ui.end_row();
+
+                // Cached
+                ui.label(
+                    egui::RichText::new(Key::CachedStandby.t())
+                        .monospace()
+                        .size(12.0)
+                        .color(colors::TEXT_SECONDARY),
+                );
+                ui.label(
+                    egui::RichText::new(format!("{:.2} GiB", mem.ram_cached_gib()))
                         .monospace()
                         .size(13.0)
-                        .color(colors::TEXT_PRIMARY),
-                    );
-                    ui.end_row();
+                        .color(colors::ACCENT_CYAN),
+                );
+                ui.end_row();
 
-                    // Available / Free
-                    ui.label(
-                        egui::RichText::new(Key::AvailableFree.t())
-                            .monospace()
-                            .size(12.0)
-                            .color(colors::TEXT_SECONDARY),
-                    );
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{:.2} GiB / {:.2} GiB",
-                            mem.ram_available_gib(),
-                            mem.ram_free_bytes as f64 / 1_073_741_824.0
-                        ))
+                // Peak
+                ui.label(
+                    egui::RichText::new(Key::PeakSession.t())
+                        .monospace()
+                        .size(12.0)
+                        .color(colors::TEXT_SECONDARY),
+                );
+                ui.label(
+                    egui::RichText::new(format!("{:.1}%", history.peak_ram_percent))
                         .monospace()
                         .size(13.0)
-                        .color(colors::TEXT_PRIMARY),
-                    );
-                    ui.end_row();
-
-                    // Cached
-                    ui.label(
-                        egui::RichText::new(Key::CachedStandby.t())
-                            .monospace()
-                            .size(12.0)
-                            .color(colors::TEXT_SECONDARY),
-                    );
-                    ui.label(
-                        egui::RichText::new(format!("{:.2} GiB", mem.ram_cached_gib()))
-                            .monospace()
-                            .size(13.0)
-                            .color(colors::ACCENT_CYAN),
-                    );
-                    ui.end_row();
-
-                    // Peak
-                    ui.label(
-                        egui::RichText::new(Key::PeakSession.t())
-                            .monospace()
-                            .size(12.0)
-                            .color(colors::TEXT_SECONDARY),
-                    );
-                    ui.label(
-                        egui::RichText::new(format!("{:.1}%", history.peak_ram_percent))
-                            .monospace()
-                            .size(13.0)
-                            .color(colors::ACCENT_RED),
-                    );
-                    ui.end_row();
-                });
+                        .color(colors::ACCENT_RED),
+                );
+                ui.end_row();
+            });
         });
     });
 }

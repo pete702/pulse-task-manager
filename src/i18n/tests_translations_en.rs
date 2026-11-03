@@ -18,16 +18,10 @@ fn test_key_translation_en() {
     assert_eq!(Key::TabSystem.t(), "⚙ System & GPU");
 
     // Central panel
-    assert_eq!(
-        Key::AwaitingMemoryModel.t(),
-        "Telemetry core active. Awaiting memory model..."
-    );
+    assert_eq!(Key::AwaitingMemoryModel.t(), "Telemetry core active. Awaiting memory model...");
 
     // Self-test
-    assert_eq!(
-        Key::SelfTestPassedHeadless.t(),
-        "SELF-TEST PASSED (HEADLESS CI)"
-    );
+    assert_eq!(Key::SelfTestPassedHeadless.t(), "SELF-TEST PASSED (HEADLESS CI)");
     assert_eq!(Key::SelfTestPassedLive.t(), "SELF-TEST PASSED (LIVE GUI)");
     assert_eq!(Key::SelfTestFailed.t(), "SELF-TEST FAILED");
 

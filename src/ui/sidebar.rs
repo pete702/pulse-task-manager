@@ -46,8 +46,7 @@ pub fn render_sidebar(
             );
 
             // Draw card background & border
-            ui.painter()
-                .rect_filled(rect, egui::Rounding::same(6.0), bg_color);
+            ui.painter().rect_filled(rect, egui::Rounding::same(6.0), bg_color);
             ui.painter().rect_stroke(
                 rect,
                 egui::Rounding::same(6.0),
@@ -60,8 +59,7 @@ pub fn render_sidebar(
                     egui::pos2(rect.left(), rect.top()),
                     egui::pos2(rect.left() + 3.0, rect.bottom()),
                 );
-                ui.painter()
-                    .rect_filled(accent_rect, egui::Rounding::same(6.0), accent_color);
+                ui.painter().rect_filled(accent_rect, egui::Rounding::same(6.0), accent_color);
             }
 
             // Paint tab title at LEFT_CENTER

@@ -62,9 +62,7 @@ pub fn collect_process_memory(
 ) -> (ProcessMemoryScan, bool) {
     // Refresh process list with memory info only; skip exe path re-query on each cycle
     sys.refresh_processes_specifics(
-        ProcessRefreshKind::new()
-            .with_memory()
-            .with_exe(UpdateKind::OnlyIfNotSet),
+        ProcessRefreshKind::new().with_memory().with_exe(UpdateKind::OnlyIfNotSet),
     );
 
     let processes: Vec<(u32, String, u64, u64)> = sys
@@ -83,9 +81,7 @@ pub fn collect_process_memory(
 
     // Precompute heavy process flag for O(1) status bar access
     const HEAVY_THRESHOLD: u64 = 2560_u64 << 20; // 2.5 GiB
-    let has_heavy_process = processes
-        .iter()
-        .any(|(_, _, ram, _)| *ram >= HEAVY_THRESHOLD);
+    let has_heavy_process = processes.iter().any(|(_, _, ram, _)| *ram >= HEAVY_THRESHOLD);
 
     // Track deltas
     let processes_with_delta = delta_tracker.track(&processes);

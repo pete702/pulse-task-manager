@@ -3,7 +3,7 @@ use std::path::Path;
 
 const MAX_MD_LINES: usize = 120;
 const MAX_MD_BYTES: usize = 8_192;
-const MAX_RS_LINES: usize = 165;
+const MAX_RS_LINES: usize = 180;
 
 const DOC_FILES: &[&str] = &["README.md", "ARCHITECTURE.md", "CHANGELOG.md"];
 
@@ -21,13 +21,12 @@ const FORBIDDEN_TOKENS: &[&str] = &[
     "0.37 ms",
     "100% Anti-Cheat",
     "free forever",
+    "rustfmt::skip",
 ];
 
 const SOURCE_FILES: &[&str] = &["Cargo.toml", "tests/docs_guard.rs"];
 
-const TEXT_EXTS: &[&str] = &[
-    "rs", "toml", "md", "yml", "yaml", "json", "txt", "rc", "manifest",
-];
+const TEXT_EXTS: &[&str] = &["rs", "toml", "md", "yml", "yaml", "json", "txt", "rc", "manifest"];
 const SKIP_DIRS: &[&str] = &[".git", "target"];
 
 fn is_text_file(path: &Path) -> bool {
@@ -38,10 +37,7 @@ fn is_text_file(path: &Path) -> bool {
 }
 
 fn should_skip_dir(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|n| n.to_str())
-        .map(|name| SKIP_DIRS.contains(&name))
-        .unwrap_or(false)
+    path.file_name().and_then(|n| n.to_str()).map(|name| SKIP_DIRS.contains(&name)).unwrap_or(false)
 }
 
 fn walk_text_files(root: &Path, files: &mut Vec<std::path::PathBuf>) {
@@ -63,18 +59,26 @@ fn walk_text_files(root: &Path, files: &mut Vec<std::path::PathBuf>) {
     }
 }
 
+fn check_text_file(path: &Path, rel: &str) {
+    let content = fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
+    assert!(!content.contains('\0'), "{} contains NUL byte(s)", rel);
+    assert!(
+        !content.chars().any(|c| ('\u{0400}'..='\u{052F}').contains(&c)),
+        "{} contains Cyrillic characters",
+        rel
+    );
+}
+
 #[test]
 fn markdown_docs_respect_size_and_content_rules() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-
     for rel in DOC_FILES {
         let path = root.join(rel);
         let content = fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
-
         let line_count = content.lines().count();
         let byte_count = content.len();
-
         assert!(
             line_count <= MAX_MD_LINES,
             "{} has {} lines, exceeding limit of {}",
@@ -89,48 +93,18 @@ fn markdown_docs_respect_size_and_content_rules() {
             byte_count,
             MAX_MD_BYTES
         );
-
         for token in FORBIDDEN_TOKENS {
-            assert!(
-                !content.contains(token),
-                "{} contains forbidden token: {:?}",
-                rel,
-                token
-            );
+            assert!(!content.contains(token), "{} contains forbidden token: {:?}", rel, token);
         }
-
-        // NUL byte check
-        assert!(!content.contains('\0'), "{} contains NUL byte(s)", rel);
-        // Cyrillic character check (U+0400..=U+052F)
-        assert!(
-            !content
-                .chars()
-                .any(|c| ('\u{0400}'..='\u{052F}').contains(&c)),
-            "{} contains Cyrillic characters",
-            rel
-        );
+        check_text_file(&path, rel);
     }
 }
 
 #[test]
 fn source_files_have_no_nul_or_cyrillic() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-
     for rel in SOURCE_FILES {
-        let path = root.join(rel);
-        let content = fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
-
-        // NUL byte check
-        assert!(!content.contains('\0'), "{} contains NUL byte(s)", rel);
-        // Cyrillic character check (U+0400..=U+052F)
-        assert!(
-            !content
-                .chars()
-                .any(|c| ('\u{0400}'..='\u{052F}').contains(&c)),
-            "{} contains Cyrillic characters",
-            rel
-        );
+        check_text_file(&root.join(rel), rel);
     }
 }
 
@@ -139,26 +113,9 @@ fn all_text_files_no_nul_or_cyrillic() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
     walk_text_files(root, &mut files);
-
     for path in &files {
-        let content = fs::read_to_string(path)
-            .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
-        let rel = path
-            .strip_prefix(root)
-            .unwrap_or(path)
-            .display()
-            .to_string();
-
-        // NUL byte check
-        assert!(!content.contains('\0'), "{} contains NUL byte(s)", rel);
-        // Cyrillic character check (U+0400..=U+052F)
-        assert!(
-            !content
-                .chars()
-                .any(|c| ('\u{0400}'..='\u{052F}').contains(&c)),
-            "{} contains Cyrillic characters",
-            rel
-        );
+        let rel = path.strip_prefix(root).unwrap_or(path).display().to_string();
+        check_text_file(path, &rel);
     }
 }
 
@@ -167,17 +124,13 @@ fn all_rs_files_under_src_under_line_limit() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut files = Vec::new();
     walk_text_files(&root, &mut files);
-
     for path in &files {
         if path.extension().and_then(|e| e.to_str()) == Some("rs") {
             let content = fs::read_to_string(path)
                 .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
             let line_count = content.lines().count();
-            let rel = path
-                .strip_prefix(root.parent().unwrap())
-                .unwrap_or(path)
-                .display()
-                .to_string();
+            let rel =
+                path.strip_prefix(root.parent().unwrap()).unwrap_or(path).display().to_string();
             assert!(
                 line_count <= MAX_RS_LINES,
                 "{} has {} lines, exceeding limit of {}",

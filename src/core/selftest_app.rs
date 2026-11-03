@@ -19,11 +19,12 @@ pub struct SelfTestApp {
 
 impl SelfTestApp {
     pub fn new(headless: bool) -> Self {
+        let (snapshot_rx, _latest_slot) = spawn_telemetry_worker();
         Self {
             headless,
             frames_rendered: 0,
             snapshot_received: false,
-            snapshot_rx: spawn_telemetry_worker(),
+            snapshot_rx,
             latest_snapshot: None,
             test_passed: false,
         }

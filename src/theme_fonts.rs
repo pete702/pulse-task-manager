@@ -17,9 +17,7 @@ pub fn setup_fonts(ctx: &egui::Context) {
     let mut monospace_loaded = false;
 
     if let Ok(data) = std::fs::read(segoe_path) {
-        fonts
-            .font_data
-            .insert("segoe_ui".to_owned(), egui::FontData::from_owned(data));
+        fonts.font_data.insert("segoe_ui".to_owned(), egui::FontData::from_owned(data));
         fonts
             .families
             .entry(egui::FontFamily::Proportional)
@@ -29,9 +27,7 @@ pub fn setup_fonts(ctx: &egui::Context) {
     }
 
     if let Ok(data) = std::fs::read(consola_path) {
-        fonts
-            .font_data
-            .insert("consolas".to_owned(), egui::FontData::from_owned(data));
+        fonts.font_data.insert("consolas".to_owned(), egui::FontData::from_owned(data));
         fonts
             .families
             .entry(egui::FontFamily::Monospace)
@@ -49,11 +45,7 @@ pub fn setup_fonts(ctx: &egui::Context) {
             .push("default".to_owned());
     }
     if !monospace_loaded {
-        fonts
-            .families
-            .entry(egui::FontFamily::Monospace)
-            .or_default()
-            .push("default".to_owned());
+        fonts.families.entry(egui::FontFamily::Monospace).or_default().push("default".to_owned());
     }
 
     ctx.set_fonts(fonts);

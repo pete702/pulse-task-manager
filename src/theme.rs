@@ -44,6 +44,12 @@ pub mod colors {
     pub const STATUS_BAR_BG: Color32 = Color32::from_rgb(0x0A, 0x0B, 0x10);
 }
 
+/// Three Walls badge and muted-text tokens (v0.1.0 aliases).
+pub const CRITICAL_CORAL: egui::Color32 = colors::ACCENT_RED;
+pub const WARNING_AMBER: egui::Color32 = colors::ACCENT_AMBER;
+pub const OPTIMAL_EMERALD: egui::Color32 = egui::Color32::from_rgb(0x00, 0xE0, 0x80);
+pub const TEXT_MUTED: egui::Color32 = colors::TEXT_SECONDARY;
+
 /// Traffic-light load color — returns color based on load percentage.
 /// <60% — cyan (#00F0FF), 60-85% — amber (#FFB800), ≥85% — neon red (#FF2A54).
 #[allow(dead_code)]
@@ -103,15 +109,13 @@ pub fn apply_obsidian_theme(ctx: &egui::Context) {
     style.visuals.selection.stroke = egui::Stroke::new(1.0_f32, colors::ACCENT_CYAN);
 
     // Text style: monospace for numbers
-    style.text_styles.insert(
-        egui::TextStyle::Monospace,
-        egui::FontId::new(13.0, egui::FontFamily::Monospace),
-    );
+    style
+        .text_styles
+        .insert(egui::TextStyle::Monospace, egui::FontId::new(13.0, egui::FontFamily::Monospace));
     // Default text color
-    style.text_styles.insert(
-        egui::TextStyle::Body,
-        egui::FontId::new(14.0, egui::FontFamily::Proportional),
-    );
+    style
+        .text_styles
+        .insert(egui::TextStyle::Body, egui::FontId::new(14.0, egui::FontFamily::Proportional));
 
     ctx.set_style(style);
 }

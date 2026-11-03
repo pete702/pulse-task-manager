@@ -27,10 +27,7 @@ pub fn render_status_bar(
             active_processes
         );
         ui.label(
-            egui::RichText::new(status_text)
-                .monospace()
-                .size(11.0)
-                .color(colors::TEXT_SECONDARY),
+            egui::RichText::new(status_text).monospace().size(11.0).color(colors::TEXT_SECONDARY),
         );
 
         // Heuristic mode badge & OS jitter (from latest snapshot)
@@ -51,12 +48,7 @@ pub fn render_status_bar(
             } else {
                 ("[ ● MODE: DESKTOP IDLE ]", colors::ACCENT_CYAN)
             };
-            ui.label(
-                egui::RichText::new(mode_badge)
-                    .monospace()
-                    .size(11.0)
-                    .color(mode_color),
-            );
+            ui.label(egui::RichText::new(mode_badge).monospace().size(11.0).color(mode_color));
 
             // OS Scheduler Jitter
             if snap.os_scheduler_jitter_ms > 0 {

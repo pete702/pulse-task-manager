@@ -72,10 +72,7 @@ pub(super) fn render_toolbar(
             state.search_query.clear();
         }
         ui.separator();
-        ui.checkbox(
-            &mut state.group_clones,
-            format!("Group clones [{clone_groups}x]"),
-        );
+        ui.checkbox(&mut state.group_clones, format!("Group clones [{clone_groups}x]"));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(
                 egui::RichText::new(format!("Shown: {shown}/{total}"))

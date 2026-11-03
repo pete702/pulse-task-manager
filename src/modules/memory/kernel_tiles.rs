@@ -21,26 +21,11 @@ fn render_tile(
     ui.set_max_size(egui::vec2(width, 66.0));
     ui.vertical_centered(|ui| {
         ui.add_space(2.0);
-        ui.label(
-            egui::RichText::new(title)
-                .monospace()
-                .size(11.0)
-                .color(colors::TEXT_SECONDARY),
-        );
+        ui.label(egui::RichText::new(title).monospace().size(11.0).color(colors::TEXT_SECONDARY));
         ui.add_space(3.0);
-        ui.label(
-            egui::RichText::new(main_val)
-                .monospace()
-                .size(16.0)
-                .color(main_color),
-        );
+        ui.label(egui::RichText::new(main_val).monospace().size(16.0).color(main_color));
         ui.add_space(1.0);
-        ui.label(
-            egui::RichText::new(subtitle)
-                .monospace()
-                .size(9.0)
-                .color(colors::TEXT_SECONDARY),
-        );
+        ui.label(egui::RichText::new(subtitle).monospace().size(9.0).color(colors::TEXT_SECONDARY));
     });
 }
 
@@ -93,11 +78,7 @@ pub fn render_kernel_tiles(ui: &mut egui::Ui, mem: &MemorySnapshot) {
                 Key::CommitCharge.t(),
                 &format_bytes(mem.commit_total_bytes),
                 colors::ACCENT_PURPLE,
-                &format!(
-                    "Limit: {} ({:.1}%)",
-                    format_bytes(mem.commit_limit_bytes),
-                    commit_pct
-                ),
+                &format!("Limit: {} ({:.1}%)", format_bytes(mem.commit_limit_bytes), commit_pct),
             );
         });
 
@@ -109,10 +90,7 @@ pub fn render_kernel_tiles(ui: &mut egui::Ui, mem: &MemorySnapshot) {
                 Key::OsActivityTitle.t(),
                 &format!("{} Procs", mem.system_processes),
                 colors::TEXT_PRIMARY,
-                &format!(
-                    "{} Threads • {} Handles",
-                    mem.system_threads, mem.system_handles
-                ),
+                &format!("{} Threads • {} Handles", mem.system_threads, mem.system_handles),
             );
         });
     });

@@ -62,14 +62,8 @@ fn test_i18n_keys() {
     assert_eq!(Key::AppTitle.t(), "⚡ PULSE // TELEMETRY");
     assert_eq!(Key::VersionPrefix.t(), "v");
     assert_eq!(Key::UptimeLabel.t(), "Uptime");
-    assert_eq!(
-        Key::AwaitingMemoryModel.t(),
-        "Telemetry core active. Awaiting memory model..."
-    );
-    assert_eq!(
-        Key::SelfTestPassedHeadless.t(),
-        "SELF-TEST PASSED (HEADLESS CI)"
-    );
+    assert_eq!(Key::AwaitingMemoryModel.t(), "Telemetry core active. Awaiting memory model...");
+    assert_eq!(Key::SelfTestPassedHeadless.t(), "SELF-TEST PASSED (HEADLESS CI)");
     assert_eq!(Key::SelfTestPassedLive.t(), "SELF-TEST PASSED (LIVE GUI)");
     assert_eq!(Key::SelfTestFailed.t(), "SELF-TEST FAILED");
 }
@@ -103,9 +97,5 @@ fn test_memory_history_integration() {
 #[test]
 fn test_all_tabs_present_in_sidebar() {
     let tabs = ActiveTab::all();
-    assert_eq!(
-        tabs.len(),
-        5,
-        "Should have 5 tabs: Memory, CPU, Storage, Network, System"
-    );
+    assert_eq!(tabs.len(), 5, "Should have 5 tabs: Memory, CPU, Storage, Network, System");
 }

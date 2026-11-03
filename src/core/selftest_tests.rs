@@ -97,9 +97,8 @@ mod tests {
                     // Also check for bare "Uk" token (using concat to avoid raw regex matches)
                     if line.contains(concat!("U", "k")) {
                         // Skip if it's part of a larger word like "success" or "buck"
-                        let has_uk = line
-                            .split(|c: char| !c.is_alphabetic())
-                            .any(|word| word == "Uk");
+                        let has_uk =
+                            line.split(|c: char| !c.is_alphabetic()).any(|word| word == "Uk");
                         if has_uk {
                             violations.push(format!(
                                 "{}:{}: found bare 'Uk' token",

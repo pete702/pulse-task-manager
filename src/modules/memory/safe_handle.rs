@@ -1,6 +1,4 @@
 //! Win32 RAII SafeHandle and PID/Process Safety Gate for PULSE.
-//! Provides automatic handle cleanup and comprehensive process protection checks.
-
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
 use windows_sys::Win32::Security::{
     GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
@@ -9,12 +7,8 @@ use windows_sys::Win32::System::Threading::{
     GetCurrentProcess, OpenProcess, OpenProcessToken, QueryFullProcessImageNameW,
 };
 
-/// RAII wrapper for Win32 HANDLE that guarantees CloseHandle on drop.
-/// The inner HANDLE is private; use `from_raw` / `as_raw` for controlled access.
 pub struct SafeHandle(HANDLE);
-
 impl SafeHandle {
-    /// Creates a SafeHandle from a raw HANDLE. Returns None if the handle is null/invalid.
     #[inline]
     pub fn from_raw(h: HANDLE) -> Option<Self> {
         if h == 0 || h == -1isize as HANDLE {
@@ -23,7 +17,6 @@ impl SafeHandle {
             Some(Self(h))
         }
     }
-    /// Returns the raw HANDLE for FFI calls.
     #[inline]
     pub fn as_raw(&self) -> HANDLE {
         self.0
@@ -36,7 +29,6 @@ impl SafeHandle {
         Self::from_raw(unsafe { OpenProcess(access, 0, pid) })
     }
 }
-
 impl Drop for SafeHandle {
     #[allow(unsafe_code)]
     fn drop(&mut self) {
@@ -48,8 +40,6 @@ impl Drop for SafeHandle {
     }
 }
 
-/// Checks if the current process is running elevated (as Administrator).
-/// Uses SafeHandle RAII for the token to guarantee CloseHandle on all paths.
 pub fn is_app_elevated() -> bool {
     #[allow(unsafe_code)]
     unsafe {
@@ -74,24 +64,54 @@ pub fn is_app_elevated() -> bool {
     }
 }
 
-#[rustfmt::skip]
-const CRITICAL_OS_PROCESSES: &[&str] = &["system", "registry", "memory compression", "smss.exe", "csrss.exe", "wininit.exe", "services.exe", "lsass.exe", "lsaiso.exe", "svchost.exe", "dwm.exe", "winlogon.exe", "fontdrvhost.exe", "sihost.exe", "taskhostw.exe", "msmpeng.exe", "nissrv.exe", "securityhealthservice.exe", "spoolsv.exe", "audiodg.exe", "wmiprvse.exe", "searchindexer.exe", "startmenuexperiencehost.exe", "searchhost.exe", "shellexperiencehost.exe", "textinputhost.exe", "conhost.exe"];
-#[rustfmt::skip]
-const ANTI_CHEAT_PROCESSES: &[&str] = &["vgc.exe", "vgtray.exe", "easyanticheat.exe", "easyanticheat_eos.exe", "beservice.exe", "bedaisy.sys", "zksvc.exe", "faceitclient.exe", "eseaclient.exe", "ricochet.exe", "hoyokprotect.sys"];
+const CRITICAL_OS_PROCESSES: &[&str] = &[
+    "system",
+    "registry",
+    "memory compression",
+    "smss.exe",
+    "csrss.exe",
+    "wininit.exe",
+    "services.exe",
+    "lsass.exe",
+    "lsaiso.exe",
+    "svchost.exe",
+    "dwm.exe",
+    "winlogon.exe",
+    "fontdrvhost.exe",
+    "sihost.exe",
+    "taskhostw.exe",
+    "msmpeng.exe",
+    "nissrv.exe",
+    "securityhealthservice.exe",
+    "spoolsv.exe",
+    "audiodg.exe",
+    "wmiprvse.exe",
+    "searchindexer.exe",
+    "startmenuexperiencehost.exe",
+    "searchhost.exe",
+    "shellexperiencehost.exe",
+    "textinputhost.exe",
+    "conhost.exe",
+];
+const ANTI_CHEAT_PROCESSES: &[&str] = &[
+    "vgc.exe",
+    "vgtray.exe",
+    "easyanticheat.exe",
+    "easyanticheat_eos.exe",
+    "beservice.exe",
+    "bedaisy.sys",
+    "zksvc.exe",
+    "faceitclient.exe",
+    "eseaclient.exe",
+    "ricochet.exe",
+    "hoyokprotect.sys",
+];
 
-/// Normalizes a process name for comparison: extracts filename, lowercases, strips .exe.
-/// Prevents path bypass (e.g., "C:\\Windows\\System32\\csrss.exe" -> "csrss").
 fn normalize_name(name: &str) -> String {
-    let base = name
-        .rsplit(['\\', '/'])
-        .next()
-        .unwrap_or(name)
-        .trim()
-        .to_ascii_lowercase();
+    let base = name.rsplit(['\\', '/']).next().unwrap_or(name).trim().to_ascii_lowercase();
     base.strip_suffix(".exe").unwrap_or(&base).to_string()
 }
 
-/// Verifies if a PID/process_name pair is safe to target.
 pub fn verify_pid_safety_gate(pid: u32, process_name: &str) -> Result<(), &'static str> {
     if pid == 0 || pid == 4 {
         return Err("OS kernel process is protected");
@@ -100,28 +120,19 @@ pub fn verify_pid_safety_gate(pid: u32, process_name: &str) -> Result<(), &'stat
         return Err("Cannot target PULSE itself");
     }
     let norm = normalize_name(process_name);
-    if CRITICAL_OS_PROCESSES
-        .iter()
-        .any(|&p| normalize_name(p) == norm)
-    {
+    if CRITICAL_OS_PROCESSES.iter().any(|&p| normalize_name(p) == norm) {
         return Err("Critical Windows OS process is protected");
     }
-    if ANTI_CHEAT_PROCESSES
-        .iter()
-        .any(|&p| normalize_name(p) == norm)
-    {
+    if ANTI_CHEAT_PROCESSES.iter().any(|&p| normalize_name(p) == norm) {
         return Err("Anti-cheat protected process skipped");
     }
     Ok(())
 }
 
-/// Returns true if the process is protected (cannot be targeted).
 pub fn is_protected_process(pid: u32, process_name: &str) -> bool {
     verify_pid_safety_gate(pid, process_name).is_err()
 }
 
-/// Checks if a process handle represents a kernel-critical process.
-/// Uses IsProcessCritical (Windows 8.1+) to detect processes the OS considers critical.
 #[allow(unsafe_code)]
 pub fn is_handle_critical(handle: &SafeHandle) -> bool {
     let mut critical: i32 = 0;
@@ -131,13 +142,11 @@ pub fn is_handle_critical(handle: &SafeHandle) -> bool {
     ok != 0 && critical != 0
 }
 
-/// Verifies that a process handle still points to the expected executable (TOCTOU mitigation).
-/// Uses QueryFullProcessImageNameW to get the actual image path and compares normalized names.
 #[allow(unsafe_code)]
 pub fn verify_handle_identity(handle: &SafeHandle, expected_name: &str) -> bool {
     #[cfg(target_os = "windows")]
     {
-        let mut buf = [0u16; 512];
+        let mut buf = [0u16; 1024];
         let mut size = buf.len() as u32;
         let ok =
             unsafe { QueryFullProcessImageNameW(handle.as_raw(), 0, buf.as_mut_ptr(), &mut size) };

@@ -63,10 +63,9 @@ pub fn render_swap_commit_card(ui: &mut egui::Ui, mem: &MemorySnapshot) {
             ui.add_space(12.0);
 
             // Grid of values (4 rows to match RAM card)
-            egui::Grid::new("swap_commit_grid")
-                .num_columns(2)
-                .spacing([16.0, 8.0])
-                .show(ui, |ui| {
+            egui::Grid::new("swap_commit_grid").num_columns(2).spacing([16.0, 8.0]).show(
+                ui,
+                |ui| {
                     // Swap (Used / Total)
                     ui.label(
                         egui::RichText::new(Key::SwapUsedTotal.t())
@@ -112,9 +111,8 @@ pub fn render_swap_commit_card(ui: &mut egui::Ui, mem: &MemorySnapshot) {
                             .size(12.0)
                             .color(colors::TEXT_SECONDARY),
                     );
-                    let avail_commit = mem
-                        .commit_limit_bytes
-                        .saturating_sub(mem.commit_total_bytes);
+                    let avail_commit =
+                        mem.commit_limit_bytes.saturating_sub(mem.commit_total_bytes);
                     ui.label(
                         egui::RichText::new(format_bytes(avail_commit))
                             .monospace()
@@ -143,7 +141,8 @@ pub fn render_swap_commit_card(ui: &mut egui::Ui, mem: &MemorySnapshot) {
                             .color(crate::theme::load_color(commit_pct)),
                     );
                     ui.end_row();
-                });
+                },
+            );
         });
     });
 }

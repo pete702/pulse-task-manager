@@ -1,6 +1,6 @@
 # 🏗️ PULSE Architecture & Engineering Rules
 
-PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, MSRV `1.78`) using `eframe` / `egui` (`0.27.2`).
+PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, MSRV `1.78`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.1.0**.
 
 ## 1. Core Architectural Principles
 
@@ -14,7 +14,7 @@ PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and pro
 
 ## 2. Hard Modularity & Hygiene Guards
 
-- **Source File Limit (`MAX_RS_FILE_LINES = 180`)**: Every `.rs` file inside `src/` must be `180` lines or fewer after `cargo fmt`, enforced by `src/core/selftest_tests.rs`.
+- **Source File Limit (`MAX_RS_FILE_LINES = 180`)**: Every `.rs` file inside `src/` and `tests/` must be `180` lines or fewer after `cargo fmt`, enforced by `src/core/selftest_tests.rs` and `tests/docs_guard.rs`. Zero `rustfmt` skip attributes in the entire repository (forbidden token).
 - **Submodule Test Architecture**: Unit tests reside in sibling `*_tests.rs` submodules inside `src/`.
 - **Language & Documentation Guards**:
   - `src/core/selftest_tests.rs` scans `src/**/*.rs` to enforce zero Cyrillic characters (`U+0400..=U+04FF`) and zero `Lang::Uk` tokens.
@@ -23,14 +23,14 @@ PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and pro
 ## 3. Module Boundaries (`src/`)
 
 - `src/core/` — Background worker (`worker.rs`), `SystemSnapshot` channel (`mod.rs`), CLI `--self-test` harness (`selftest.rs`), and modularity/language guards (`selftest_tests.rs`).
-- `src/modules/memory/` — RAM/Swap collector, Win32 kernel pool FFI (`K32GetPerformanceInfo`), 3-segment composition bar, spike blackbox, delta tracker (`Δ RAM/s`), formatters, and virtualized `TableBuilder` process views. Table cache key uses `search_hash: u64` + `uptime_secs`; 1 Hz `cached_format_uptime` allocates only on uptime change.
+- `src/modules/memory/` — RAM/Swap collector, Win32 kernel pool FFI (`K32GetPerformanceInfo`), 3-segment composition bar, spike blackbox, delta tracker (`Δ RAM/s`), formatters, virtualized `TableBuilder` process views, non-blocking action bar (`action_bar.rs`), and PID Safety Gate (`safe_handle.rs`). Table cache key uses `search_hash: u64` + `uptime_secs`; 1 Hz `cached_format_uptime` allocates only on uptime change. `1m/5m/15m` chart selector with cached `PlotPoints` (`chart_view.rs`).
 - `src/modules/{cpu,storage,network,system}/` — Planned subsystem modules scheduled across Phases 2–5.
-- `src/ui/` — Root panel layout (`Top` -> `Bottom` -> `Left` -> `Central`), Obsidian theme tokens, top chrome header, sidebar navigation cards, and status bar.
+- `src/ui/` — Root panel layout (`Top` -> `Bottom` -> `Left` -> `Central`), Obsidian theme tokens, top chrome header, sidebar navigation cards, status bar, and Three Walls bottleneck badge (`three_walls.rs`).
 - `src/i18n/` — English UI string dictionary and native Win32 OS locale badge (`GetUserDefaultUILanguage`).
 
 ## 4. Win32 FFI & Safety Invariants
 
-- `#![deny(unsafe_code)]` is active at the crate root (`src/main.rs`). All Win32 FFI calls are wrapped in localized `#[allow(unsafe_code)]` blocks for: `K32GetPerformanceInfo`, `K32GetProcessMemoryInfo`, `K32EmptyWorkingSet`, `OpenProcess`, `IsProcessCritical`, `QueryFullProcessImageNameW`, `OpenProcessToken`, `GetTokenInformation`, `CloseHandle`, `TerminateProcess`, and `GetUserDefaultUILanguage`. Total `#[allow(unsafe_code)]` attributes in `src/`: **15**.
+- `#![deny(unsafe_code)]` is active at the crate root (`src/main.rs`). All Win32 FFI calls are wrapped in localized `#[allow(unsafe_code)]` blocks for: `K32GetPerformanceInfo`, `K32GetProcessMemoryInfo`, `K32EmptyWorkingSet`, `OpenProcess`, `IsProcessCritical`, `QueryFullProcessImageNameW`, `OpenProcessToken`, `GetTokenInformation`, `CloseHandle`, `TerminateProcess`, and `GetUserDefaultUILanguage`. Total `#[allow(unsafe_code)]` attributes in `src/`: **15** (verified at v0.1.0).
 - Every Win32 FFI block is isolated in dedicated helper functions with explicit return-code checks and `std::mem::zeroed()` initialization.
 - **TOCTOU Handle Identity Protection (`v0.0.16`)**: Both `trim_single_pid` and `terminate_process_group` enforce `IsProcessCritical` and `QueryFullProcessImageNameW` via `verify_handle_identity` before any mutating operation. The `actions.rs` module is engine-only in `v0.0.16` (UI wiring scheduled for `v0.1.0`).
 - **Windows x64 CFG Virtual Memory Normalization**: On 64-bit Windows 11, Control Flow Guard reserves `2 TiB` of virtual address space per system process. PULSE normalizes `virtual_memory() >= (1_u64 << 40)` (`1 TiB`) to the process working set so grouped system services report realistic commit values.

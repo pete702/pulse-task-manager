@@ -10,10 +10,7 @@ mod tests {
         let state = MemoryTableState::default();
         assert!(state.search_query.is_empty());
         assert!(state.group_clones);
-        assert_eq!(
-            state.sort_col,
-            crate::modules::memory::process_model::MemorySortCol::RamBytes
-        );
+        assert_eq!(state.sort_col, crate::modules::memory::process_model::MemorySortCol::RamBytes);
         assert!(!state.sort_asc);
         assert!(state.selected_pid.is_none());
     }
@@ -23,13 +20,7 @@ mod tests {
         let snap = MemorySnapshot {
             ram_total_bytes: 16_000_000_000,
             processes: vec![
-                (
-                    100,
-                    "chrome.exe".to_owned(),
-                    1_000_000_000,
-                    2_000_000_000,
-                    0,
-                ),
+                (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 0),
                 (200, "game.exe".to_owned(), 3_000_000_000, 4_000_000_000, 0),
             ],
             latest_spike: None,
@@ -47,13 +38,7 @@ mod tests {
         let snap = MemorySnapshot {
             ram_total_bytes: 16_000_000_000,
             processes: vec![
-                (
-                    100,
-                    "chrome.exe".to_owned(),
-                    1_000_000_000,
-                    2_000_000_000,
-                    0,
-                ),
+                (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 0),
                 (200, "game.exe".to_owned(), 3_000_000_000, 4_000_000_000, 0),
             ],
             latest_spike: None,
@@ -86,13 +71,7 @@ mod tests {
             ram_available_bytes: 8_000_000_000,
             swap_used_bytes: 1_000_000_000,
             processes: vec![
-                (
-                    100,
-                    "chrome.exe".to_owned(),
-                    1_000_000_000,
-                    2_000_000_000,
-                    0,
-                ),
+                (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 0),
                 (200, "game.exe".to_owned(), 3_000_000_000, 4_000_000_000, 0),
             ],
             ..Default::default()
@@ -111,13 +90,7 @@ mod tests {
             ram_available_bytes: 7_500_000_000,
             swap_used_bytes: 1_000_000_000,
             processes: vec![
-                (
-                    100,
-                    "chrome.exe".to_owned(),
-                    1_000_000_000,
-                    2_000_000_000,
-                    50_000_000,
-                ), // Delta changed!
+                (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 50_000_000), // Delta changed!
                 (200, "game.exe".to_owned(), 3_000_000_000, 4_000_000_000, 0),
             ],
             ..Default::default()

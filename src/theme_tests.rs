@@ -19,14 +19,8 @@ fn test_colors_constants() {
     assert_eq!(colors::ACCENT_AMBER, Color32::from_rgb(0xFF, 0xB8, 0x00));
     assert_eq!(colors::ACCENT_RED, Color32::from_rgb(0xFF, 0x2A, 0x54));
     assert_eq!(colors::ACCENT_PURPLE, Color32::from_rgb(0xBD, 0x00, 0xFF));
-    assert_eq!(
-        colors::SIDEBAR_ACTIVE_BG,
-        Color32::from_rgb(0x1A, 0x22, 0x34)
-    );
-    assert_eq!(
-        colors::SIDEBAR_ACTIVE_BORDER,
-        Color32::from_rgb(0x00, 0xF0, 0xFF)
-    );
+    assert_eq!(colors::SIDEBAR_ACTIVE_BG, Color32::from_rgb(0x1A, 0x22, 0x34));
+    assert_eq!(colors::SIDEBAR_ACTIVE_BORDER, Color32::from_rgb(0x00, 0xF0, 0xFF));
     assert_eq!(colors::STATUS_BAR_BG, Color32::from_rgb(0x0A, 0x0B, 0x10));
 }
 

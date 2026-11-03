@@ -1,7 +1,8 @@
-//! Memory tab page: Mission Center-style sub-view switcher, overview, and process table.
+//! Memory tab page: sub-view switcher, overview, process table, and action bar.
 
 use eframe::egui;
 
+use crate::modules::memory::action_bar::{self, MemoryActionBarState};
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::modules::memory::table_view::{render_memory_table, MemoryTableState};
@@ -35,6 +36,7 @@ pub fn render_memory_page(
     history: &mut MemoryHistory,
     sub_view: &mut MemorySubView,
     table_state: &mut MemoryTableState,
+    action_state: &mut MemoryActionBarState,
     uptime_secs: u64,
 ) {
     card_frame().show(ui, |ui| {
@@ -42,20 +44,19 @@ pub fn render_memory_page(
             for view in [MemorySubView::Overview, MemorySubView::Processes] {
                 let active = *sub_view == view;
                 let text = view.label(mem.processes.len());
-                let button =
-                    egui::Button::new(egui::RichText::new(text).monospace().size(12.0).color(
-                        if active {
-                            colors::TEXT_PRIMARY
-                        } else {
-                            colors::TEXT_SECONDARY
-                        },
-                    ))
-                    .fill(if active {
-                        colors::ACCENT_CYAN.gamma_multiply(0.15)
+                let button = egui::Button::new(
+                    egui::RichText::new(text).monospace().size(12.0).color(if active {
+                        colors::TEXT_PRIMARY
                     } else {
-                        colors::BG_CARD
-                    })
-                    .frame(active);
+                        colors::TEXT_SECONDARY
+                    }),
+                )
+                .fill(if active {
+                    colors::ACCENT_CYAN.gamma_multiply(0.15)
+                } else {
+                    colors::BG_CARD
+                })
+                .frame(active);
                 if ui.add(button).clicked() {
                     *sub_view = view;
                 }
@@ -71,6 +72,9 @@ pub fn render_memory_page(
         MemorySubView::Processes => {
             render_compact_ram_bar(ui, mem);
             ui.add_space(8.0);
+            let rows = table_state.get_or_compute_rows(mem, uptime_secs);
+            action_bar::render_action_bar(ui, mem, rows.as_ref(), table_state, action_state);
+            ui.add_space(6.0);
             render_memory_table(ui, mem, table_state, uptime_secs);
         }
     }
@@ -82,10 +86,7 @@ fn render_compact_ram_bar(ui: &mut egui::Ui, mem: &MemorySnapshot) {
             let pct = mem.ram_usage_percent();
             let color = load_color(pct);
             ui.label(
-                egui::RichText::new("RAM")
-                    .monospace()
-                    .size(10.0)
-                    .color(colors::TEXT_SECONDARY),
+                egui::RichText::new("RAM").monospace().size(10.0).color(colors::TEXT_SECONDARY),
             );
             ui.add(
                 egui::ProgressBar::new(pct / 100.0)
@@ -94,12 +95,7 @@ fn render_compact_ram_bar(ui: &mut egui::Ui, mem: &MemorySnapshot) {
                     .rounding(egui::Rounding::same(3.0))
                     .animate(false),
             );
-            ui.label(
-                egui::RichText::new(format!("{pct:.1}%"))
-                    .monospace()
-                    .size(13.0)
-                    .color(color),
-            );
+            ui.label(egui::RichText::new(format!("{pct:.1}%")).monospace().size(13.0).color(color));
             ui.label(
                 egui::RichText::new(format!(
                     "{:.2} / {:.2} GiB",

@@ -145,4 +145,11 @@ impl MemorySnapshot {
         let pct = (self.commit_total_bytes as f64 / self.commit_limit_bytes as f64) * 100.0;
         pct.clamp(0.0, 100.0) as f32
     }
+
+    /// Alias for the Three Walls badge: Commit Charge percentage.
+    #[allow(dead_code)]
+    #[inline]
+    pub fn commit_charge_pct(&self) -> f32 {
+        self.commit_usage_percent()
+    }
 }

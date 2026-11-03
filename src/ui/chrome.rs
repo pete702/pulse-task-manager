@@ -12,10 +12,7 @@ pub use crate::ui::status_bar::render_status_bar;
 /// Cached uptime formatter: allocates only when uptime_secs changes (1 Hz).
 fn cached_format_uptime(uptime_secs: u64) -> String {
     static CACHE: OnceLock<Mutex<(u64, String)>> = OnceLock::new();
-    let mut cache = CACHE
-        .get_or_init(|| Mutex::new((0, String::new())))
-        .lock()
-        .unwrap();
+    let mut cache = CACHE.get_or_init(|| Mutex::new((0, String::new()))).lock().unwrap();
     if cache.0 != uptime_secs {
         cache.0 = uptime_secs;
         cache.1 = format_uptime(uptime_secs);
@@ -41,14 +38,10 @@ pub fn render_top_panel(
 
         // Version
         ui.label(
-            egui::RichText::new(format!(
-                "{}{}",
-                Key::VersionPrefix.t(),
-                env!("CARGO_PKG_VERSION")
-            ))
-            .monospace()
-            .size(14.0)
-            .color(colors::TEXT_SECONDARY),
+            egui::RichText::new(format!("{}{}", Key::VersionPrefix.t(), env!("CARGO_PKG_VERSION")))
+                .monospace()
+                .size(14.0)
+                .color(colors::TEXT_SECONDARY),
         );
         ui.separator();
 
@@ -82,6 +75,12 @@ pub fn render_top_panel(
                 .size(12.0)
                 .color(colors::ACCENT_CYAN),
             );
+        }
+
+        // Three Walls pressure badge (RAM / commit charge)
+        if let Some(ref snapshot) = latest_snapshot {
+            ui.separator();
+            crate::ui::three_walls::render_badge(ui, snapshot);
         }
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

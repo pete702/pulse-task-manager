@@ -3,6 +3,17 @@
 All notable changes to **PULSE** (`pulse_manager`) are documented in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
 
+## [0.1.0] - 2026-11-03
+
+- **Phase 1 Memory Subsystem Complete**: Non-blocking Memory Action Bar (`action_bar.rs`) with working-set trim (`K32EmptyWorkingSet`), trim selected, end task, open file location, and Before/After `ReclaimReport` audit.
+- **Three Walls Bottleneck Badge** (`three_walls.rs`): Live `SYSTEM OPTIMAL` / `MEMORY WALL` / `COMPUTE WALL` / `I/O WALL` indicator in top header.
+- **Memory Chart `1m/5m/15m` Selector** (`chart_view.rs`): Visible header buttons with cached `PlotPoints` keyed by `(history.len(), window_secs)` for zero-realloc switching.
+- **5-Column Aligned Process Table** (`table_view.rs`, `table_body.rs`): Column definitions match header/row cells 1-to-1; row selection via click on Process Name cell.
+- **Worker `LatestSlot` Channel** (`worker.rs`): `Arc<Mutex<Option<Arc<SystemSnapshot>>>>` for newest-snapshot access; on channel Full, drains and retries once.
+- **Panic Log Hook** (`main.rs`): Custom panic hook writes to `%TEMP%\pulse_panic.log` for headless CI diagnostics.
+- **Audit Fixes**: Removed all 24 `rustfmt` skip attributes; unified line limit to 180 for all `.rs` files in `src/` and `tests/`; CI workflow uses stable-only main job with separate MSRV `1.78.0` job; `--locked` on self-test.
+- **SafeHandle 1024 Buffer** (`safe_handle.rs`): `verify_handle_identity` uses `[0u16; 1024]` buffer for `QueryFullProcessImageNameW`.
+
 ## [0.0.16] - 2026-11-03
 
 - **TOCTOU Handle Identity Verification**: Added `verify_handle_identity` using `QueryFullProcessImageNameW` and enforced `IsProcessCritical` checks in both `trim_single_pid` and `terminate_process_group` (engine only in `v0.0.16`, UI wiring in `v0.1.0`).
@@ -40,7 +51,3 @@ Binary assets and checksums are published on [GitHub Releases](https://github.co
 - **Keyboard Shortcuts & Clone Grouping**: Added `Ctrl+F` search focus, `Esc` filter clear, `[Nx]` process clone aggregation, and geometric `▲ HOG` badges.
 - **Windows x64 CFG Normalization**: Normalized `>= 1 TiB` Control Flow Guard virtual memory reservations on 64-bit Windows 11 system processes.
 
-## [0.0.10] - 2026-11-02
-
-- **Strict 180-Line Modularity Refactoring**: Decomposed the codebase into 50 focused `.rs` modules under a hard `MAX_RS_FILE_LINES = 180` ceiling enforced by `src/core/selftest_tests.rs`.
-- **Submodule Test Architecture**: Extracted unit tests into sibling `*_tests.rs` files and enforced the International English (`0` Cyrillic) repository policy with a native Win32 OS locale badge (`GetUserDefaultUILanguage`).

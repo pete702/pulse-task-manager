@@ -21,7 +21,7 @@ use crate::modules::memory::safe_handle::{
 /// Validates: live snapshot (pulse_ram_mb > 0), MemorySnapshot fields, MemoryHistory, i18n toggle.
 pub fn run_headless_self_test() -> Result<(), String> {
     println!("[SelfTest] Starting headless self-test...");
-    let rx = spawn_telemetry_worker();
+    let (rx, _latest) = spawn_telemetry_worker();
     let mut snapshot = None;
     let start = std::time::Instant::now();
     while start.elapsed() < Duration::from_secs(5) {
@@ -40,10 +40,7 @@ pub fn run_headless_self_test() -> Result<(), String> {
         return Err("uptime_secs is 0".to_string());
     }
     if snap.pulse_ram_mb <= 0.0 {
-        return Err(format!(
-            "pulse_ram_mb is {:.1} (expected > 0)",
-            snap.pulse_ram_mb
-        ));
+        return Err(format!("pulse_ram_mb is {:.1} (expected > 0)", snap.pulse_ram_mb));
     }
     if let Some(ref mem) = snap.memory {
         println!(
@@ -62,10 +59,7 @@ pub fn run_headless_self_test() -> Result<(), String> {
         let mut history = MemoryHistory::new();
         history.push(mem);
         if history.len() != 1 {
-            return Err(format!(
-                "MemoryHistory len is {} (expected 1)",
-                history.len()
-            ));
+            return Err(format!("MemoryHistory len is {} (expected 1)", history.len()));
         }
         if history.peak_ram_percent <= 0.0 {
             return Err(format!(
@@ -124,10 +118,7 @@ pub fn run_self_test(options: eframe::NativeOptions) -> eframe::Result<()> {
     ) {
         Ok(()) => Ok(()),
         Err(e) => {
-            eprintln!(
-                "[SelfTest] eframe failed: {}. Falling back to headless mode.",
-                e
-            );
+            eprintln!("[SelfTest] eframe failed: {}. Falling back to headless mode.", e);
             println!("[SelfTest] Fallback to headless self-test");
             let _ = run_headless_self_test().map_err(|e| {
                 eprintln!("[SelfTest] FAILED: {}", e);

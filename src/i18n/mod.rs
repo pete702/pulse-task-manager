@@ -83,11 +83,7 @@ pub fn detect_os_language() -> (Lang, u16) {
     use windows_sys::Win32::Globalization::GetUserDefaultUILanguage;
     let lang_id = unsafe { GetUserDefaultUILanguage() };
     let primary_lang = lang_id & 0x3FF;
-    let lang = if primary_lang == 0x22 {
-        Lang::En
-    } else {
-        Lang::En
-    };
+    let lang = if primary_lang == 0x22 { Lang::En } else { Lang::En };
     (lang, lang_id)
 }
 #[cfg(not(target_os = "windows"))]

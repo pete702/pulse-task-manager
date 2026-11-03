@@ -20,10 +20,7 @@ pub struct ProcessDeltaTracker {
 
 impl ProcessDeltaTracker {
     pub fn new() -> Self {
-        Self {
-            prev_ram_bytes: HashMap::new(),
-            active_pids: HashSet::new(),
-        }
+        Self { prev_ram_bytes: HashMap::new(), active_pids: HashSet::new() }
     }
 
     /// Calculate delta for each process and update tracking.
@@ -39,10 +36,8 @@ impl ProcessDeltaTracker {
         }
         // Reuse active_pids HashSet capacity across ticks
         self.active_pids.clear();
-        self.active_pids
-            .extend(processes.iter().map(|(pid, _, _, _)| *pid));
-        self.prev_ram_bytes
-            .retain(|pid, _| self.active_pids.contains(pid));
+        self.active_pids.extend(processes.iter().map(|(pid, _, _, _)| *pid));
+        self.prev_ram_bytes.retain(|pid, _| self.active_pids.contains(pid));
         result
     }
 }

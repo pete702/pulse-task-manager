@@ -18,6 +18,7 @@ pub struct ProcessMemoryItem {
     pub is_hog: bool,
     /// Per-second working set delta (bytes/sec). Positive = growing (leak), negative = shrinking (reclaim).
     pub delta_bytes_per_sec: i64,
+    pub exe_path: Option<String>,
 }
 
 /// Column for sorting process list.
@@ -46,11 +47,8 @@ pub struct MemorySpikeEvent {
 impl ProcessMemoryItem {
     #[allow(dead_code)]
     pub fn new(pid: u32, name: String, ram_bytes: u64, virtual_bytes: u64, total_ram: u64) -> Self {
-        let ram_pct = if total_ram > 0 {
-            (ram_bytes as f64 / total_ram as f64 * 100.0) as f32
-        } else {
-            0.0
-        };
+        let ram_pct =
+            if total_ram > 0 { (ram_bytes as f64 / total_ram as f64 * 100.0) as f32 } else { 0.0 };
         Self {
             pid,
             name,
@@ -60,6 +58,7 @@ impl ProcessMemoryItem {
             process_count: 1,
             is_hog: ram_pct >= 15.0,
             delta_bytes_per_sec: 0,
+            exe_path: None,
         }
     }
 }
@@ -82,19 +81,12 @@ pub fn filter_group_and_sort(
                 || search_lower == pid.to_string()
                 || name.to_lowercase().contains(&search_lower)
         })
-        .map(
-            |(pid, name, ram_bytes, virtual_bytes, delta_bytes_per_sec)| {
-                let mut item = ProcessMemoryItem::new(
-                    *pid,
-                    name.clone(),
-                    *ram_bytes,
-                    *virtual_bytes,
-                    total_ram,
-                );
-                item.delta_bytes_per_sec = *delta_bytes_per_sec;
-                item
-            },
-        )
+        .map(|(pid, name, ram_bytes, virtual_bytes, delta_bytes_per_sec)| {
+            let mut item =
+                ProcessMemoryItem::new(*pid, name.clone(), *ram_bytes, *virtual_bytes, total_ram);
+            item.delta_bytes_per_sec = *delta_bytes_per_sec;
+            item
+        })
         .collect();
     if group_clones {
         let mut grouped: HashMap<String, ProcessMemoryItem> = HashMap::new();
@@ -104,9 +96,8 @@ pub fn filter_group_and_sort(
                 .and_modify(|ex| {
                     ex.ram_bytes = ex.ram_bytes.saturating_add(item.ram_bytes);
                     ex.virtual_bytes = ex.virtual_bytes.saturating_add(item.virtual_bytes);
-                    ex.delta_bytes_per_sec = ex
-                        .delta_bytes_per_sec
-                        .saturating_add(item.delta_bytes_per_sec);
+                    ex.delta_bytes_per_sec =
+                        ex.delta_bytes_per_sec.saturating_add(item.delta_bytes_per_sec);
                     ex.process_count += 1;
                     ex.ram_pct = if total_ram > 0 {
                         (ex.ram_bytes as f64 / total_ram as f64 * 100.0) as f32
@@ -128,10 +119,9 @@ pub fn filter_group_and_sort(
             MemorySortCol::Pid => a.pid.cmp(&b.pid),
             MemorySortCol::RamBytes => a.ram_bytes.cmp(&b.ram_bytes),
             MemorySortCol::VirtualBytes => a.virtual_bytes.cmp(&b.virtual_bytes),
-            MemorySortCol::RamPct => a
-                .ram_pct
-                .partial_cmp(&b.ram_pct)
-                .unwrap_or(std::cmp::Ordering::Equal),
+            MemorySortCol::RamPct => {
+                a.ram_pct.partial_cmp(&b.ram_pct).unwrap_or(std::cmp::Ordering::Equal)
+            }
         };
         if sort_asc {
             ord
