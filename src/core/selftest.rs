@@ -106,14 +106,20 @@ pub fn run_headless_self_test() -> Result<(), String> {
     }
     println!("[SelfTest] i18n set_lang: En OK");
     let _ = is_app_elevated();
-    let _ = is_protected_process(0, "system");
-    let _ = verify_pid_safety_gate(0, "system");
-    let _ = SafeHandle::open(0, 0);
+    assert!(is_protected_process(0, "system"), "PID 0 must be blocked by the safety gate");
+    assert!(
+        verify_pid_safety_gate(0, "system").is_err(),
+        "PID 0 must be rejected by verify_pid_safety_gate"
+    );
+    assert!(SafeHandle::open(0, 0).is_none(), "PID 0 must not yield a usable process handle");
     let _targets: &[ProcessTarget] = &[];
     let _report: ReclaimReport = trim_process_group(_targets);
     let _ = purge_system_working_sets(_targets);
     let _ = terminate_process_group(_targets);
-    let _ = open_process_file_location(std::path::Path::new(""));
+    assert!(
+        open_process_file_location(std::path::Path::new("")).is_err(),
+        "empty executable path must be rejected before spawning Explorer"
+    );
     let _ = TrimSkipReason::Protected;
     println!("[SelfTest] Memory Actions Engine & Safety Gate: API surface OK");
     println!("[SelfTest] SELF-TEST PASSED (HEADLESS CI)");

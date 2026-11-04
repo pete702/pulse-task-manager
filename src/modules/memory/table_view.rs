@@ -32,10 +32,13 @@ pub fn render_memory_table(
                 (state.sort_col, state.sort_asc, state.group_clones);
             render_toolbar(ui, total_processes, shown_rows, clone_groups, state);
             ui.add_space(6.0);
-            if state.sort_col != old_sort_col
-                || state.sort_asc != old_sort_asc
-                || state.group_clones != old_group_clones
-            {
+            if state.group_clones != old_group_clones {
+                // The checkbox mutates the field directly, so restore and re-apply through
+                // the setter to guarantee selection/confirmation invalidation.
+                let new_mode = state.group_clones;
+                state.group_clones = old_group_clones;
+                state.set_group_clones(new_mode);
+            } else if state.sort_col != old_sort_col || state.sort_asc != old_sort_asc {
                 state.invalidate_cache();
             }
             if rows.is_empty() {

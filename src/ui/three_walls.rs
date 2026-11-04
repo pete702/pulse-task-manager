@@ -7,8 +7,10 @@ use crate::modules::memory::formatters::format_bytes;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::theme;
 
+/// Honest Three Walls badge state: optimal, elevated, memory wall, or unconfirmed telemetry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WallState {
+    Unconfirmed,
     Optimal,
     Elevated,
     MemoryWall,
@@ -17,6 +19,7 @@ pub enum WallState {
 impl WallState {
     pub fn label(self) -> &'static str {
         match self {
+            Self::Unconfirmed => "[ ⏳ INITIALIZING TELEMETRY ]",
             Self::Optimal => "[ ● SYSTEM OPTIMAL ]",
             Self::Elevated => "[ ● RAM ELEVATED ]",
             Self::MemoryWall => "[ ▲ MEMORY WALL ]",
@@ -25,6 +28,7 @@ impl WallState {
 
     pub fn color(self) -> egui::Color32 {
         match self {
+            Self::Unconfirmed => theme::TEXT_MUTED,
             Self::Optimal => theme::OPTIMAL_EMERALD,
             Self::Elevated => theme::WARNING_AMBER,
             Self::MemoryWall => theme::CRITICAL_CORAL,
@@ -33,6 +37,10 @@ impl WallState {
 }
 
 fn evaluate_memory(mem: &MemorySnapshot) -> WallState {
+    // Never claim "optimal" without confirmed kernel/RAM telemetry.
+    if mem.snapshot_id == 0 || mem.ram_total_bytes == 0 || !mem.kernel_metrics_valid {
+        return WallState::Unconfirmed;
+    }
     let (ram, commit) = (mem.ram_usage_percent(), mem.commit_charge_pct());
     if ram >= 85.0 {
         WallState::MemoryWall
@@ -45,7 +53,10 @@ fn evaluate_memory(mem: &MemorySnapshot) -> WallState {
 
 /// Evaluates the badge state for a telemetry snapshot.
 pub fn evaluate(snap: &SystemSnapshot) -> WallState {
-    snap.memory.as_ref().map_or(WallState::Optimal, evaluate_memory)
+    match snap.memory.as_ref() {
+        Some(mem) => evaluate_memory(mem),
+        None => WallState::Unconfirmed,
+    }
 }
 
 fn hover_text(snap: &SystemSnapshot) -> String {
@@ -78,6 +89,8 @@ mod tests {
             ram_used_bytes: ram_used,
             commit_total_bytes: commit_used,
             commit_limit_bytes: 100,
+            snapshot_id: 1,
+            kernel_metrics_valid: true,
             ..Default::default()
         };
         SystemSnapshot::new(1, 10.0, Some(mem))
@@ -99,7 +112,27 @@ mod tests {
     #[test]
     fn test_optimal_state_and_missing_memory() {
         assert_eq!(evaluate(&snapshot(50, 50)), WallState::Optimal);
-        assert_eq!(evaluate(&SystemSnapshot::minimal(1, 10.0)), WallState::Optimal);
+        assert_eq!(evaluate(&SystemSnapshot::minimal(1, 10.0)), WallState::Unconfirmed);
         assert_eq!(WallState::Optimal.label(), "[ ● SYSTEM OPTIMAL ]");
+        assert_eq!(WallState::Unconfirmed.label(), "[ ⏳ INITIALIZING TELEMETRY ]");
+    }
+
+    #[test]
+    fn test_unconfirmed_until_telemetry_is_valid() {
+        let mut mem = MemorySnapshot {
+            ram_total_bytes: 100,
+            ram_used_bytes: 10,
+            commit_total_bytes: 10,
+            commit_limit_bytes: 100,
+            snapshot_id: 0,
+            kernel_metrics_valid: true,
+            ..Default::default()
+        };
+        assert_eq!(evaluate_memory(&mem), WallState::Unconfirmed);
+        mem.snapshot_id = 3;
+        mem.kernel_metrics_valid = false;
+        assert_eq!(evaluate_memory(&mem), WallState::Unconfirmed);
+        mem.kernel_metrics_valid = true;
+        assert_eq!(evaluate_memory(&mem), WallState::Optimal);
     }
 }

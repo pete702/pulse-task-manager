@@ -7,19 +7,9 @@ use crate::modules::memory::process_model::{
     filter_group_and_sort, MemorySortCol, ProcessMemoryItem,
 };
 
-use super::table_cache::{
-    compute_snapshot_signature, hash_search_query, make_signature_snapshot, TableCacheKey,
-};
+use super::table_cache::{compute_snapshot_signature, hash_search_query, TableCacheKey};
 
-/// Cached, O(1) summary of the selected group for the action bar.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct SelectedGroupSummary {
-    pub name: String,
-    pub targets: Vec<crate::modules::memory::process_target::ProcessTarget>,
-    pub pids: Vec<u32>,
-    pub blocked: bool,
-    pub path: Option<String>,
-}
+pub use super::table_selection::SelectedGroupSummary;
 
 /// UI state for the process memory table with 1 Hz caching.
 #[derive(Debug, Clone)]
@@ -33,7 +23,10 @@ pub struct MemoryTableState {
     cached_rows: Option<Arc<[ProcessMemoryItem]>>,
     cache_key: Option<TableCacheKey>,
     cached_scan_id: u64,
-    cached_selection: Option<(u64, String, SelectedGroupSummary)>,
+    /// Selection cache keyed by `(scan_id, group, pid, grouping_mode)`.
+    pub(crate) cached_selection: Option<(u64, String, Option<u32>, bool, SelectedGroupSummary)>,
+    /// Set when the grouping mode changed; clears stale action-bar kill confirmation.
+    pub(crate) group_clones_toggled: bool,
 }
 
 impl Default for MemoryTableState {
@@ -49,12 +42,13 @@ impl Default for MemoryTableState {
             cache_key: None,
             cached_scan_id: 0,
             cached_selection: None,
+            group_clones_toggled: false,
         }
     }
 }
 
 impl MemoryTableState {
-    /// O(1) rebuild using the authoritative `process_scan_id` from the snapshot.
+    /// Rebuilds the table rows for the authoritative `process_scan_id` from the snapshot.
     /// Returns immediately if the scan_id matches and filter/sort/group settings are unchanged.
     pub fn rebuild_for_scan(&mut self, scan_id: u64, raw_rows: &[RawProcessRow]) {
         if scan_id != 0 && self.cached_scan_id == scan_id {
@@ -117,51 +111,11 @@ impl MemoryTableState {
         rows
     }
 
-    pub fn resolved_selection(
-        &mut self,
-        scan_id: u64,
-        raw_rows: &[RawProcessRow],
-    ) -> Option<SelectedGroupSummary> {
-        if let Some(ref group) = self.selected_group {
-            if let Some((cached_scan, cached_key, cached_summary)) = &self.cached_selection {
-                if *cached_scan == scan_id && cached_key == group {
-                    return Some(cached_summary.clone());
-                }
-            }
-            let snap = make_signature_snapshot(raw_rows);
-            if let Some(view) =
-                crate::modules::memory::selection::resolve_selection(&snap, Some(group))
-            {
-                let summary = SelectedGroupSummary {
-                    name: view.name,
-                    targets: view.targets,
-                    pids: view.pids,
-                    blocked: view.blocked,
-                    path: view.path,
-                };
-                self.cached_selection = Some((scan_id, group.clone(), summary.clone()));
-                return Some(summary);
-            }
-        }
-        None
-    }
-
     pub(crate) fn invalidate_cache(&mut self) {
         self.cached_rows = None;
         self.cache_key = None;
         self.cached_scan_id = 0;
         self.cached_selection = None;
-    }
-
-    /// Toggles name-based row selection, storing the clean base group key.
-    pub fn toggle_selection(&mut self, item: &ProcessMemoryItem) {
-        let key = crate::modules::memory::selection::base_group_key(&item.name);
-        let same = self.selected_group.as_deref() == Some(key);
-        self.selected_pid = if same { None } else { Some(item.pid) };
-        self.selected_group = if same { None } else { Some(key.to_owned()) };
-        if !same {
-            self.cached_selection = None;
-        }
     }
 
     #[cfg(test)]

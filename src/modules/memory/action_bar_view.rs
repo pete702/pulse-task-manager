@@ -1,9 +1,7 @@
 //! Full-width rendering for the memory action bar.
 
-use crate::modules::memory::action_bar::{
-    format_trim_status, MemoryActionBarState, BUSY_HINT, NO_SELECTION_HINT, PROTECTED_HINT,
-};
-use crate::modules::memory::action_bar_status::{mode_label, selection_info};
+use crate::modules::memory::action_bar::{format_trim_status, MemoryActionBarState, BUSY_HINT};
+use crate::modules::memory::action_bar_status::{hint, mode_label, selection_info};
 use crate::modules::memory::actions;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::modules::memory::process_target::ProcessTarget;
@@ -22,6 +20,10 @@ pub fn render_action_bar(
     let now = Instant::now();
     st.poll(now);
     let busy = st.is_busy();
+    // Cancel stale confirmation when group-clones mode just changed.
+    if ts.take_group_clones_toggled() {
+        st.cancel_confirm();
+    }
     let sel = ts.resolved_selection(mem.process_scan_id, &mem.processes);
     crate::theme::card_frame().show(ui, |ui| {
         ui.set_width(ui.available_width());
@@ -37,16 +39,6 @@ pub fn render_action_bar(
             ui.label(egui::RichText::new(t).monospace().size(10.0).color(colors::TEXT_SECONDARY));
         }
     });
-}
-
-fn hint(sel: &Option<SelectedGroupSummary>, busy: bool) -> &'static str {
-    if busy {
-        BUSY_HINT
-    } else if sel.is_some() {
-        PROTECTED_HINT
-    } else {
-        NO_SELECTION_HINT
-    }
 }
 
 fn trim_all_button(
@@ -80,12 +72,15 @@ fn selection_actions(
 ) {
     let hint = hint(sel, busy);
     let can_modify = !busy && sel.as_ref().is_some_and(|v| !v.blocked && !v.targets.is_empty());
-    let trim = ui.add_enabled(can_modify, egui::Button::new("Trim Selected"));
-    let trim = if can_modify {
-        trim.on_hover_text("Trim every raw process in the selected group")
+    let multi = sel.as_ref().is_some_and(|v| v.targets.len() > 1);
+    let trim_text = if multi {
+        "Trim every raw process in the selected group"
     } else {
-        trim.on_disabled_hover_text(hint)
+        "Trim the selected process"
     };
+    let trim = ui.add_enabled(can_modify, egui::Button::new("Trim Selected"));
+    let trim =
+        if can_modify { trim.on_hover_text(trim_text) } else { trim.on_disabled_hover_text(hint) };
     if trim.clicked() {
         if let Some(v) = sel {
             let items = v.targets.clone();
@@ -94,7 +89,7 @@ fn selection_actions(
         }
     }
     open_location_button(ui, sel, st, now, busy, hint);
-    end_task_button(ui, sel, st, now, can_modify, hint);
+    end_task_button(ui, sel, st, now, can_modify, hint, multi);
 }
 
 fn open_location_button(
@@ -135,19 +130,33 @@ fn end_task_button(
     now: Instant,
     can_modify: bool,
     hint: &str,
+    multi: bool,
 ) {
+    if let Some(v) = sel {
+        st.validate_confirm_targets(&v.targets);
+    }
     let confirming = sel.as_ref().is_some_and(|v| st.confirm_kill_active(&v.name, now));
     let label = if confirming { "Confirm Kill?" } else { "End Task" };
     let end = ui.add_enabled(can_modify, egui::Button::new(label));
     let end = if can_modify {
-        end.on_hover_text("End every raw process in the group (two-step confirmation)")
+        let text = if multi {
+            "End every raw process in the group (two-step confirmation)"
+        } else {
+            "End this process (two-step confirmation)"
+        };
+        end.on_hover_text(text)
     } else {
         end.on_disabled_hover_text(hint)
     };
     if end.clicked() {
         if let Some(v) = sel {
             if confirming {
+                st.validate_confirm_targets(&v.targets);
                 if let Some(targets) = st.confirmed_targets(&v.name, now) {
+                    if targets != v.targets {
+                        st.cancel_confirm();
+                        return;
+                    }
                     let groups = targets.len();
                     st.cancel_confirm();
                     crate::core::request_process_scan();

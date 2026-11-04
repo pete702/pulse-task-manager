@@ -1,5 +1,12 @@
 //! Raw-process selection resolution: clone markers, action targets, and PID gating.
+//!
+//! Selection is resolved against the raw process table with direct filtering:
+//! - `group_clones == true`  → all processes sharing the base group key.
+//! - `group_clones == false` → only the single process matching `selected_pid`.
 
+use crate::modules::memory::model::RawProcessRow;
+
+#[cfg(test)]
 use crate::modules::memory::model::MemorySnapshot;
 use crate::modules::memory::process_target::ProcessTarget;
 use crate::modules::memory::safe_handle::verify_pid_safety_gate;
@@ -48,19 +55,35 @@ impl SelectionView {
     }
 }
 
-/// Builds action targets from every raw process row (ignores search and grouping).
+/// Builds action targets from every raw process row (test helper only).
+#[cfg(test)]
 pub fn raw_targets(mem: &MemorySnapshot) -> Vec<ProcessTarget> {
     mem.processes.iter().map(ProcessTarget::from_raw).collect()
 }
 
-/// Resolves the stored selection against the raw snapshot, never the filtered table.
-pub fn resolve_selection(mem: &MemorySnapshot, selected: Option<&str>) -> Option<SelectionView> {
-    let key = base_group_key(selected?);
+/// Resolves selection against raw process rows with direct filtering.
+/// When group_clones is true, all processes matching selected_group are included.
+/// When group_clones is false, only the single process matching selected_pid is included.
+pub fn resolve_selection(
+    raw_rows: &[RawProcessRow],
+    selected_group: Option<&str>,
+    selected_pid: Option<u32>,
+    group_clones: bool,
+) -> Option<SelectionView> {
+    let key = base_group_key(selected_group?);
     if key.is_empty() {
         return None;
     }
-    let targets: Vec<ProcessTarget> =
-        raw_targets(mem).into_iter().filter(|item| base_group_key(&item.name) == key).collect();
+    let targets: Vec<ProcessTarget> = if group_clones {
+        raw_rows
+            .iter()
+            .filter(|row| base_group_key(&row.name) == key)
+            .map(ProcessTarget::from_raw)
+            .collect()
+    } else {
+        let pid = selected_pid?;
+        raw_rows.iter().filter(|row| row.pid == pid).map(ProcessTarget::from_raw).collect()
+    };
     if targets.is_empty() {
         return None;
     }

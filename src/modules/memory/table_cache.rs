@@ -46,6 +46,7 @@ pub fn make_signature_snapshot(raw_rows: &[RawProcessRow]) -> MemorySnapshot {
         system_threads: 0,
         system_processes: 0,
         ram_cached_bytes_override: 0,
+        kernel_metrics_valid: false,
         snapshot_id: 0,
         process_scan_id: 0,
         sample_elapsed_secs: 0.0,

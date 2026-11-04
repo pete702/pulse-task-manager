@@ -12,7 +12,7 @@ Binary assets and checksums are published on [GitHub Releases](https://github.co
 - **Background `Open Location` + `OnceLock` Elevation**: Path validated synchronously; `explorer.exe` spawned on background thread; `is_app_elevated()` uses `OnceLock<bool>` for single Win32 query per process lifetime.
 - **Single Frame-#3 Self-Trim**: `K32EmptyWorkingSet` called exactly once on frame #3 after GPU init; no trim on minimize transition.
 - **CLI `--version` / `--help` Flags**: Clean exit without GUI launch; elevation check warmed at startup.
-- **118 Passing Tests**: 114 unit + 4 docs-guard; clippy clean, fmt clean, release build verified.
+- **124 Passing Tests**: 120 unit + 4 docs-guard; clippy clean, fmt clean, release build verified.
 
 ## [0.1.1] - 2026-11-03
 
@@ -45,22 +45,4 @@ Binary assets and checksums are published on [GitHub Releases](https://github.co
 - **Win32 Safety & Path Normalization Fixes**: Made `SafeHandle` raw field private, wrapped `OpenProcessToken` in RAII, added `IsProcessCritical` checks, and fixed full-path normalization in `verify_pid_safety_gate`.
 - **Accurate Trim Accounting & Explorer Launch**: Fixed post-trim `K32GetProcessMemoryInfo` failure handling in `ReclaimReport` and switched `open_process_file_location` to `CommandExt::raw_arg` for paths with spaces.
 - **Documentation & Placeholder Sync**: Synced `ARCHITECTURE.md` theme/FFI tokens with `src/theme.rs` and `src/main.rs`, and matched placeholder tab versions to the roadmap.
-
-## [0.0.14] - 2026-11-03
-
-- **Zero-Clone Frame Pipeline**: Replaced per-frame `SystemSnapshot` and `Vec<ProcessMemoryItem>` clones with `Arc<SystemSnapshot>` and `Arc<[ProcessMemoryItem]>`, moved `apply_obsidian_theme` to one-time startup init, and cached Win32 `GetUserDefaultUILanguage` in `OnceLock`.
-- **Live 1 Hz Table Cache & Bounded Worker Channel**: Replaced the static table cache key with a 64-bit dynamic telemetry signature, switched the worker to `mpsc::sync_channel(2)`, and optimized `ProcessDeltaTracker` retention to `O(n)` via `HashSet`.
-- **clippy.toml** (`msrv = "1.78.0"`).
-
-## [0.0.13] - 2026-11-03
-
-- **Win32 RAII SafeHandle & PID Safety Gate**: Added `SafeHandle` (`CloseHandle` on `Drop`), non-blocking elevation check (`is_app_elevated`), and `verify_pid_safety_gate` protecting critical Windows OS and anti-cheat processes (`src/modules/memory/safe_handle.rs`).
-- **Deterministic Memory Actions Engine**: Added per-process working-set trim (`K32GetProcessMemoryInfo` before/after `K32EmptyWorkingSet`), batch `ReclaimReport` auditing, safe group termination, and file location launcher (`src/modules/memory/actions.rs`).
-
-## [0.0.12] - 2026-11-03
-
-- **RAM Composition Bar**: Added a 3-segment horizontal RAMMap-style bar (`In Use`, `Standby Cache`, `Free`) with hover breakdown tooltip (`src/modules/memory/composition_bar.rs`).
-- **Real-Time Leak Hunter (`Δ RAM/s`)**: Added per-PID working-set delta tracking (`delta_bytes_per_sec`) and live `▲ +X.X M/s` / `▼ -X.X M/s` indicators in the process table.
-- **1 Hz Table Cache & Minimize Edge Trim**: Cached filtered/sorted process rows at 1 Hz to eliminate 60 FPS re-sorting overhead, and restricted `K32EmptyWorkingSet` self-trim to startup and window minimize transitions.
-- **Dependency & Documentation Cleanup**: Removed 7 unused crates from `Cargo.toml` (leaving 6 core crates), added the 85% chart threshold line, fixed sidebar card rendering, and introduced `tests/docs_guard.rs`.
 

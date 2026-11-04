@@ -16,12 +16,17 @@ pub const PROTECTED_HINT: &str =
 pub const BUSY_HINT: &str = "Another process action is still running - please wait";
 
 /// Formats the honest trim result shown under the action bar.
+/// Reports the observed working-set delta, not a claim of memory "reclaimed".
 pub fn format_trim_status(r: &ReclaimReport) -> String {
     let s = r.skipped_protected + r.skipped_access_denied;
     format!(
-        "Working-set trim: {:.1} MB across {} procs ({} skipped)",
+        "Observed WS delta: {:.1} MB ({}, {} skipped)",
         r.reclaimed_bytes as f64 / 1_048_576.0,
-        r.trimmed_count,
+        if r.trimmed_count == 1 {
+            "1 process trimmed".to_owned()
+        } else {
+            format!("{} processes trimmed", r.trimmed_count)
+        },
         s
     )
 }
@@ -65,6 +70,17 @@ impl MemoryActionBarState {
     }
     pub fn cancel_confirm(&mut self) {
         self.confirm_kill = None;
+    }
+
+    /// Validates that the frozen kill targets still match the live selection.
+    /// If they no longer match (process exited or a new one spawned), cancels the pending
+    /// confirmation immediately so a second click cannot target stale PIDs.
+    pub fn validate_confirm_targets(&mut self, current_targets: &[ProcessTarget]) {
+        if let Some(ref c) = self.confirm_kill {
+            if c.targets != current_targets {
+                self.confirm_kill = None;
+            }
+        }
     }
     pub fn confirm_kill_active(&self, group_key: &str, now: Instant) -> bool {
         self.confirm_kill.as_ref().is_some_and(|c| {

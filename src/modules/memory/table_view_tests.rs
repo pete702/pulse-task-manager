@@ -88,6 +88,7 @@ mod tests {
                 row(100, "chrome.exe", 1_000_000_000, 2_000_000_000, 0),
                 row(200, "game.exe", 3_000_000_000, 4_000_000_000, 0),
             ]),
+            kernel_metrics_valid: true,
             ..Default::default()
         };
 
@@ -104,6 +105,7 @@ mod tests {
                 row(100, "chrome.exe", 1_000_000_000, 2_000_000_000, 50_000_000),
                 row(200, "game.exe", 3_000_000_000, 4_000_000_000, 0),
             ]),
+            kernel_metrics_valid: true,
             ..Default::default()
         };
 
@@ -147,6 +149,7 @@ mod tests {
 
         state.selected_group = Some("chrome.exe".to_owned());
 
+        // group_clones == true (default): selects both matching chrome instances.
         // First call with scan_id = 1: resolves and caches
         let sel1 = state.resolved_selection(1, &raw_rows);
         assert!(sel1.is_some());

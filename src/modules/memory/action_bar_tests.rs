@@ -41,7 +41,10 @@ mod tests {
     fn test_status_fades_after_eight_seconds() {
         let mut state = MemoryActionBarState::default();
         let t0 = Instant::now();
-        state.set_status(t0, "Working-set trim: 12.5 MB across 3 procs (1 skipped)".to_owned());
+        state.set_status(
+            t0,
+            "Observed WS delta: 12.5 MB (3 processes trimmed, 1 skipped)".to_owned(),
+        );
         assert!(state.status_text(t0 + Duration::from_secs(7)).is_some());
         assert!(state.status_text(t0 + STATUS_TTL).is_none());
     }
@@ -81,7 +84,8 @@ mod tests {
             reclaimed_bytes: 5 * 1_048_576,
         };
         let text = format_trim_status(&report);
-        assert_eq!(text, "Working-set trim: 5.0 MB across 4 procs (3 skipped)");
+        assert_eq!(text, "Observed WS delta: 5.0 MB (4 processes trimmed, 3 skipped)");
+        assert!(!text.contains("Reclaimed"));
         assert!(!text.contains("Freed"));
     }
 

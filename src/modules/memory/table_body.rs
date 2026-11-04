@@ -51,7 +51,7 @@ pub(super) fn render_table(
             body.rows(24.0, rows.len(), |mut row| {
                 let item = &rows[row.index()];
                 let mut clicked = false;
-                row.set_selected(state.selected_pid == Some(item.pid));
+                row.set_selected(state.is_row_selected(item));
                 let (_, resp) = row.col(|ui| render_name_cell(ui, item));
                 clicked |= resp.clicked();
                 let (_, resp) = row.col(|ui| {

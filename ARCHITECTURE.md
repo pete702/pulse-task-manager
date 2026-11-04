@@ -47,6 +47,13 @@ PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and pro
   All three must match the frozen `ProcessTarget` captured at scan time; any failure fails closed (blocks the mutation).
 - **Immutable `PendingKillConfirm`** (`src/modules/memory/action_bar.rs`): On first `[ End Task ]` click, the exact `Vec<ProcessTarget>` for the selected group is frozen into `PendingKillConfirm { group_key, targets, armed_at }`. The second click (within 3 s) sends this frozen list to `WorkerAction::TerminateSelected`. A newly spawned process with the same name after arming is **excluded** because the target list is immutable.
 
+### v0.1.2 Audit & Performance Hardening
+- `snapshot_id` (1 Hz) vs `process_scan_id` (0.5 Hz, minimized via `Arc`) — decoupled polling with zero-copy fast path.
+- `kernel_metrics_valid` flag + `WallState::Unconfirmed` (`INITIALIZING TELEMETRY`) — honest Three Walls badge until real kernel metrics arrive.
+- `os_scheduler_jitter_ms` measured as pure sleep overshoot, kept separate from `scan_duration_ms`.
+- Non-blocking background-thread `Open Location` with `OnceLock` cached elevation check.
+- 3-point `ProcessTarget` identity (`basename + creation_time + full_path`) with auto-canceling `PendingKillConfirm` on target drift.
+
 ## 6. Obsidian Theme Tokens (`src/theme.rs`)
 
 | Token | Hex | Purpose |

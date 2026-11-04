@@ -71,6 +71,7 @@ pub struct MemorySnapshot {
     pub system_threads: u32,
     pub system_processes: u32,
     pub ram_cached_bytes_override: u64,
+    pub kernel_metrics_valid: bool,
 
     // Telemetry identity and timing.
     pub snapshot_id: u64,

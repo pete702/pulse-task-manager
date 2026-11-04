@@ -36,6 +36,7 @@ pub fn collect_memory(sys: &mut System) -> MemorySnapshot {
         if kernel_metrics.system_cache_bytes > 0 {
             snap.ram_cached_bytes_override = kernel_metrics.system_cache_bytes;
         }
+        snap.kernel_metrics_valid = kernel_metrics.is_valid;
     }
 
     snap.scan_duration_ms = started.elapsed().as_secs_f32() * 1000.0;

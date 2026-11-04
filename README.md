@@ -42,6 +42,8 @@ PULSE provides a dark-mode telemetry HUD with a **Memory Spike Blackbox**, a **3
 - **PID Safety Gate**: Blocks PID 0, PID 4, self-PID, 27 critical OS processes, and 11 known anti-cheat processes before any mutating action.
 - **Three Walls Badge**: Live `SYSTEM OPTIMAL` / `RAM ELEVATED` / `MEMORY WALL` indicator driven by RAM and Commit pressure in Phase 1.
 - **3-Point Process Identity**: `basename + creation_time + full_path` verification before any mutating action; frozen target list on `[ End Task ]` confirmation.
+- **Decoupled 1 Hz RAM / 0.5 Hz Process Polling**: Zero-copy `Arc<Vec<RawProcessRow>>` sharing when minimized; instant full scan on wake or user action (`v0.1.2`).
+- **O(1) Table/Selection Cache via `process_scan_id`**: Explicit single-PID (`group_clones` off) vs group selection; 3-point identity verification with frozen kill confirmation targets (`v0.1.2`).
 
 ## Keyboard Shortcuts
 

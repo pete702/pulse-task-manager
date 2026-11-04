@@ -31,6 +31,8 @@ Before any mutating action (working-set trim, process termination), PULSE enforc
 
 The gate uses case-insensitive matching with `.exe` stripping. Mutating paths fail closed: `is_handle_critical` treats any `IsProcessCritical` failure as critical, and `verify_handle_identity` returns `false` on any `QueryFullProcessImageNameW` failure, empty path, or name mismatch. `OpenProcessToken` + `GetTokenInformation` provide the elevation check.
 
+- **v0.1.2 Selection Hardening**: Explicit single-PID selection when `Group Clones` is off (`group_clones=false`); `PendingKillConfirm` target set is frozen on first click and auto-canceled if live targets drift before the second click.
+
 ## Vulnerability Reporting
 
 Report security vulnerabilities via **GitHub Security Advisories** (private disclosure):

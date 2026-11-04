@@ -13,6 +13,17 @@ fn elevated() -> bool {
     *CACHE.get_or_init(is_app_elevated)
 }
 
+/// Hover text for disabled selection actions.
+pub(super) fn hint(sel: &Option<SelectedGroupSummary>, busy: bool) -> &'static str {
+    if busy {
+        crate::modules::memory::action_bar::BUSY_HINT
+    } else if sel.is_some() {
+        PROTECTED_HINT
+    } else {
+        NO_SELECTION_HINT
+    }
+}
+
 pub(super) fn mode_label(ui: &mut egui::Ui) {
     let (text, color) = if elevated() {
         ("[ ADMIN MODE ]", colors::ACCENT_CYAN)

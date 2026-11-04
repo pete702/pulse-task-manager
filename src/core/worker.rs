@@ -17,6 +17,8 @@ use crate::modules::memory::win32_api::own_working_set_mb;
 const WORKER_INTERVAL: Duration = Duration::from_millis(1000);
 /// Full process scans run every 2nd visible tick (2 seconds).
 const PROCESS_SCAN_TICKS: u64 = 2;
+/// RAM usage threshold that triggers the high-pressure banner.
+const HIGH_RAM_PRESSURE_PCT: f32 = 85.0;
 
 static PROCESS_SCAN_REQUEST: AtomicBool = AtomicBool::new(false);
 
@@ -108,12 +110,15 @@ pub fn spawn() -> TelemetryWorker {
                 memory.processes = shared;
                 memory.has_heavy_process = heavy;
                 last_heavy = heavy;
-                if spike.is_some() {
-                    latest_spike = spike;
-                }
+                // Honest alert lifecycle: a spike is published only while RAM is still >= 85%.
+                // When RAM drops back below the threshold, clear the stale banner.
+                latest_spike = spike;
             } else {
                 memory.processes = Arc::clone(&last_processes);
                 memory.has_heavy_process = last_heavy;
+                if memory.ram_usage_percent() < HIGH_RAM_PRESSURE_PCT {
+                    latest_spike = None;
+                }
             }
             memory.latest_spike.clone_from(&latest_spike);
             memory.scan_duration_ms = tick_start.elapsed().as_secs_f32() * 1000.0;
@@ -126,11 +131,17 @@ pub fn spawn() -> TelemetryWorker {
             memory.channel_overflows = latest_worker.overflow_count();
 
             let elapsed = tick_start.elapsed();
+            let mut sleep_overshoot_ms: u64 = 0;
             if elapsed < WORKER_INTERVAL {
-                thread::sleep(WORKER_INTERVAL - elapsed);
+                let requested = WORKER_INTERVAL - elapsed;
+                let before_sleep = Instant::now();
+                thread::sleep(requested);
+                // Pure sleep overshoot: actual_sleep_ms - requested_sleep_ms. Scan and
+                // collection time are already excluded because `elapsed` is subtracted first.
+                sleep_overshoot_ms =
+                    before_sleep.elapsed().as_millis().saturating_sub(requested.as_millis()) as u64;
             }
-            let os_scheduler_jitter_ms =
-                tick_start.elapsed().as_millis().saturating_sub(WORKER_INTERVAL.as_millis()) as u32;
+            let os_scheduler_jitter_ms = sleep_overshoot_ms.min(u32::MAX as u64) as u32;
 
             let snapshot = Arc::new(SystemSnapshot::new_with_jitter(
                 uptime,

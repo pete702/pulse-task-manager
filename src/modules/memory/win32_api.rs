@@ -21,6 +21,7 @@ pub struct KernelMetrics {
     pub system_threads: u32,
     pub system_processes: u32,
     pub system_cache_bytes: u64,
+    pub is_valid: bool,
 }
 
 /// Collects Windows kernel metrics via K32GetPerformanceInfo.
@@ -51,6 +52,7 @@ pub fn collect_windows_kernel_metrics() -> KernelMetrics {
         system_threads: info.ThreadCount,
         system_processes: info.ProcessCount,
         system_cache_bytes: info.SystemCache as u64 * page_size,
+        is_valid: true,
     }
 }
 
@@ -66,6 +68,7 @@ pub struct KernelMetrics {
     pub system_threads: u32,
     pub system_processes: u32,
     pub system_cache_bytes: u64,
+    pub is_valid: bool,
 }
 
 /// Non-Windows fallback (returns defaults).

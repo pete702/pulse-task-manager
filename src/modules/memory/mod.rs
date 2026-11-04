@@ -30,6 +30,8 @@ pub mod swap_commit_card;
 mod table_body;
 pub mod table_body_tests;
 mod table_cache;
+pub mod table_selection;
+pub mod table_selection_tests;
 pub mod table_state;
 pub mod table_view;
 pub mod table_view_tests;
