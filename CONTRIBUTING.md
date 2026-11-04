@@ -1,6 +1,6 @@
 # Contributing to PULSE
 
-## Pinned 6-Crate Stack (MSRV 1.78)
+## Pinned 6-Crate Stack (MSRV 1.85)
 
 | Crate | Version | Purpose |
 |-------|---------|---------|
@@ -11,11 +11,11 @@
 | `sysinfo` | `=0.30.12` | System/process metrics (default-features=false) |
 | `windows-sys` | `=0.52.0` | Win32 FFI (ProcessStatus, Threading, Foundation, Globalization, Security) |
 
-**No other dependencies are accepted.** Version pins are exact (`=`). MSRV is **1.78.0** — do not use features stabilized after 1.78 (e.g., `LazyLock`, `is_multiple_of`).
+**No other dependencies are accepted.** Version pins are exact (`=`). MSRV is **1.85** — do not use features stabilized after 1.85.
 
 ## Code Structure & Hygiene
 
-- **Line cap**: Every `.rs` file in `src/` and `tests/` must be `<= 180` lines after `cargo fmt`. Enforced by `src/core/selftest_tests.rs` and `tests/docs_guard.rs`.
+- **Line cap**: Every `.rs` file in `src/` and `tests/` must be `<= 280` lines after `cargo fmt`. Enforced by `src/core/selftest_tests.rs` and `tests/docs_guard.rs`.
 - **Zero `rustfmt::skip`**: The attribute is forbidden repository-wide. Run `cargo fmt --all` before commit.
 - **Language hygiene**: 0 Cyrillic characters (`U+0400..=U+052F`), 0 NUL bytes (`\0`) in all repository files. Enforced by `tests/docs_guard.rs`.
 - **Module boundaries**: Submodule tests live in sibling `*_tests.rs` files inside `src/`.

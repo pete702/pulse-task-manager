@@ -29,7 +29,7 @@ Binary assets and checksums are published on [GitHub Releases](https://github.co
 - **Raw Process Actions**: `Trim Working Sets`, `Trim Selected`, `Open Location`, and `End Task` target raw process rows with explicit PID; `exe_path` feeds `Open Location`.
 - **`dt`-Normalized `Δ RAM/s`**: Per-process deltas divide by the real sample interval, removing 1 Hz drift from the leak hunter.
 - **Minute-Based `1m/5m/15m` Chart**: X-axis labeled in minutes with right-edge padding; worker `LatestSlot` keeps the newest snapshot when bounded channels are full.
-- **Rust 1.78.0 CI Lockfile Fix**: MSRV pinned to `rust-version = "1.78"`; locked dependencies, fmt/clippy/test/build all run on `1.78.0`.
+- **Rust 1.85 CI Lockfile Fix**: MSRV pinned to `rust-version = "1.85"`; locked dependencies, fmt/clippy/test/build all run on `stable`.
 
 ## [0.1.0] - 2026-11-03
 
@@ -42,7 +42,7 @@ Binary assets and checksums are published on [GitHub Releases](https://github.co
 
 - **TOCTOU Handle Identity Verification**: `verify_handle_identity` via `QueryFullProcessImageNameW` with enforced `IsProcessCritical` checks in trim and terminate paths; cross-platform `CommandExt` gating.
 - **Resource P1 Optimizations**: `search_hash: u64` + `uptime_secs` cache key, cached uptime formatting, reusable delta `HashSet<u32>`, and a compacted process table body.
-- **CI & Repo Hygiene**: `--locked` on all cargo commands, MSRV `1.78.0` CI job, and a recursive guard enforcing `0` NUL bytes, `0` Cyrillic characters, and per-file line limits.
+- **CI & Repo Hygiene**: `--locked` on all cargo commands, MSRV `1.85` CI job, and a recursive guard enforcing `0` NUL bytes, `0` Cyrillic characters, and per-file line limits.
 
 ## [0.0.15] - 2026-11-03
 

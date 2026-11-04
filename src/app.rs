@@ -70,7 +70,7 @@ impl PulseApp {
     }
 
     fn ingest_snapshot(&mut self, snap: Arc<SystemSnapshot>) {
-        let is_new = self.latest_snapshot.as_ref().map_or(true, |prev| !Arc::ptr_eq(prev, &snap));
+        let is_new = self.latest_snapshot.as_ref().is_none_or(|prev| !Arc::ptr_eq(prev, &snap));
         if !is_new {
             return;
         }

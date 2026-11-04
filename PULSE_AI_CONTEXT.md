@@ -35,7 +35,7 @@ Safety invariants:
 
 ## Development Constraints
 
-- `rust-version = "1.78"`, `edition = "2021"` — no newer MSRV features
+- `rust-version = "1.85"`, `edition = "2021"` — no newer MSRV features
 - 6 pinned dependencies exact (`=`): `eframe` `egui` `egui_plot` `egui_extras` `sysinfo` `windows-sys`
 - All `.rs` files ≤ 180 lines after `cargo fmt --all`
 - Documentation files ≤ 120 lines / 8 KB (`README.md`, `ARCHITECTURE.md`, `SECURITY.md`, `CONTRIBUTING.md`)

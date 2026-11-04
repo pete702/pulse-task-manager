@@ -78,7 +78,7 @@ impl ProcessDeltaTracker {
 
             // If the entry exists but has empty name, it was created in the first pass
             // for creation_time caching only - treat as new process.
-            let is_new = self.states.get(&key).map_or(true, |s| s.name.is_empty());
+            let is_new = self.states.get(&key).is_none_or(|s| s.name.is_empty());
             let state = self.states.entry(key).or_insert_with(|| DeltaState {
                 prev_ram: *ram,
                 name: Arc::clone(name),

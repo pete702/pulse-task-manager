@@ -48,11 +48,11 @@ impl MemoryTableState {
                     if let Some(row) = raw_rows.iter().find(|r| r.pid == pid) {
                         let creation_ok = self
                             .selected_creation_time
-                            .map_or(true, |t| t == row.creation_time.unwrap_or(0));
+                            .is_none_or(|t| t == row.creation_time.unwrap_or(0));
                         let name_ok = self
                             .selected_name
                             .as_ref()
-                            .map_or(true, |n| base_group_key(n) == base_group_key(&row.name));
+                            .is_none_or(|n| base_group_key(n) == base_group_key(&row.name));
                         if !creation_ok || !name_ok {
                             // PID reuse detected - clear selection and cancel confirm
                             self.clear_selection_state();
@@ -76,11 +76,11 @@ impl MemoryTableState {
                     // Check if previously stored identity matches current process
                     let creation_ok = self
                         .selected_creation_time
-                        .map_or(true, |t| t == row.creation_time.unwrap_or(0));
+                        .is_none_or(|t| t == row.creation_time.unwrap_or(0));
                     let name_ok = self
                         .selected_name
                         .as_ref()
-                        .map_or(true, |n| base_group_key(n) == base_group_key(&row.name));
+                        .is_none_or(|n| base_group_key(n) == base_group_key(&row.name));
                     if !creation_ok || !name_ok {
                         // PID reuse detected - clear selection and cancel confirm
                         self.clear_selection_state();
