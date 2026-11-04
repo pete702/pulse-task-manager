@@ -46,6 +46,13 @@ sysinfo = { version = "=0.30.12", default-features = false }
 # =============================================================================
 windows-sys = { version = "=0.52.0", features = ["Win32_System_ProcessStatus", "Win32_System_Threading", "Win32_Foundation", "Win32_Globalization", "Win32_Security"] }
 
+# =============================================================================
+# TRANSITIVE DEPENDENCY PINS (for MSRV 1.78 compatibility)
+# =============================================================================
+# url 2.5.x pulls in idna 1.1+ which requires edition2024 (Rust 1.85+)
+# Pin to 2.4.0 which works with Rust 1.78
+url = "=2.4.0"
+
 [dev-dependencies]
 
 [features]
