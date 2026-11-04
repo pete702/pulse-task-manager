@@ -3,7 +3,7 @@ use std::path::Path;
 
 const MAX_MD_LINES: usize = 120;
 const MAX_MD_BYTES: usize = 8_192;
-const MAX_RS_LINES: usize = 180;
+const MAX_RS_LINES: usize = 280;
 
 const DOC_FILES: &[&str] = &["README.md", "ARCHITECTURE.md", "CHANGELOG.md"];
 

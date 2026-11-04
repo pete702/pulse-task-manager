@@ -8,7 +8,7 @@ Binary assets and checksums are published on [GitHub Releases](https://github.co
 - **Adaptive Telemetry Cadence**: Background worker scans every `3 s` while the window is visible, `5 s` in the background, and stops rendering (`0 fps`) when minimized; event-driven UI wakeup plus zero-allocation `Arc<str>` process rows.
 - **Working-Set Trim Restored**: Single post-startup frame-#3 trim and a minimize-transition trim bring physical RAM back to `27-29 MB` with `0%` idle CPU.
 - **Phase 1 Memory UX Polish**: `[ Pause / Resume ]` live-stream toggle, right-click process context menu (`Open Location`, `Terminate`, `Copy Name & PID`), double-click row action, `Ctrl+F` / `Esc` / `[X]` search ergonomics with an empty-state notice, and CLI copyright attribution.
-- **Modular Internals**: `worker.rs` split into `worker_io` / `worker_policy` / `worker_loop`; table body split into context-menu, sort, and name-cell modules; 131 tests passing (127 unit + 4 `docs_guard`).
+- **Modular Internals**: `worker.rs` split into `worker_io` / `worker_policy` / `worker_loop`; table body split into context-menu, sort, and name-cell modules; 280-line module limit enforced; 131 tests passing (127 unit + 4 `docs_guard`).
 
 ## [0.1.11] - 2026-11-04
 

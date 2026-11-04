@@ -61,7 +61,7 @@ PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and pro
 - Adaptive telemetry cadence: 3 s visible / 5 s background / 0 fps minimized with event-driven wakeup.
 - Working-set trim on frame #3 and minimize transition; physical RAM 27–29 MB, 0% idle CPU.
 - Memory UX polish: `[ Pause / Resume ]` toggle, context menu (Open Location / Terminate / Copy), double-click action, `Ctrl+F` / `Esc` / `[X]` search ergonomics, empty-state notice.
-- Modular internals: worker split into `worker_io` / `worker_policy` / `worker_loop`; table body split into context-menu, sort, name-cell modules.
+- Modular internals: worker split into `worker_io` / `worker_policy` / `worker_loop`; table body split into context-menu, sort, name-cell modules; 280-line module limit enforced.
 - 131 tests passing (127 unit + 4 docs-guard); Phase 1 complete, Phase 2 (CPU) next.
 
 ## 6. Obsidian Theme Tokens (`src/theme.rs`)

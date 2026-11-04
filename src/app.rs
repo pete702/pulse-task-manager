@@ -84,7 +84,7 @@ impl PulseApp {
         if self.telemetry_paused {
             // Drain the channel to prevent memory buildup but don't process
             while self.snapshot_rx.try_recv().is_ok() {}
-            if self.latest_slot.take().is_some() {}
+            let _ = self.latest_slot.take();
             return;
         }
         while let Ok(snap) = self.snapshot_rx.try_recv() {

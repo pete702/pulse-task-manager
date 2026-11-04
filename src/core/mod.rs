@@ -97,5 +97,5 @@ impl LatestSlot {
 }
 
 pub use worker::{spawn_telemetry_worker, spawn_telemetry_worker_with_wakeup, TelemetryWorker};
-pub use worker_io::{publish, PublishResult, Wakeup};
-pub use worker_loop::{request_process_scan, should_scan_processes};
+pub use worker_io::Wakeup;
+pub use worker_loop::request_process_scan;

@@ -28,7 +28,7 @@ pub(super) fn render_context_menu(
             exe_path: item.exe_path.clone(),
             creation_time: item.creation_time,
         })];
-        crate::modules::memory::actions::terminate_process_group(&items);
+        let _ = crate::modules::memory::actions::terminate_process_group(&items);
         ui.close_menu();
     }
     if ui.button("📋 Copy Name & PID").clicked() {

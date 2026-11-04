@@ -32,6 +32,7 @@ impl MemorySubView {
 }
 
 /// Renders the Memory tab with its sub-view switcher.
+#[allow(clippy::too_many_arguments)]
 pub fn render_memory_page(
     ui: &mut egui::Ui,
     mem: &MemorySnapshot,
