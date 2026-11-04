@@ -1,20 +1,45 @@
 //! Swap & Commit card rendering for PULSE memory HUD.
-
-use eframe::egui;
-
 use crate::i18n::Key;
 use crate::modules::memory::formatters::format_bytes;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::theme::{card_frame, colors};
-
-/// Renders the Swap & Commit card with Commit % as the headline metric.
-pub fn render_swap_commit_card(ui: &mut egui::Ui, mem: &MemorySnapshot) {
+use eframe::egui;
+const NA: &str = "N/A";
+pub fn render_swap_commit_card(ui: &mut egui::Ui, m: &MemorySnapshot) {
     card_frame().show(ui, |ui| {
-        ui.set_width(ui.available_width());
+        let w = ui.available_width().max(80.0);
+        let valid = m.kernel_metrics_valid;
+        let cp = if valid && m.commit_limit_bytes > 0 {
+            (m.commit_total_bytes as f64 / m.commit_limit_bytes as f64 * 100.0) as f32
+        } else {
+            0.0
+        };
+        let sp = if valid && m.swap_total_bytes > 0 { m.swap_usage_percent() } else { 0.0 };
+        let cu = if valid { format!("{:.2} GiB", m.commit_total_gib()) } else { NA.to_owned() };
+        let cl = if valid { format!("{:.2} GiB", m.commit_limit_gib()) } else { NA.to_owned() };
+        let su = if valid && m.swap_total_bytes > 0 {
+            format!("{:.2} GiB", m.swap_used_gib())
+        } else {
+            NA.to_owned()
+        };
+        let st = if valid && m.swap_total_bytes > 0 {
+            format!("{:.2} GiB", m.swap_total_gib())
+        } else {
+            NA.to_owned()
+        };
+        let ac = if valid {
+            format_bytes(m.commit_limit_bytes.saturating_sub(m.commit_total_bytes))
+        } else {
+            NA.to_owned()
+        };
+        let pct = if valid { format!("{:.1}%", cp) } else { NA.to_owned() };
+        let spt =
+            if valid && m.swap_total_bytes > 0 { format!("{:.1}%", sp) } else { NA.to_owned() };
+        let cc = if valid { crate::theme::load_color(cp) } else { colors::BORDER };
+        let fc = if valid { colors::ACCENT_PURPLE } else { colors::BORDER };
+        let uc = if valid { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
+        let sc = if valid { colors::TEXT_PRIMARY } else { colors::TEXT_SECONDARY };
         ui.vertical(|ui| {
-            // Header: commit charge is always the headline (swap may legitimately be 0%).
-            let commit_pct = mem.commit_charge_pct();
-            let commit_color = crate::theme::load_color(commit_pct);
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(Key::SwapCommitTitle.t())
@@ -23,101 +48,76 @@ pub fn render_swap_commit_card(ui: &mut egui::Ui, mem: &MemorySnapshot) {
                         .color(colors::TEXT_PRIMARY),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(
-                        egui::RichText::new(format!("{:.1}%", commit_pct))
-                            .monospace()
-                            .size(22.0)
-                            .color(commit_color),
-                    )
-                    .on_hover_text("Commit charge as a share of the system commit limit");
+                    ui.label(egui::RichText::new(pct).monospace().size(22.0).color(cc))
+                        .on_hover_text("Commit charge as a share of the system commit limit");
                 });
             });
             ui.add_space(8.0);
-
-            // Progress bar tracks commit charge, not the often-zero pagefile usage.
-            ui.add(
-                egui::ProgressBar::new(commit_pct / 100.0)
-                    .fill(colors::ACCENT_PURPLE)
-                    .animate(false)
-                    .rounding(egui::Rounding::same(3.0)),
+            let pv = if valid { cp / 100.0 } else { 0.0 };
+            let (r, _) = ui.allocate_exact_size(egui::vec2(w, 10.0), egui::Sense::hover());
+            ui.painter().rect_filled(
+                r,
+                egui::Rounding::same(3.0),
+                egui::Color32::from_rgb(0x1E, 0x22, 0x30),
+            );
+            let fw = (r.width() * pv).clamp(0.0, r.width());
+            if fw > 0.0 {
+                ui.painter().rect_filled(
+                    egui::Rect::from_min_max(r.min, egui::pos2(r.min.x + fw, r.max.y)),
+                    egui::Rounding::same(3.0),
+                    fc,
+                );
+            }
+            ui.painter().rect_stroke(
+                r,
+                egui::Rounding::same(3.0),
+                egui::Stroke::new(1.0_f32, colors::BORDER),
             );
             ui.add_space(12.0);
-
-            // Grid of values (4 rows to match RAM card)
-            egui::Grid::new("swap_commit_grid").num_columns(2).spacing([16.0, 8.0]).show(
-                ui,
-                |ui| {
-                    // Commit (Used / Limit) — same metric the purple bar tracks.
-                    ui.label(
-                        egui::RichText::new(Key::CommitChargeLimit.t())
-                            .monospace()
-                            .size(12.0)
-                            .color(colors::TEXT_SECONDARY),
-                    );
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{:.2} / {:.2} GiB",
-                            mem.commit_total_gib(),
-                            mem.commit_limit_gib()
-                        ))
+            egui::Grid::new("scg").num_columns(2).spacing([16.0, 8.0]).show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(Key::CommitChargeLimit.t())
+                        .monospace()
+                        .size(12.0)
+                        .color(colors::TEXT_SECONDARY),
+                );
+                ui.label(
+                    egui::RichText::new(format!("{} / {}", cu, cl))
                         .monospace()
                         .size(13.0)
-                        .color(colors::ACCENT_PURPLE),
-                    );
-                    ui.end_row();
-
-                    // Available Commit
-                    ui.label(
-                        egui::RichText::new("Available Commit")
-                            .monospace()
-                            .size(12.0)
-                            .color(colors::TEXT_SECONDARY),
-                    );
-                    let avail_commit =
-                        mem.commit_limit_bytes.saturating_sub(mem.commit_total_bytes);
-                    ui.label(
-                        egui::RichText::new(format_bytes(avail_commit))
-                            .monospace()
-                            .size(13.0)
-                            .color(colors::ACCENT_CYAN),
-                    );
-                    ui.end_row();
-
-                    // Swap (Used / Total)
-                    ui.label(
-                        egui::RichText::new(Key::SwapUsedTotal.t())
-                            .monospace()
-                            .size(12.0)
-                            .color(colors::TEXT_SECONDARY),
-                    );
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{:.2} / {:.2} GiB",
-                            mem.swap_used_gib(),
-                            mem.swap_total_gib()
-                        ))
+                        .color(if valid { colors::ACCENT_PURPLE } else { colors::TEXT_SECONDARY }),
+                );
+                ui.end_row();
+                ui.label(
+                    egui::RichText::new("Available Commit")
+                        .monospace()
+                        .size(12.0)
+                        .color(colors::TEXT_SECONDARY),
+                );
+                ui.label(egui::RichText::new(ac).monospace().size(13.0).color(uc));
+                ui.end_row();
+                ui.label(
+                    egui::RichText::new(Key::SwapUsedTotal.t())
+                        .monospace()
+                        .size(12.0)
+                        .color(colors::TEXT_SECONDARY),
+                );
+                ui.label(
+                    egui::RichText::new(format!("{} / {}", su, st))
                         .monospace()
                         .size(13.0)
-                        .color(colors::TEXT_PRIMARY),
-                    );
-                    ui.end_row();
-
-                    // Swap Usage %
-                    ui.label(
-                        egui::RichText::new("Swap Usage %")
-                            .monospace()
-                            .size(12.0)
-                            .color(colors::TEXT_SECONDARY),
-                    );
-                    ui.label(
-                        egui::RichText::new(format!("{:.1}%", mem.swap_usage_percent()))
-                            .monospace()
-                            .size(13.0)
-                            .color(colors::TEXT_PRIMARY),
-                    );
-                    ui.end_row();
-                },
-            );
+                        .color(sc),
+                );
+                ui.end_row();
+                ui.label(
+                    egui::RichText::new("Swap / Pagefile Usage %")
+                        .monospace()
+                        .size(12.0)
+                        .color(colors::TEXT_SECONDARY),
+                );
+                ui.label(egui::RichText::new(spt).monospace().size(13.0).color(sc));
+                ui.end_row();
+            });
         });
     });
 }

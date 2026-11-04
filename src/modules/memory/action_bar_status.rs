@@ -2,10 +2,10 @@
 
 use crate::modules::memory::action_bar::{MemoryActionBarState, NO_SELECTION_HINT, PROTECTED_HINT};
 use crate::modules::memory::safe_handle::is_app_elevated;
-use crate::modules::memory::table_state::SelectedGroupSummary;
+use crate::modules::memory::table_selection::SelectedGroupSummary;
 use crate::theme::{colors, TEXT_MUTED};
 use eframe::egui;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 fn elevated() -> bool {
@@ -14,7 +14,7 @@ fn elevated() -> bool {
 }
 
 /// Hover text for disabled selection actions.
-pub(super) fn hint(sel: &Option<SelectedGroupSummary>, busy: bool) -> &'static str {
+pub(super) fn hint(sel: &Option<Arc<SelectedGroupSummary>>, busy: bool) -> &'static str {
     if busy {
         crate::modules::memory::action_bar::BUSY_HINT
     } else if sel.is_some() {
@@ -36,7 +36,7 @@ pub(super) fn mode_label(ui: &mut egui::Ui) {
 
 pub(super) fn selection_info(
     ui: &mut egui::Ui,
-    sel: &Option<SelectedGroupSummary>,
+    sel: &Option<Arc<SelectedGroupSummary>>,
     st: &MemoryActionBarState,
     now: Instant,
 ) {

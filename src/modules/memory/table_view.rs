@@ -14,15 +14,14 @@ pub fn render_memory_table(
     ui: &mut egui::Ui,
     snap: &MemorySnapshot,
     state: &mut MemoryTableState,
-    uptime_secs: u64,
+    _uptime_secs: u64,
 ) {
-    state.rebuild_for_scan(snap.process_scan_id, &snap.processes);
-    let rows = state.get_or_compute_rows(snap, uptime_secs);
+    state.rebuild_for_scan(snap.process_scan_id, &snap.processes, snap.ram_total_bytes);
+    let rows = state.cached_rows().unwrap_or_default();
     let clone_groups = rows.iter().filter(|r| r.process_count > 1).count();
     let total_processes = snap.processes.len();
     let shown_rows = rows.len();
     crate::theme::card_frame().show(ui, |ui| {
-        ui.set_width(ui.available_width());
         ui.vertical(|ui| {
             if let Some(ref spike) = snap.latest_spike {
                 render_spike_banner(ui, spike);

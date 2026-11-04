@@ -13,6 +13,7 @@ pub fn window_minutes(window: ChartWindow) -> f64 {
 }
 
 /// Formats an X-axis mark in minutes; both `0.0` and `-0.0` become `"0m"`.
+#[allow(dead_code)]
 pub fn format_minutes(mark: f64) -> String {
     let rounded = mark.round();
     if mark.abs() < 0.05 {
@@ -26,6 +27,7 @@ pub fn format_minutes(mark: f64) -> String {
 
 /// X-axis label for a window. The 1m view only labels `-1m`, `-0.5m`, and `0m`;
 /// all other decimarks return an empty string to avoid `-0.9m ... -0.1m` clutter.
+#[allow(dead_code)]
 pub fn axis_label(window_secs: u32, mark: f64) -> String {
     if window_secs == 60 {
         if (mark + 1.0).abs() < 0.01 {

@@ -2,7 +2,7 @@
 
 A native Windows 10/11 task manager in Rust + `egui` that shows RAM composition, real-time per-process memory growth (`Δ RAM/s`), and which process caused a sudden memory spike.
 
-**[📥 Download v0.1.2 Portable .exe (Windows 10/11 x64)](https://github.com/pete702/pulse-task-manager/releases/tag/v0.1.2)**
+**[📥 Download v0.1.11 Portable .exe (Windows 10/11 x64)](https://github.com/pete702/pulse-task-manager/releases/tag/v0.1.11)**
 
 [![CI](https://github.com/pete702/pulse-task-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/pete702/pulse-task-manager/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -25,7 +25,7 @@ PULSE provides a dark-mode telemetry HUD with a **Memory Spike Blackbox**, a **3
 | **3-Segment RAM Composition Bar** | **Implemented ✅** | Visual breakdown of `In Use`, `System Cache`, and `Free` RAM |
 | **Virtualized Process Table** | **Implemented ✅** | `Ctrl+F` search, `Esc` clear, `[Nx]` clone grouping, `▲ HOG` badges |
 | **Real-Time Leak Hunter (`Δ RAM/s`)** | **Implemented ✅** | Per-process working-set delta normalized by real sample `dt` (`▲ +M/s` / `▼ -M/s`) |
-| **Memory Spike Blackbox & Chart** | **Implemented ✅** | Records culprit PID/process on RAM jumps; `1m/5m/15m` chart in minutes with 85% line |
+| **Memory Spike Blackbox & Chart** | **Implemented ✅** | Records culprit PID/process on RAM jumps; `1m/5m/15m` Commit % chart with 85% line |
 | **1-Click Safe RAM Purge & Actions** | **Implemented ✅** | Raw-process action targeting: `Trim Working Sets`, `Trim Selected`, `Open Location`, `End Task`, with PID Safety Gate and Before/After audit |
 | **Processor (CPU) & EcoQoS** | *Planned (`v0.2.0`) 🔄* | Per-core grid, single-core bottleneck detector, Win32 EcoQoS toggle |
 | **Storage & Disk I/O Freeze Hunter** | *Planned (`v0.3.0`) 🔄* | Volume capacity bars and per-process read/write MB/s table |
@@ -34,7 +34,7 @@ PULSE provides a dark-mode telemetry HUD with a **Memory Spike Blackbox**, a **3
 
 ## Technical Characteristics
 
-- **Single Portable Executable**: Standalone `.exe` (`~4.0 MiB` binary size on disk), no installer, no background service.
+- **Single Portable Executable**: Standalone `.exe` (`~4.1 MiB` binary size on disk), no installer, no background service.
 - **Live Self-Diagnostics**: PULSE displays its own real-time memory working set and UI frame time directly in the top header badge (`[ PULSE: XX.X MB | UI: X.XX ms ]`).
 - **Decoupled 1 Hz / 0.5 Hz Collector**: Main `egui` UI thread + background telemetry worker thread (`bounded std::sync::mpsc::sync_channel(2)`) with 1 Hz system RAM polling and 0.5 Hz (2 s) full process scanning in normal mode; paused process scanning with zero-copy `Arc` sharing in minimized mode (instant full scan on wake or user action); `O(1)` UI table & selection caching via `process_scan_id`.
 - **Minimize Hibernation**: UI rendering pauses while minimized and triggers a single controlled working-set self-trim (`K32EmptyWorkingSet`) on frame #3 after GPU init; post-init frame #3 self-trim.
@@ -42,8 +42,6 @@ PULSE provides a dark-mode telemetry HUD with a **Memory Spike Blackbox**, a **3
 - **PID Safety Gate**: Blocks PID 0, PID 4, self-PID, 27 critical OS processes, and 11 known anti-cheat processes before any mutating action.
 - **Three Walls Badge**: Live `SYSTEM OPTIMAL` / `RAM ELEVATED` / `MEMORY WALL` indicator driven by RAM and Commit pressure in Phase 1.
 - **3-Point Process Identity**: `basename + creation_time + full_path` verification before any mutating action; frozen target list on `[ End Task ]` confirmation.
-- **Decoupled 1 Hz RAM / 0.5 Hz Process Polling**: Zero-copy `Arc<Vec<RawProcessRow>>` sharing when minimized; instant full scan on wake or user action (`v0.1.2`).
-- **O(1) Table/Selection Cache via `process_scan_id`**: Explicit single-PID (`group_clones` off) vs group selection; 3-point identity verification with frozen kill confirmation targets (`v0.1.2`).
 
 ## Keyboard Shortcuts
 
@@ -63,7 +61,7 @@ cargo run --release
 ## CLI Flags
 
 ```powershell
-pulse_manager.exe --version   # Prints: PULSE v0.1.2 (pulse_manager)
+pulse_manager.exe --version   # Prints: PULSE v0.1.11 (pulse_manager)
 pulse_manager.exe --help      # Prints usage
 pulse_manager.exe --self-test # Headless CI self-test
 ```

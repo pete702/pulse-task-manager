@@ -83,7 +83,6 @@ pub fn render_memory_page(
 
 fn render_compact_ram_bar(ui: &mut egui::Ui, mem: &MemorySnapshot) {
     card_frame().show(ui, |ui| {
-        ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
             let pct = mem.ram_usage_percent();
             let color = load_color(pct);

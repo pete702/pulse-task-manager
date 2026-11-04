@@ -142,6 +142,7 @@ pub fn is_handle_critical(handle: &SafeHandle) -> bool {
 }
 
 /// Fail-closed identity check: name, creation time, and executable path must match.
+/// Missing or zero creation_time fails closed — no bypass for instance verification.
 #[allow(unsafe_code)]
 pub fn verify_handle_identity(
     handle: &SafeHandle,
@@ -155,10 +156,12 @@ pub fn verify_handle_identity(
     if normalize_name(&actual_path) != normalize_name(expected_name) {
         return false;
     }
-    if let Some(exp_time) = expected_creation_time {
-        if exp_time == 0 || query_process_creation_time(handle) != Some(exp_time) {
-            return false;
-        }
+    // Fail-closed: require a valid non-zero creation_time to pass verification.
+    let Some(exp_time) = expected_creation_time.filter(|&t| t != 0) else {
+        return false;
+    };
+    if query_process_creation_time(handle) != Some(exp_time) {
+        return false;
     }
     if let Some(exp_path) = expected_path {
         if !exp_path.trim().is_empty() && !actual_path.trim().eq_ignore_ascii_case(exp_path.trim())

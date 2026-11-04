@@ -77,12 +77,7 @@ pub fn render_top_panel(
             );
         }
 
-        // Three Walls pressure badge (RAM / commit charge)
-        if let Some(ref snapshot) = latest_snapshot {
-            ui.separator();
-            crate::ui::three_walls::render_badge(ui, snapshot);
-        }
-
+        // Right-aligned badges: locale (rightmost) + Three Walls pressure (to its left)
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             // Locale indicator (auto-detected from Windows)
             let locale_str = os_locale_badge();
@@ -92,6 +87,10 @@ pub fn render_top_panel(
                     .size(12.0)
                     .color(colors::ACCENT_CYAN),
             );
+            // Three Walls pressure badge (RAM / commit charge)
+            if let Some(ref snapshot) = latest_snapshot {
+                crate::ui::three_walls::render_badge(ui, snapshot);
+            }
         });
     });
 }

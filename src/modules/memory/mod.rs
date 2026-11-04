@@ -7,6 +7,7 @@ pub mod action_bar_tests;
 pub mod action_bar_view;
 pub mod actions;
 pub mod chart_axis;
+pub mod chart_chrome;
 pub mod chart_view;
 pub mod collector;
 pub mod composition_bar;
@@ -45,3 +46,6 @@ mod actions_tests;
 
 #[cfg(test)]
 mod chart_tests;
+
+#[cfg(test)]
+mod table_selection_cache_tests;

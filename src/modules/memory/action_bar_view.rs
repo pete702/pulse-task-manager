@@ -5,9 +5,11 @@ use crate::modules::memory::action_bar_status::{hint, mode_label, selection_info
 use crate::modules::memory::actions;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::modules::memory::process_target::ProcessTarget;
-use crate::modules::memory::table_state::{MemoryTableState, SelectedGroupSummary};
+use crate::modules::memory::table_selection::SelectedGroupSummary;
+use crate::modules::memory::table_state::MemoryTableState;
 use crate::theme::colors;
 use eframe::egui;
+use std::sync::Arc;
 use std::time::Instant;
 
 /// Renders the full-width action bar; every action targets raw snapshot processes.
@@ -24,9 +26,9 @@ pub fn render_action_bar(
     if ts.take_group_clones_toggled() {
         st.cancel_confirm();
     }
-    let sel = ts.resolved_selection(mem.process_scan_id, &mem.processes);
+    let sel: Option<Arc<SelectedGroupSummary>> =
+        ts.resolved_selection(mem.process_scan_id, &mem.processes);
     crate::theme::card_frame().show(ui, |ui| {
-        ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
             mode_label(ui);
             ui.separator();
@@ -65,7 +67,7 @@ fn trim_all_button(
 
 fn selection_actions(
     ui: &mut egui::Ui,
-    sel: &Option<SelectedGroupSummary>,
+    sel: &Option<Arc<SelectedGroupSummary>>,
     st: &mut MemoryActionBarState,
     now: Instant,
     busy: bool,
@@ -94,9 +96,9 @@ fn selection_actions(
 
 fn open_location_button(
     ui: &mut egui::Ui,
-    sel: &Option<SelectedGroupSummary>,
+    sel: &Option<Arc<SelectedGroupSummary>>,
     st: &mut MemoryActionBarState,
-    now: Instant,
+    _now: Instant,
     busy: bool,
     hint: &str,
 ) {
@@ -114,18 +116,18 @@ fn open_location_button(
     };
     if open.clicked() {
         if let (Some(p), Some(v)) = (path, sel) {
-            let msg = match actions::open_process_file_location(std::path::Path::new(&p)) {
-                Ok(()) => format!("Opened location for {}", v.name),
+            let name = v.name.clone();
+            st.spawn(move || match actions::open_process_file_location(std::path::Path::new(&p)) {
+                Ok(()) => format!("Opened location for {}", name),
                 Err(e) => format!("Open location failed: {e}"),
-            };
-            st.set_status(now, msg);
+            });
         }
     }
 }
 
 fn end_task_button(
     ui: &mut egui::Ui,
-    sel: &Option<SelectedGroupSummary>,
+    sel: &Option<Arc<SelectedGroupSummary>>,
     st: &mut MemoryActionBarState,
     now: Instant,
     can_modify: bool,

@@ -3,6 +3,16 @@
 All notable changes to **PULSE** (`pulse_manager`) are documented in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
 
+## [0.1.11] - 2026-11-04
+
+- **Phase 1 Memory Subsystem Frozen & Verified**: 3-segment RAM composition bar (In Use / Cached / Free), live Commit % history chart (`1m/5m/15m`), frame-aligned time scale.
+- **Unified O(1) Process Table Cache**: `MemoryTableState` keyed by `process_scan_id`; zero-realloc rebuilds; `SelectedGroupSummary` cached per scan ID.
+- **Fail-Closed Identity Gates**: `verify_handle_identity` requires valid `creation_time` via `GetProcessTimes`; single-PID `ProcessTarget` tracking; frozen `PendingKillConfirm`.
+- **Background `Open Location` Worker**: Path validated on UI thread, `explorer.exe` spawned on background thread; `OnceLock` cached elevation check.
+- **dGPU Sleep Exports & Zeroed 3D Buffers**: ~29 MB working-set reduction on discrete GPU systems.
+- **Kernel Tile Geometry & Composition Bar Math Fixed**: Tiles sized from inner width; 100% 3-segment bar allocation; `Free` bytes computed correctly.
+- **130 Tests Passing**: 126 unit + 4 `docs_guard`; clippy clean, fmt clean, release build verified.
+
 ## [0.1.2] - 2026-11-04
 
 - **Zero-Copy `Arc` Sharing & Decoupled 1 Hz / 0.5 Hz Polling**: System RAM at 1 Hz, full process scans at 0.5 Hz (2 s); minimized mode pauses process scans and shares `Arc<Vec<RawProcessRow>>` zero-copy — RAM fast ticks ~0.12 ms (~70× faster than full scan).

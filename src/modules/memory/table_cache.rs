@@ -7,6 +7,7 @@ use std::sync::Arc;
 use crate::modules::memory::model::{MemorySnapshot, RawProcessRow};
 
 /// Fast 64-bit signature of dynamic telemetry for cache invalidation (test fallback only).
+#[allow(dead_code)]
 pub fn compute_snapshot_signature(snap: &MemorySnapshot, uptime_secs: u64) -> u64 {
     let mut h = uptime_secs;
     h = h.wrapping_add(snap.ram_used_bytes.rotate_left(13));
@@ -29,7 +30,8 @@ pub fn hash_search_query(query: &str) -> u64 {
 }
 
 /// Creates a minimal MemorySnapshot for cache key computation from raw rows.
-pub fn make_signature_snapshot(raw_rows: &[RawProcessRow]) -> MemorySnapshot {
+#[allow(dead_code)]
+pub fn make_signature_snapshot(_raw_rows: &[RawProcessRow]) -> MemorySnapshot {
     MemorySnapshot {
         ram_total_bytes: 0,
         ram_used_bytes: 0,
@@ -52,7 +54,7 @@ pub fn make_signature_snapshot(raw_rows: &[RawProcessRow]) -> MemorySnapshot {
         sample_elapsed_secs: 0.0,
         scan_duration_ms: 0.0,
         channel_overflows: 0,
-        processes: Arc::new(raw_rows.to_vec()),
+        processes: Arc::new(Vec::new()),
         latest_spike: None,
         has_heavy_process: false,
     }
@@ -60,7 +62,11 @@ pub fn make_signature_snapshot(raw_rows: &[RawProcessRow]) -> MemorySnapshot {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TableCacheKey {
-    pub snapshot_id: u64,
+    /// Authoritative cache key: process_scan_id + settings + ram_total_bytes.
+    /// When process_scan_id != 0, this is the sole invalidation signal.
+    /// When process_scan_id == 0 (tests), falls back to snapshot_id signature.
+    pub process_scan_id: u64,
+    pub ram_total_bytes: u64,
     pub search_hash: u64,
     pub sort_col: crate::modules::memory::process_model::MemorySortCol,
     pub sort_asc: bool,
@@ -68,13 +74,35 @@ pub(crate) struct TableCacheKey {
 }
 
 impl TableCacheKey {
+    /// Creates a cache key from the authoritative process_scan_id and current settings.
+    /// Pass `ram_total_bytes` so that ram_pct is always accurate on the first pass.
     pub fn from_state(
+        state: &crate::modules::memory::table_state::MemoryTableState,
+        _raw_rows: &[RawProcessRow],
+        ram_total_bytes: u64,
+        process_scan_id: u64,
+    ) -> Self {
+        Self {
+            process_scan_id,
+            ram_total_bytes,
+            search_hash: hash_search_query(&state.search_query),
+            sort_col: state.sort_col,
+            sort_asc: state.sort_asc,
+            group_clones: state.group_clones,
+        }
+    }
+
+    /// Legacy fallback key for tests (process_scan_id == 0).
+    #[cfg(test)]
+    #[allow(dead_code)]
+    pub fn from_state_legacy(
         state: &crate::modules::memory::table_state::MemoryTableState,
         raw_rows: &[RawProcessRow],
     ) -> Self {
-        let snap = make_signature_snapshot(raw_rows);
+        let _snap = make_signature_snapshot(raw_rows);
         Self {
-            snapshot_id: compute_snapshot_signature(&snap, 0),
+            process_scan_id: 0,
+            ram_total_bytes: 0,
             search_hash: hash_search_query(&state.search_query),
             sort_col: state.sort_col,
             sort_asc: state.sort_asc,

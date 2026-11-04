@@ -67,7 +67,7 @@ fn generate_icon() -> Arc<egui::IconData> {
 }
 
 fn print_version() {
-    println!("PULSE v0.1.2 (pulse_manager)");
+    println!("PULSE v0.1.4 (pulse_manager)");
 }
 
 fn print_help() {
@@ -78,6 +78,16 @@ fn print_help() {
     println!("  --version, -V  Print version and exit");
     println!("  --help, -h, /? Print this help and exit");
 }
+
+/// Force integrated GPU on NVIDIA Optimus laptops (0 = integrated, 1 = discrete).
+#[allow(unsafe_code)]
+#[no_mangle]
+pub static NvOptimusEnablement: u32 = 0x00000000;
+
+/// Force integrated GPU on AMD PowerXpress laptops (0 = integrated, 1 = discrete).
+#[allow(unsafe_code)]
+#[no_mangle]
+pub static AmdPowerXpressRequestHighPerformance: i32 = 0;
 
 fn main() -> eframe::Result<()> {
     // Initialize panic hook
@@ -119,6 +129,10 @@ fn main() -> eframe::Result<()> {
             .with_min_inner_size([950.0_f32, 620.0_f32])
             .with_title("⚡ PULSE")
             .with_icon(generate_icon()),
+        // 2D telemetry UI needs zero 3D depth/stencil/MSAA buffers
+        depth_buffer: 0,
+        stencil_buffer: 0,
+        multisampling: 0,
         ..Default::default()
     };
 

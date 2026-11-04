@@ -48,6 +48,7 @@ pub struct MemoryActionBarState {
 }
 
 impl MemoryActionBarState {
+    #[allow(dead_code)]
     pub fn set_status(&mut self, now: Instant, text: String) {
         self.last_status = Some((now, text));
     }
