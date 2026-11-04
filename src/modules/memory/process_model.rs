@@ -2,27 +2,10 @@
 //! Provides process memory aggregation, grouping, sorting, and spike detection.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::modules::memory::model::RawProcessRow;
-use crate::util::format_timestamp_now;
-
-/// A single process memory entry for display and analysis.
-#[derive(Clone, Debug, Default, PartialEq)]
-#[allow(dead_code)]
-pub struct ProcessMemoryItem {
-    pub pid: u32,
-    pub name: String,
-    pub ram_bytes: u64,
-    pub virtual_bytes: u64,
-    pub ram_pct: f32,
-    pub process_count: usize,
-    pub is_hog: bool,
-    /// Per-second working set delta (bytes/sec). Positive = growing (leak), negative = shrinking (reclaim).
-    pub delta_bytes_per_sec: i64,
-    pub exe_path: Option<String>,
-    /// Stable process creation time used for PID-reuse-safe actions.
-    pub creation_time: Option<u64>,
-}
+use crate::modules::memory::process_item::ProcessMemoryItem;
 
 /// Column for sorting process list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -34,52 +17,6 @@ pub enum MemorySortCol {
     RamBytes,
     VirtualBytes,
     RamPct,
-}
-
-/// Memory spike event for "black box" logging.
-#[derive(Clone, Debug, Default, PartialEq)]
-#[allow(dead_code)]
-pub struct MemorySpikeEvent {
-    pub timestamp: String,
-    pub peak_ram_pct: f32,
-    pub culprit_name: String,
-    pub culprit_pid: u32,
-    pub culprit_bytes: u64,
-}
-
-impl ProcessMemoryItem {
-    #[allow(dead_code)]
-    pub fn new(pid: u32, name: String, ram_bytes: u64, virtual_bytes: u64, total_ram: u64) -> Self {
-        let ram_pct =
-            if total_ram > 0 { (ram_bytes as f64 / total_ram as f64 * 100.0) as f32 } else { 0.0 };
-        Self {
-            pid,
-            name,
-            ram_bytes,
-            virtual_bytes,
-            ram_pct,
-            process_count: 1,
-            is_hog: ram_pct >= 15.0,
-            delta_bytes_per_sec: 0,
-            exe_path: None,
-            creation_time: None,
-        }
-    }
-}
-
-/// Builds a display item from one raw process row, keeping its executable path.
-pub fn item_from_raw(row: &RawProcessRow, total_ram: u64) -> ProcessMemoryItem {
-    let mut item = ProcessMemoryItem::new(
-        row.pid,
-        row.name.clone(),
-        row.ram_bytes,
-        row.virtual_bytes,
-        total_ram,
-    );
-    item.delta_bytes_per_sec = row.delta_bytes_per_sec;
-    item.exe_path.clone_from(&row.exe_path);
-    item.creation_time = row.creation_time;
-    item
 }
 
 /// Filters, groups (by name), and sorts process memory items.
@@ -103,24 +40,19 @@ pub fn filter_group_and_sort(
         .map(|row| item_from_raw(row, total_ram))
         .collect();
     if group_clones {
-        let mut grouped: HashMap<String, ProcessMemoryItem> = HashMap::new();
+        let mut grouped: HashMap<Arc<str>, ProcessMemoryItem> = HashMap::new();
         for item in items {
             grouped
-                .entry(item.name.clone())
+                .entry(Arc::clone(&item.name))
                 .and_modify(|ex| {
                     ex.ram_bytes = ex.ram_bytes.saturating_add(item.ram_bytes);
                     ex.virtual_bytes = ex.virtual_bytes.saturating_add(item.virtual_bytes);
                     ex.delta_bytes_per_sec =
                         ex.delta_bytes_per_sec.saturating_add(item.delta_bytes_per_sec);
                     ex.process_count += 1;
-                    ex.ram_pct = if total_ram > 0 {
-                        (ex.ram_bytes as f64 / total_ram as f64 * 100.0) as f32
-                    } else {
-                        0.0
-                    };
-                    ex.is_hog = ex.ram_pct >= 15.0;
+                    ex.update_formatted(total_ram);
                     if ex.exe_path.is_none() {
-                        ex.exe_path.clone_from(&item.exe_path);
+                        ex.exe_path = item.exe_path.clone();
                     }
                     if item.pid < ex.pid {
                         ex.pid = item.pid;
@@ -149,22 +81,8 @@ pub fn filter_group_and_sort(
     items
 }
 
-/// Detects memory spike events (RAM usage >= 85%).
-#[allow(dead_code)]
-pub fn detect_memory_spike(
-    processes: &[RawProcessRow],
-    total_ram: u64,
-    current_ram_pct: f32,
-) -> Option<MemorySpikeEvent> {
-    if current_ram_pct < 85.0 || total_ram == 0 {
-        return None;
-    }
-    let culprit = processes.iter().max_by_key(|row| row.ram_bytes);
-    culprit.map(|row| MemorySpikeEvent {
-        timestamp: format_timestamp_now(),
-        peak_ram_pct: current_ram_pct,
-        culprit_name: row.name.clone(),
-        culprit_pid: row.pid,
-        culprit_bytes: row.ram_bytes,
-    })
-}
+/// Re-export for backward compatibility
+pub use crate::modules::memory::process_item::item_from_raw;
+pub use crate::modules::memory::process_spike::detect_memory_spike;
+// ProcessMemoryItem and MemorySpikeEvent are already public via their modules
+// Use `crate::modules::memory::process_item::ProcessMemoryItem` and `crate::modules::memory::process_spike::MemorySpikeEvent` directly

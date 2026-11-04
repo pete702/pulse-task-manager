@@ -2,16 +2,18 @@
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use crate::modules::memory::delta_tracker::ProcessDeltaTracker;
     use crate::modules::memory::model::ProcessSample;
     use std::time::{Duration, Instant};
 
     fn row(pid: u32, name: &str, ram: u64) -> ProcessSample {
-        (pid, name.to_owned(), ram, ram * 2, None, 1_000 + pid as u64)
+        (pid, Arc::from(name), ram, ram * 2, None, 1_000 + pid as u64)
     }
 
     fn row_started(pid: u32, name: &str, ram: u64, start: u64) -> ProcessSample {
-        (pid, name.to_owned(), ram, ram * 2, None, start)
+        (pid, Arc::from(name), ram, ram * 2, None, start)
     }
 
     #[test]

@@ -3,9 +3,8 @@
 use std::sync::Arc;
 
 use crate::modules::memory::model::RawProcessRow;
-use crate::modules::memory::process_model::{
-    filter_group_and_sort, MemorySortCol, ProcessMemoryItem,
-};
+use crate::modules::memory::process_item::ProcessMemoryItem;
+use crate::modules::memory::process_model::{filter_group_and_sort, MemorySortCol};
 use crate::modules::memory::table_selection::SelectedGroupSummary;
 
 use super::table_cache::TableCacheKey;

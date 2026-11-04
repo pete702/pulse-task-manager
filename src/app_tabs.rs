@@ -61,9 +61,13 @@ pub fn handle_global_hotkeys(
             table_state.search_query.clear();
             handled = true;
         }
-        // Escape: Clear search query
-        if i.key_pressed(egui::Key::Escape) && !table_state.search_query.is_empty() {
-            table_state.search_query.clear();
+        // Escape: Clear search query if present, otherwise clear selection
+        if i.key_pressed(egui::Key::Escape) {
+            if !table_state.search_query.is_empty() {
+                table_state.search_query.clear();
+            } else {
+                table_state.clear_selection();
+            }
             handled = true;
         }
     });

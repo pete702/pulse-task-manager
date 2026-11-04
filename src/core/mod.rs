@@ -4,6 +4,9 @@ pub mod selftest;
 pub mod selftest_app;
 pub mod win32;
 pub mod worker;
+pub mod worker_io;
+pub mod worker_loop;
+pub mod worker_policy;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
@@ -85,7 +88,7 @@ impl LatestSlot {
 
     /// Takes the newest value, marking it as read.
     pub fn take(&self) -> Option<Arc<SystemSnapshot>> {
-        self.inner.lock().ok().and_then(|mut slot| slot.take())
+        self.inner.try_lock().ok().and_then(|mut slot| slot.take())
     }
 
     pub fn overflow_count(&self) -> u64 {
@@ -93,9 +96,6 @@ impl LatestSlot {
     }
 }
 
-pub use worker::{request_process_scan, TelemetryWorker};
-
-/// Spawns the background telemetry worker thread.
-pub fn spawn_telemetry_worker() -> TelemetryWorker {
-    worker::spawn()
-}
+pub use worker::{spawn_telemetry_worker, spawn_telemetry_worker_with_wakeup, TelemetryWorker};
+pub use worker_io::{publish, PublishResult, Wakeup};
+pub use worker_loop::{request_process_scan, should_scan_processes};

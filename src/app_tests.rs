@@ -1,8 +1,7 @@
 //! Unit tests for PulseApp: ActiveTab, format_uptime, i18n keys, MemoryHistory integration.
 
-use super::*;
 use crate::app_tabs::ActiveTab;
-use crate::i18n::{set_lang, Lang};
+use crate::i18n::{set_lang, Key, Lang};
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::util::format_uptime;

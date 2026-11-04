@@ -3,7 +3,7 @@
 use eframe::egui;
 
 use crate::modules::memory::formatters::format_bytes;
-use crate::modules::memory::process_model::MemorySpikeEvent;
+use crate::modules::memory::process_spike::MemorySpikeEvent;
 use crate::theme::colors;
 
 use super::table_state::MemoryTableState;

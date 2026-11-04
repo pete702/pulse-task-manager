@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use crate::modules::memory::model::RawProcessRow;
-use crate::modules::memory::process_model::ProcessMemoryItem;
+use crate::modules::memory::process_item::ProcessMemoryItem;
 use crate::modules::memory::process_target::ProcessTarget;
 use crate::modules::memory::selection::{base_group_key, resolve_selection};
 
@@ -88,7 +88,7 @@ impl MemoryTableState {
                     }
                     // Identity matches - update stored identity for next scan
                     self.selected_creation_time = row.creation_time;
-                    self.selected_name = Some(row.name.clone());
+                    self.selected_name = Some(row.name.to_string());
                 } else {
                     // Process no longer exists
                     self.clear_selection_state();

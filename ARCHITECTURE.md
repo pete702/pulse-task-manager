@@ -1,6 +1,6 @@
 # 🏗️ PULSE Architecture & Engineering Rules
 
-PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.78"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.1.11**.
+PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.78"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.1.14**.
 
 ## 1. Core Architectural Principles
 
@@ -57,12 +57,12 @@ PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and pro
 - Background `Open Location` + `OnceLock` elevation.
 - 3-point `ProcessTarget` with auto-canceling `PendingKillConfirm` on drift.
 
-### v0.1.11 Phase 1 Freeze
-- Decoupled 1 Hz kernel tick / 0.5 Hz process scan, zero-allocation `Arc` sharing.
-- Single unified `O(1)` table cache keyed by `process_scan_id`.
-- Fail-closed `verify_handle_identity` requiring valid `creation_time`.
-- Bounded card/tile geometry — no layout overflow.
-- 130 tests passing (126 unit + 4 docs-guard); Phase 1 complete, Phase 2 (CPU) next.
+### v0.1.14 Phase 1 Complete
+- Adaptive telemetry cadence: 3 s visible / 5 s background / 0 fps minimized with event-driven wakeup.
+- Working-set trim on frame #3 and minimize transition; physical RAM 27–29 MB, 0% idle CPU.
+- Memory UX polish: `[ Pause / Resume ]` toggle, context menu (Open Location / Terminate / Copy), double-click action, `Ctrl+F` / `Esc` / `[X]` search ergonomics, empty-state notice.
+- Modular internals: worker split into `worker_io` / `worker_policy` / `worker_loop`; table body split into context-menu, sort, name-cell modules.
+- 131 tests passing (127 unit + 4 docs-guard); Phase 1 complete, Phase 2 (CPU) next.
 
 ## 6. Obsidian Theme Tokens (`src/theme.rs`)
 

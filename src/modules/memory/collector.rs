@@ -1,6 +1,8 @@
 //! OS memory collector for PULSE: gathers real RAM/Swap metrics via sysinfo
 //! and Windows kernel metrics via K32GetPerformanceInfo.
 
+use std::sync::Arc;
+
 use sysinfo::{ProcessRefreshKind, System, UpdateKind};
 
 use crate::modules::memory::delta_tracker::{ProcessDeltaTracker, ProcessMemoryScan};
@@ -72,8 +74,8 @@ pub fn collect_process_memory(
                 virt = ram;
             }
             let exe_path =
-                process.exe().and_then(|p| p.to_str()).filter(|s| !s.is_empty()).map(str::to_owned);
-            (pid.as_u32(), process.name().to_string(), ram, virt, exe_path, process.start_time())
+                process.exe().and_then(|p| p.to_str()).filter(|s| !s.is_empty()).map(Arc::from);
+            (pid.as_u32(), Arc::from(process.name()), ram, virt, exe_path, process.start_time())
         })
         .collect();
 

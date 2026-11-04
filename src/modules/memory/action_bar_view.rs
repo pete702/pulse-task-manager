@@ -1,33 +1,27 @@
-//! Full-width rendering for the memory action bar.
-
 use crate::modules::memory::action_bar::{format_trim_status, MemoryActionBarState, BUSY_HINT};
 use crate::modules::memory::action_bar_status::{hint, mode_label, selection_info};
-use crate::modules::memory::actions;
-use crate::modules::memory::model::MemorySnapshot;
-use crate::modules::memory::process_target::ProcessTarget;
-use crate::modules::memory::table_selection::SelectedGroupSummary;
-use crate::modules::memory::table_state::MemoryTableState;
+use crate::modules::memory::{
+    actions, model::MemorySnapshot, process_target::ProcessTarget,
+    table_selection::SelectedGroupSummary, table_state::MemoryTableState,
+};
 use crate::theme::colors;
 use eframe::egui;
 use std::sync::Arc;
 use std::time::Instant;
-
-/// Renders the full-width action bar; every action targets raw snapshot processes.
 pub fn render_action_bar(
     ui: &mut egui::Ui,
     mem: &MemorySnapshot,
     ts: &mut MemoryTableState,
     st: &mut MemoryActionBarState,
+    telemetry_paused: &mut bool,
 ) {
     let now = Instant::now();
     st.poll(now);
     let busy = st.is_busy();
-    // Cancel stale confirmation when group-clones mode just changed.
     if ts.take_group_clones_toggled() {
         st.cancel_confirm();
     }
-    let sel: Option<Arc<SelectedGroupSummary>> =
-        ts.resolved_selection(mem.process_scan_id, &mem.processes);
+    let sel = ts.resolved_selection(mem.process_scan_id, &mem.processes);
     crate::theme::card_frame().show(ui, |ui| {
         ui.horizontal(|ui| {
             mode_label(ui);
@@ -35,14 +29,12 @@ pub fn render_action_bar(
             trim_all_button(ui, mem, st, busy);
             ui.separator();
             selection_actions(ui, &sel, st, now, busy);
+            ui.separator();
+            pause_button(ui, telemetry_paused, busy);
             selection_info(ui, &sel, st, now);
         });
-        if let Some(t) = st.status_text(now) {
-            ui.label(egui::RichText::new(t).monospace().size(10.0).color(colors::TEXT_SECONDARY));
-        }
     });
 }
-
 fn trim_all_button(
     ui: &mut egui::Ui,
     mem: &MemorySnapshot,
@@ -64,7 +56,6 @@ fn trim_all_button(
         st.spawn(move || format_trim_status(&actions::purge_system_working_sets(&items)));
     }
 }
-
 fn selection_actions(
     ui: &mut egui::Ui,
     sel: &Option<Arc<SelectedGroupSummary>>,
@@ -93,7 +84,6 @@ fn selection_actions(
     open_location_button(ui, sel, st, now, busy, hint);
     end_task_button(ui, sel, st, now, can_modify, hint, multi);
 }
-
 fn open_location_button(
     ui: &mut egui::Ui,
     sel: &Option<Arc<SelectedGroupSummary>>,
@@ -124,7 +114,6 @@ fn open_location_button(
         }
     }
 }
-
 fn end_task_button(
     ui: &mut egui::Ui,
     sel: &Option<Arc<SelectedGroupSummary>>,
@@ -171,5 +160,19 @@ fn end_task_button(
                 st.begin_confirm_kill(&v.name, &v.targets, now);
             }
         }
+    }
+}
+fn pause_button(ui: &mut egui::Ui, paused: &mut bool, busy: bool) {
+    let label = if *paused { "▶ Resume (Paused)" } else { "⏸ Pause" };
+    let color = if *paused { colors::ACCENT_AMBER } else { colors::ACCENT_CYAN };
+    let btn = ui
+        .add_enabled(!busy, egui::Button::new(egui::RichText::new(label).color(color).monospace()));
+    let btn = if *paused {
+        btn.on_hover_text("Resume live telemetry updates")
+    } else {
+        btn.on_hover_text("Pause telemetry updates to inspect current state")
+    };
+    if btn.clicked() {
+        *paused = !*paused;
     }
 }

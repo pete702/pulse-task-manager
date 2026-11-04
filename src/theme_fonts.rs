@@ -6,7 +6,7 @@ use eframe::egui;
 /// Falls back to egui default fonts if files are not found.
 /// Uses only geometric Unicode symbols (◈, ▣, ⚡, ▲, ▼, ●) — no emoji fonts needed.
 pub fn setup_fonts(ctx: &egui::Context) {
-    let mut fonts = egui::FontDefinitions::default();
+    let mut fonts = egui::FontDefinitions::empty();
 
     // Segoe UI for proportional text
     let segoe_path = r"C:\Windows\Fonts\segoeui.ttf";

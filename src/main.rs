@@ -10,6 +10,7 @@ use std::sync::Arc;
 use eframe::egui;
 
 mod app;
+mod app_render;
 mod app_tabs;
 mod core;
 mod i18n;
@@ -67,7 +68,8 @@ fn generate_icon() -> Arc<egui::IconData> {
 }
 
 fn print_version() {
-    println!("PULSE v0.1.4 (pulse_manager)");
+    println!("PULSE {} (pulse_manager)", env!("CARGO_PKG_VERSION"));
+    println!("Copyright (c) 2026 pete702 (PULSE Project). Licensed under MIT.");
 }
 
 fn print_help() {
@@ -77,6 +79,8 @@ fn print_help() {
     println!("  --self-test    Run headless self-test (CI mode)");
     println!("  --version, -V  Print version and exit");
     println!("  --help, -h, /? Print this help and exit");
+    println!();
+    println!("Copyright (c) 2026 pete702 (PULSE Project). Licensed under MIT.");
 }
 
 /// Force integrated GPU on NVIDIA Optimus laptops (0 = integrated, 1 = discrete).
@@ -145,7 +149,7 @@ fn main() -> eframe::Result<()> {
             Box::new(|cc| {
                 theme::setup_fonts(&cc.egui_ctx);
                 theme::apply_obsidian_theme(&cc.egui_ctx);
-                Box::<app::PulseApp>::default() as Box<dyn eframe::App>
+                Box::new(app::PulseApp::new(&cc.egui_ctx)) as Box<dyn eframe::App>
             }),
         )
     }

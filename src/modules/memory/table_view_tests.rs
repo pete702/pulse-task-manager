@@ -76,7 +76,12 @@ mod tests {
         st.rebuild_for_scan(2, &s2.processes, s2.ram_total_bytes);
         assert_eq!(st.cached_rows().unwrap().len(), 2);
         assert_eq!(
-            st.cached_rows().unwrap().iter().find(|r| r.name == "c").unwrap().delta_bytes_per_sec,
+            st.cached_rows()
+                .unwrap()
+                .iter()
+                .find(|r| r.name.as_ref() == "c")
+                .unwrap()
+                .delta_bytes_per_sec,
             50_000_000
         );
     }

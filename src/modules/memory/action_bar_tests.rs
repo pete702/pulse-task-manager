@@ -54,12 +54,13 @@ mod tests {
         use crate::modules::memory::action_bar_view::render_action_bar;
         use crate::modules::memory::model::{MemorySnapshot, RawProcessRow};
         use crate::modules::memory::table_state::MemoryTableState;
+        use std::sync::Arc;
 
         let mem = MemorySnapshot {
             ram_total_bytes: 16_000_000_000,
-            processes: std::sync::Arc::new(vec![RawProcessRow {
+            processes: Arc::new(vec![RawProcessRow {
                 pid: 900,
-                name: "svchost.exe".to_owned(),
+                name: Arc::from("svchost.exe"),
                 ram_bytes: 1_000_000,
                 virtual_bytes: 2_000_000,
                 delta_bytes_per_sec: 0,
@@ -70,9 +71,9 @@ mod tests {
         };
         let mut ts = MemoryTableState::default();
         let mut st = MemoryActionBarState::default();
-        egui::__run_test_ui(|ui| render_action_bar(ui, &mem, &mut ts, &mut st));
+        egui::__run_test_ui(|ui| render_action_bar(ui, &mem, &mut ts, &mut st, &mut false));
         ts.selected_group = Some("svchost.exe".to_owned());
-        egui::__run_test_ui(|ui| render_action_bar(ui, &mem, &mut ts, &mut st));
+        egui::__run_test_ui(|ui| render_action_bar(ui, &mem, &mut ts, &mut st, &mut false));
     }
 
     #[test]

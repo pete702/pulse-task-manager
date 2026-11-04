@@ -40,6 +40,7 @@ pub fn render_memory_page(
     table_state: &mut MemoryTableState,
     action_state: &mut MemoryActionBarState,
     uptime_secs: u64,
+    telemetry_paused: &mut bool,
 ) {
     card_frame().show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -74,7 +75,7 @@ pub fn render_memory_page(
         MemorySubView::Processes => {
             render_compact_ram_bar(ui, mem);
             ui.add_space(8.0);
-            render_action_bar(ui, mem, table_state, action_state);
+            render_action_bar(ui, mem, table_state, action_state, telemetry_paused);
             ui.add_space(6.0);
             render_memory_table(ui, mem, table_state, uptime_secs);
         }

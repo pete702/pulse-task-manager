@@ -2,11 +2,13 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::modules::memory::process_model::ProcessMemoryItem;
+    use std::sync::Arc;
+
+    use crate::modules::memory::process_item::ProcessMemoryItem;
     use crate::modules::memory::table_state::MemoryTableState;
 
     fn item(pid: u32, name: &str) -> ProcessMemoryItem {
-        ProcessMemoryItem { pid, name: name.to_owned(), process_count: 1, ..Default::default() }
+        ProcessMemoryItem::new(pid, Arc::from(name), 1, 2, 16_000_000_000)
     }
 
     #[test]

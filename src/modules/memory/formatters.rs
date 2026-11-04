@@ -17,6 +17,13 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
+/// Formats bytes-per-second delta into a compact string with sign.
+pub fn format_delta(delta: i64) -> String {
+    let sign = if delta >= 0 { "+" } else { "-" };
+    let abs = delta.unsigned_abs();
+    format!("{} {}/s", sign, format_bytes(abs))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -30,5 +37,13 @@ mod tests {
         assert_eq!(format_bytes(0), "0 B");
         assert_eq!(format_bytes(2_147_483_648), "2.00 GiB");
         assert_eq!(format_bytes(5_368_709_120), "5.00 GiB");
+    }
+
+    #[test]
+    fn test_format_delta() {
+        assert_eq!(format_delta(0), "+ 0 B/s");
+        assert_eq!(format_delta(1024), "+ 1.00 KiB/s");
+        assert_eq!(format_delta(-1024), "- 1.00 KiB/s");
+        assert_eq!(format_delta(1_048_576), "+ 1.00 MiB/s");
     }
 }

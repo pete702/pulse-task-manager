@@ -3,52 +3,46 @@
 All notable changes to **PULSE** (`pulse_manager`) are documented in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
 
+## [0.1.14] - 2026-11-04
+
+- **Adaptive Telemetry Cadence**: Background worker scans every `3 s` while the window is visible, `5 s` in the background, and stops rendering (`0 fps`) when minimized; event-driven UI wakeup plus zero-allocation `Arc<str>` process rows.
+- **Working-Set Trim Restored**: Single post-startup frame-#3 trim and a minimize-transition trim bring physical RAM back to `27-29 MB` with `0%` idle CPU.
+- **Phase 1 Memory UX Polish**: `[ Pause / Resume ]` live-stream toggle, right-click process context menu (`Open Location`, `Terminate`, `Copy Name & PID`), double-click row action, `Ctrl+F` / `Esc` / `[X]` search ergonomics with an empty-state notice, and CLI copyright attribution.
+- **Modular Internals**: `worker.rs` split into `worker_io` / `worker_policy` / `worker_loop`; table body split into context-menu, sort, and name-cell modules; 131 tests passing (127 unit + 4 `docs_guard`).
+
 ## [0.1.11] - 2026-11-04
 
-- **Phase 1 Memory Subsystem Frozen & Verified**: 3-segment RAM composition bar (In Use / Cached / Free), live Commit % history chart (`1m/5m/15m`), frame-aligned time scale.
-- **Unified O(1) Process Table Cache**: `MemoryTableState` keyed by `process_scan_id`; zero-realloc rebuilds; `SelectedGroupSummary` cached per scan ID.
-- **Fail-Closed Identity Gates**: `verify_handle_identity` requires valid `creation_time` via `GetProcessTimes`; single-PID `ProcessTarget` tracking; frozen `PendingKillConfirm`.
-- **Background `Open Location` Worker**: Path validated on UI thread, `explorer.exe` spawned on background thread; `OnceLock` cached elevation check.
-- **dGPU Sleep Exports & Zeroed 3D Buffers**: ~29 MB working-set reduction on discrete GPU systems.
-- **Kernel Tile Geometry & Composition Bar Math Fixed**: Tiles sized from inner width; 100% 3-segment bar allocation; `Free` bytes computed correctly.
-- **130 Tests Passing**: 126 unit + 4 `docs_guard`; clippy clean, fmt clean, release build verified.
+- **Phase 1 Memory Subsystem Frozen**: 3-segment RAM composition bar (In Use / Cached / Free), live Commit % history chart (`1m/5m/15m`), frame-aligned time scale.
+- **Unified O(1) Table Cache & Identity Gates**: `MemoryTableState` keyed by `process_scan_id`; `verify_handle_identity` fails closed without a valid `creation_time`; frozen `PendingKillConfirm` targets.
+- **dGPU Sleep Exports & Kernel Tile Fixes**: Zeroed 3D buffers cut ~29 MB of working set; tiles sized from inner width with correct 100% bar allocation.
+- **130 Tests Passing**: 126 unit + 4 `docs_guard`; release build verified.
 
 ## [0.1.2] - 2026-11-04
 
-- **Zero-Copy `Arc` Sharing & Decoupled 1 Hz / 0.5 Hz Polling**: System RAM at 1 Hz, full process scans at 0.5 Hz (2 s); minimized mode pauses process scans and shares `Arc<Vec<RawProcessRow>>` zero-copy — RAM fast ticks ~0.12 ms (~70× faster than full scan).
-- **O(1) UI Table & Selection Cache**: `MemoryTableState` keyed by `process_scan_id` — rebuild returns immediately when scan ID and filter/sort/group unchanged; `SelectedGroupSummary` cached per scan ID so action bar never iterates raw rows or allocates per frame.
-- **3-Point PID Identity Verification**: `basename + creation_time + full_path` checked before `EmptyWorkingSet` / `TerminateProcess`; creation time cached per `(pid, start_time)`; full path via `QueryFullProcessImageNameW`; all checks fail closed.
-- **Frozen `[ End Task ]` Confirmation Targets**: First click freezes exact `Vec<ProcessTarget>` into `PendingKillConfirm`; second click sends frozen list; newly spawned same-name PIDs excluded.
-- **Background `Open Location` + `OnceLock` Elevation**: Path validated synchronously; `explorer.exe` spawned on background thread; `is_app_elevated()` uses `OnceLock<bool>` for single Win32 query per process lifetime.
-- **Single Frame-#3 Self-Trim**: `K32EmptyWorkingSet` called exactly once on frame #3 after GPU init; no trim on minimize transition.
-- **CLI `--version` / `--help` Flags**: Clean exit without GUI launch; elevation check warmed at startup.
-- **124 Passing Tests**: 120 unit + 4 docs-guard; clippy clean, fmt clean, release build verified.
+- **Zero-Copy `Arc` Polling**: System RAM at 1 Hz, process scans at 0.5 Hz (2 s); minimized mode pauses scans and shares `Arc<Vec<RawProcessRow>>` zero-copy (~0.12 ms fast ticks).
+- **O(1) UI Table & Selection Cache**: `MemoryTableState` keyed by `process_scan_id` short-circuits on unchanged scan ID, filter, sort, or grouping; `SelectedGroupSummary` never re-iterates raw rows.
+- **3-Point PID Identity & Frozen Kills**: `basename + creation_time + full_path` checked before `EmptyWorkingSet` / `TerminateProcess`; first `[ End Task ]` click freezes the exact target list; background `Open Location` with `OnceLock` elevation.
+- **Single Frame-#3 Self-Trim & CLI Flags**: One `K32EmptyWorkingSet` after GPU init; `--version` / `--help` exit cleanly without launching the GUI; 124 tests passing.
 
 ## [0.1.1] - 2026-11-03
 
-- **Raw Process Actions**: `Trim Working Sets`, `Trim Selected`, `Open Location`, and `End Task` now target raw process rows with explicit PID; `exe_path` feeds `Open Location`.
+- **Raw Process Actions**: `Trim Working Sets`, `Trim Selected`, `Open Location`, and `End Task` target raw process rows with explicit PID; `exe_path` feeds `Open Location`.
 - **`dt`-Normalized `Δ RAM/s`**: Per-process deltas divide by the real sample interval, removing 1 Hz drift from the leak hunter.
-- **Minute-Based `1m/5m/15m` Chart**: X-axis is labeled in minutes; the 1m view shows only `-1m`, `-0.5m`, and `0m` with right-edge padding.
-- **Worker `LatestSlot` + Minimized Throttling**: Full bounded channels fall back to the newest-slot cache without dummy snapshots; process scans run every 5th tick while minimized.
+- **Minute-Based `1m/5m/15m` Chart**: X-axis labeled in minutes with right-edge padding; worker `LatestSlot` keeps the newest snapshot when bounded channels are full.
 - **Rust 1.78.0 CI Lockfile Fix**: MSRV pinned to `rust-version = "1.78"`; locked dependencies, fmt/clippy/test/build all run on `1.78.0`.
 
 ## [0.1.0] - 2026-11-03
 
-- **Phase 1 Memory Subsystem Complete**: Non-blocking Memory Action Bar (`action_bar.rs`) with working-set trim (`K32EmptyWorkingSet`), trim selected, end task, open file location, and Before/After `ReclaimReport` audit.
-- **Three Walls Bottleneck Badge** (`three_walls.rs`): Live `SYSTEM OPTIMAL` / `MEMORY WALL` / `COMPUTE WALL` / `I/O WALL` indicator in top header.
-- **Memory Chart `1m/5m/15m` Selector** (`chart_view.rs`): Visible header buttons with cached `PlotPoints` keyed by `(history.len(), window_secs)` for zero-realloc switching.
-- **5-Column Aligned Process Table** (`table_view.rs`, `table_body.rs`): Column definitions match header/row cells 1-to-1; row selection via click on Process Name cell.
-- **Worker `LatestSlot` Channel** (`worker.rs`): `Arc<Mutex<Option<Arc<SystemSnapshot>>>>` for newest-snapshot access; on channel Full, drains and retries once.
-- **Panic Log Hook** (`main.rs`): Custom panic hook writes to `%TEMP%\pulse_panic.log` for headless CI diagnostics.
-- **Audit Fixes**: Removed all 24 `rustfmt` skip attributes; unified line limit to 180 for all `.rs` files in `src/` and `tests/`; CI workflow uses stable-only main job with separate MSRV `1.87.0` job; `--locked` on self-test.
-- **SafeHandle 1024 Buffer** (`safe_handle.rs`): `verify_handle_identity` uses `[0u16; 1024]` buffer for `QueryFullProcessImageNameW`.
+- **Phase 1 Memory Subsystem Complete**: Non-blocking Memory Action Bar (`action_bar.rs`) with working-set trim, trim selected, end task, open file location, and Before/After `ReclaimReport` audit.
+- **Three Walls Badge & Chart Selector**: Live `SYSTEM OPTIMAL` / `MEMORY WALL` / `COMPUTE WALL` / `I/O WALL` header badge; cached `PlotPoints` for zero-realloc `1m/5m/15m` switching.
+- **5-Column Aligned Process Table**: Column definitions match header/row cells 1-to-1; selection via the Process Name cell; worker `LatestSlot` channel for newest-snapshot access.
+- **Audit Fixes**: Removed all 24 `rustfmt` skip attributes; 180-line limit for all `.rs` files in `src/` and `tests/`; panic log hook in `main.rs`; `[0u16; 1024]` identity buffer in `safe_handle.rs`.
 
 ## [0.0.16] - 2026-11-03
 
-- **TOCTOU Handle Identity Verification**: Added `verify_handle_identity` using `QueryFullProcessImageNameW` and enforced `IsProcessCritical` checks in both `trim_single_pid` and `terminate_process_group` (engine only in `v0.0.16`, UI wiring in `v0.1.0`).
-- **Cross-Platform Fixes**: Wrapped `CommandExt` in `#[cfg(target_os = "windows")]`; `open_process_file_location` resolves `explorer.exe` via `%SystemRoot%` environment variable.
-- **Resource P1 Optimizations**: `search_hash: u64` + `uptime_secs` table cache key (zero per-frame `String` allocations); 1 Hz `cached_format_uptime` with `OnceLock<Mutex<(u64, String)>>`; reusable `HashSet<u32>` in `ProcessDeltaTracker`; full-tick jitter measurement; compacted `table_body.rs` to 158 lines.
-- **CI & Repo Hygiene**: `--locked` on all cargo commands + MSRV `1.78.0` toolchain check in `.github/workflows/ci.yml`; full-repo recursive walker in `tests/docs_guard.rs` enforcing `0` NUL bytes, `0` Cyrillic (`U+0400..=U+052F`), and `<= 165` lines for `src/**/*.rs`.
+- **TOCTOU Handle Identity Verification**: `verify_handle_identity` via `QueryFullProcessImageNameW` with enforced `IsProcessCritical` checks in trim and terminate paths; cross-platform `CommandExt` gating.
+- **Resource P1 Optimizations**: `search_hash: u64` + `uptime_secs` cache key, cached uptime formatting, reusable delta `HashSet<u32>`, and a compacted process table body.
+- **CI & Repo Hygiene**: `--locked` on all cargo commands, MSRV `1.78.0` CI job, and a recursive guard enforcing `0` NUL bytes, `0` Cyrillic characters, and per-file line limits.
 
 ## [0.0.15] - 2026-11-03
 

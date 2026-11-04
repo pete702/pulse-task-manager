@@ -16,8 +16,8 @@ impl ProcessTarget {
         Self {
             pid: row.pid,
             creation_time: row.creation_time,
-            name: row.name.clone(),
-            exe_path: row.exe_path.clone(),
+            name: row.name.to_string(),
+            exe_path: row.exe_path.as_ref().map(|s| s.to_string()),
         }
     }
 }

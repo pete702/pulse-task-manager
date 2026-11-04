@@ -2,9 +2,12 @@
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use crate::modules::memory::model::RawProcessRow;
+    use crate::modules::memory::process_item::ProcessMemoryItem;
     use crate::modules::memory::process_model::{
-        detect_memory_spike, filter_group_and_sort, MemorySortCol, ProcessMemoryItem,
+        detect_memory_spike, filter_group_and_sort, MemorySortCol,
     };
 
     fn raw(
@@ -17,11 +20,11 @@ mod tests {
     ) -> RawProcessRow {
         RawProcessRow {
             pid,
-            name: name.to_owned(),
+            name: Arc::from(name),
             ram_bytes: ram,
             virtual_bytes: virt,
             delta_bytes_per_sec: delta,
-            exe_path: exe.map(str::to_owned),
+            exe_path: exe.map(Arc::from),
             creation_time: None,
         }
     }
@@ -38,11 +41,11 @@ mod tests {
         let result =
             filter_group_and_sort(&processes, total_ram, "", true, MemorySortCol::RamBytes, false);
 
-        let chrome = result.iter().find(|p| p.name == "chrome.exe").unwrap();
+        let chrome = result.iter().find(|p| p.name.as_ref() == "chrome.exe").unwrap();
         assert_eq!(chrome.process_count, 2);
         assert_eq!(chrome.delta_bytes_per_sec, 2_000_000);
 
-        let game = result.iter().find(|p| p.name == "game.exe").unwrap();
+        let game = result.iter().find(|p| p.name.as_ref() == "game.exe").unwrap();
         assert_eq!(game.process_count, 1);
         assert_eq!(game.delta_bytes_per_sec, 10_000_000);
     }
@@ -62,7 +65,7 @@ mod tests {
         ];
         let items =
             filter_group_and_sort(&processes, 16_000_000_000, "", true, MemorySortCol::Name, true);
-        let chrome = items.iter().find(|p| p.name == "chrome.exe").unwrap();
+        let chrome = items.iter().find(|p| p.name.as_ref() == "chrome.exe").unwrap();
         assert_eq!(chrome.process_count, 2);
         assert_eq!(chrome.exe_path.as_deref(), Some(r"C:\Program Files\Chrome\chrome.exe"));
     }
@@ -84,13 +87,13 @@ mod tests {
     fn test_process_memory_item_new_with_delta() {
         let item = ProcessMemoryItem::new(
             100,
-            "test.exe".to_owned(),
+            Arc::from("test.exe"),
             1_000_000_000,
             2_000_000_000,
             16_000_000_000,
         );
         assert_eq!(item.pid, 100);
-        assert_eq!(item.name, "test.exe");
+        assert_eq!(item.name.as_ref(), "test.exe");
         assert_eq!(item.ram_bytes, 1_000_000_000);
         assert_eq!(item.virtual_bytes, 2_000_000_000);
         assert_eq!(item.process_count, 1);
@@ -110,7 +113,7 @@ mod tests {
         let spike = detect_memory_spike(&processes, total_ram, 87.5);
         assert!(spike.is_some());
         let spike = spike.unwrap();
-        assert_eq!(spike.culprit_name, "game.exe");
+        assert_eq!(spike.culprit_name.as_ref(), "game.exe");
         assert_eq!(spike.culprit_pid, 200);
         assert_eq!(spike.culprit_bytes, 14_000_000_000);
         assert!(!spike.timestamp.is_empty());

@@ -2,22 +2,22 @@
 
 use std::sync::Arc;
 
-use crate::modules::memory::process_model::MemorySpikeEvent;
+use crate::modules::memory::process_spike::MemorySpikeEvent;
 
 /// One raw process row with stable identity metadata.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RawProcessRow {
     pub pid: u32,
-    pub name: String,
+    pub name: Arc<str>,
     pub ram_bytes: u64,
     pub virtual_bytes: u64,
     pub delta_bytes_per_sec: i64,
-    pub exe_path: Option<String>,
+    pub exe_path: Option<Arc<str>>,
     pub creation_time: Option<u64>,
 }
 
 /// Incoming process sample: (PID, name, RAM, virtual, exe path, sysinfo start time).
-pub type ProcessSample = (u32, String, u64, u64, Option<String>, u64);
+pub type ProcessSample = (u32, Arc<str>, u64, u64, Option<Arc<str>>, u64);
 
 /// Number of history points to retain (900 points = 15 minutes at 1s interval).
 #[allow(dead_code)]

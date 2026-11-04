@@ -2,18 +2,19 @@
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use crate::modules::memory::model::{MemorySnapshot, RawProcessRow};
     use crate::modules::memory::selection::{base_group_key, raw_targets, resolve_selection};
-    use std::sync::Arc;
 
     fn raw(pid: u32, name: &str, path: Option<&str>) -> RawProcessRow {
         RawProcessRow {
             pid,
-            name: name.to_owned(),
+            name: Arc::from(name),
             ram_bytes: 1_000_000,
             virtual_bytes: 2_000_000,
             delta_bytes_per_sec: 0,
-            exe_path: path.map(str::to_owned),
+            exe_path: path.map(Arc::from),
             creation_time: Some(pid as u64),
         }
     }

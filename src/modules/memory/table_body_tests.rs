@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use crate::modules::memory::process_model::MemorySortCol;
-    use crate::modules::memory::table_body::toggle_sort;
+    use crate::modules::memory::table_sort::toggle_sort;
     use crate::modules::memory::table_state::MemoryTableState;
 
     #[test]

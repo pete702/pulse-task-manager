@@ -75,8 +75,11 @@ fn hover_text(snap: &SystemSnapshot) -> String {
 /// Renders the Three Walls badge into the top bar.
 pub fn render_badge(ui: &mut egui::Ui, snap: &SystemSnapshot) {
     let state = evaluate(snap);
-    ui.label(egui::RichText::new(state.label()).monospace().size(11.0).color(state.color()))
-        .on_hover_text(hover_text(snap));
+    let resp =
+        ui.label(egui::RichText::new(state.label()).monospace().size(11.0).color(state.color()));
+    if resp.hovered() {
+        resp.on_hover_text(hover_text(snap));
+    }
 }
 
 #[cfg(test)]
