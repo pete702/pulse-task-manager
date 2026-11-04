@@ -2,7 +2,7 @@
 
 A native Windows 10/11 task manager in Rust + `egui` that shows RAM composition, real-time per-process memory growth (`Δ RAM/s`), and which process caused a sudden memory spike.
 
-**[📥 Download v0.1.1 Portable .exe (Windows 10/11 x64)](https://github.com/pete702/pulse-task-manager/releases/tag/v0.1.1)**
+**[📥 Download v0.1.2 Portable .exe (Windows 10/11 x64)](https://github.com/pete702/pulse-task-manager/releases/tag/v0.1.2)**
 
 [![CI](https://github.com/pete702/pulse-task-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/pete702/pulse-task-manager/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -12,7 +12,7 @@ A native Windows 10/11 task manager in Rust + `egui` that shows RAM composition,
 
 ## Why PULSE?
 
-Standard Windows Task Manager shows total RAM usage, but rarely tells you **which process** caused a sudden memory jump or how much of your used memory is actually reclaimable OS Standby Cache.
+Standard Windows Task Manager shows total RAM usage, but rarely tells you **which process** caused a sudden memory jump or how much of your used memory is actually Windows file and system cache.
 
 PULSE provides a dark-mode telemetry HUD with a **Memory Spike Blackbox**, a **3-Segment RAMMap Composition Bar**, and a **Real-Time Leak Hunter (`Δ RAM/s`, dt-normalized)**.
 
@@ -36,11 +36,12 @@ PULSE provides a dark-mode telemetry HUD with a **Memory Spike Blackbox**, a **3
 
 - **Single Portable Executable**: Standalone `.exe` (`~4.0 MiB` binary size on disk), no installer, no background service.
 - **Live Self-Diagnostics**: PULSE displays its own real-time memory working set and UI frame time directly in the top header badge (`[ PULSE: XX.X MB | UI: X.XX ms ]`).
-- **Decoupled 1 Hz Collector**: Main `egui` UI thread + background telemetry worker thread (`bounded std::sync::mpsc::sync_channel(2)`) with 1 Hz process table row caching.
-- **Minimize Hibernation**: UI rendering pauses while minimized and triggers a one-time working-set self-trim (`K32EmptyWorkingSet`); post-init frame #3 self-trim.
+- **Decoupled 1 Hz / 0.5 Hz Collector**: Main `egui` UI thread + background telemetry worker thread (`bounded std::sync::mpsc::sync_channel(2)`) with 1 Hz system RAM polling and 0.5 Hz (2 s) full process scanning in normal mode; paused process scanning with zero-copy `Arc` sharing in minimized mode (instant full scan on wake or user action); `O(1)` UI table & selection caching via `process_scan_id`.
+- **Minimize Hibernation**: UI rendering pauses while minimized and triggers a single controlled working-set self-trim (`K32EmptyWorkingSet`) on frame #3 after GPU init; post-init frame #3 self-trim.
 - **User-Mode Only**: Uses standard Win32 APIs (`K32GetPerformanceInfo`, `sysinfo`); no kernel drivers, no DLL injection, and no hooks into other processes.
 - **PID Safety Gate**: Blocks PID 0, PID 4, self-PID, 27 critical OS processes, and 11 known anti-cheat processes before any mutating action.
 - **Three Walls Badge**: Live `SYSTEM OPTIMAL` / `RAM ELEVATED` / `MEMORY WALL` indicator driven by RAM and Commit pressure in Phase 1.
+- **3-Point Process Identity**: `basename + creation_time + full_path` verification before any mutating action; frozen target list on `[ End Task ]` confirmation.
 
 ## Keyboard Shortcuts
 
@@ -55,6 +56,14 @@ Requires Rust `1.78+` on Windows 10/11 (x64 MSVC toolchain):
 git clone https://github.com/pete702/pulse-task-manager.git
 cd pulse-task-manager
 cargo run --release
+```
+
+## CLI Flags
+
+```powershell
+pulse_manager.exe --version   # Prints: PULSE v0.1.2 (pulse_manager)
+pulse_manager.exe --help      # Prints usage
+pulse_manager.exe --self-test # Headless CI self-test
 ```
 
 ## Documentation & License

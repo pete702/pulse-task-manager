@@ -1,16 +1,19 @@
 # 🏗️ PULSE Architecture & Engineering Rules
 
-PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.78"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.1.1**.
+PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.78"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.1.2**.
 
 ## 1. Core Architectural Principles
 
 1. **Decoupled Two-Thread Telemetry Model**:
    - **UI Thread (`src/app.rs`, `src/ui/`)**: Renders immediate-mode `egui` widgets and handles user input. Never calls blocking Win32 or `sysinfo` APIs directly. Holds `Arc<SystemSnapshot>` for zero-copy per-frame access. When the window is idle or minimized, repaints are throttled to 1 Hz via `request_repaint_after(1000 ms)`.
-   - **Background Worker Thread (`src/core/worker.rs`)**: Runs a fixed 1 Hz (`1000 ms`) polling loop, collects Win32 and process metrics, computes per-PID deltas, and sends `SystemSnapshot` payloads over **bounded** `std::sync::mpsc::sync_channel(2)` (capacity 2). Every tick also stores the latest snapshot in `LatestSlot`; if the channel is full, no dummy snapshot is generated and the UI reads the newer slot instead. Process enumeration runs every tick normally and every 5th tick while minimized, with a forced scan on the minimize transition. Worker exits cleanly on receiver disconnect.
-2. **1 Hz Process Table Cache**:
-   - Filtered, grouped (`[Nx]`), and sorted process rows are cached in `MemoryTableState` keyed by a **64-bit dynamic telemetry signature** (`ram_used_bytes`, `ram_available_bytes`, `swap_used_bytes`, `ram_cached_bytes`, rolling hash of per-process `delta_bytes_per_sec / used_bytes`). Cached rows are stored as `Arc<[ProcessMemoryItem]>` so 60 FPS frames perform zero row or `String` clones (only an atomic `Arc` refcount increment).
-3. **Viewport Hibernation & Edge-Triggered Self-Trim**:
-   - `K32EmptyWorkingSet` (`trim_own_working_set`) is called once at worker startup and once on each open-to-minimized window transition (`!was_minimized && is_minimized`) to release inactive pages without causing page-fault storms while the window is open.
+   - **Background Worker Thread (`src/core/worker.rs`)**: Runs decoupled polling: **system RAM at 1 Hz** (`snapshot_id`) and **full process scans at 0.5 Hz** (`process_scan_id` every 2 s) in normal mode. While minimized, process scans pause and `Arc<Vec<RawProcessRow>>` is shared zero-copy; on wake or any user action (Trim/End Task/Open Location) an immediate full process scan runs. Every tick stores the latest snapshot in `LatestSlot` with **overflow tracking** (`AtomicU64` counter); if the bounded `std::sync::mpsc::sync_channel(2)` is full, the UI reads the newer slot instead. Worker exits cleanly on receiver disconnect.
+2. **O(1) Process Table & Selection Cache**:
+   - Filtered, grouped (`[Nx]`), and sorted process rows are cached in `MemoryTableState` keyed by the authoritative **`process_scan_id`** (monotonic u64). When `scan_id` matches and filter/sort/group settings are unchanged, rebuild returns in `O(1)` without re-computing the telemetry signature. Cached rows are stored as `Arc<[ProcessMemoryItem]>` so 60 FPS frames perform zero row or `String` clones. Selection resolution (`SelectedGroupSummary` with `Vec<ProcessTarget>`) is also cached per `scan_id` so the action bar never iterates raw rows or allocates on every frame.
+3. **Viewport Hibernation & Single Frame-#3 Self-Trim**:
+   - `K32EmptyWorkingSet` (`trim_own_working_set`) is called exactly **once on frame #3 after GPU initialization** (post `eframe` first render) and never again unless explicitly triggered. The minimize transition no longer triggers a trim.
+4. **Non-Blocking Actions & Cached Elevation**:
+   - `Open Location` validates path synchronously (empty/NUL check) then spawns `explorer.exe` on a background thread so slow/network drives never block the UI thread.
+   - `is_app_elevated()` uses `OnceLock<bool>` so `OpenProcessToken` / `GetTokenInformation` is queried at most once per process lifetime.
 
 ## 2. Hard Modularity & Hygiene Guards
 
@@ -35,7 +38,16 @@ PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and pro
 - **TOCTOU Handle Identity Protection**: `trim_single_pid` and `terminate_process_group` enforce `IsProcessCritical` and `QueryFullProcessImageNameW` via `verify_handle_identity` before any mutating operation. Both checks fail closed: a Win32 query failure or unresolvable image path blocks the mutation.
 - **Windows x64 CFG Virtual Memory Normalization**: On 64-bit Windows 11, Control Flow Guard reserves `2 TiB` of virtual address space per system process. PULSE normalizes `virtual_memory() >= (1_u64 << 40)` (`1 TiB`) to the process working set so grouped system services report realistic commit values.
 
-## 5. Obsidian Theme Tokens (`src/theme.rs`)
+## 5. Three-Point Process Identity & Immutable Kill Confirmation
+
+- **3-Point Verification** (`src/modules/memory/safe_handle.rs`, `process_target.rs`): Before any mutating action (`EmptyWorkingSet`, `TerminateProcess`), PULSE verifies process identity via:
+  1. **Basename** — `QueryFullProcessImageNameW` stripped to filename.
+  2. **Creation Time** — `GetProcessTimes` cached per `(pid, sysinfo_start_time)` in `ProcessDeltaTracker` (queried once per `(pid, start_time)` pair).
+  3. **Full Path** — `QueryFullProcessImageNameW` full path, validated against `ProcessTarget.exe_path`.
+  All three must match the frozen `ProcessTarget` captured at scan time; any failure fails closed (blocks the mutation).
+- **Immutable `PendingKillConfirm`** (`src/modules/memory/action_bar.rs`): On first `[ End Task ]` click, the exact `Vec<ProcessTarget>` for the selected group is frozen into `PendingKillConfirm { group_key, targets, armed_at }`. The second click (within 3 s) sends this frozen list to `WorkerAction::TerminateSelected`. A newly spawned process with the same name after arming is **excluded** because the target list is immutable.
+
+## 6. Obsidian Theme Tokens (`src/theme.rs`)
 
 | Token | Hex | Purpose |
 | :--- | :--- | :--- |

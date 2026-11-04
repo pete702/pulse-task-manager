@@ -79,21 +79,32 @@ mod tests {
         let total_ram = sys.total_memory();
         let mut delta_tracker = ProcessDeltaTracker::new();
         let (processes, _spike) =
-            collect_process_memory(&mut sys, total_ram, 0.0, &mut delta_tracker);
+            collect_process_memory(&mut sys, total_ram, 0.0, &mut delta_tracker, true);
         assert!(!processes.is_empty(), "at least one process");
-        for (pid, name, ram_bytes, virtual_bytes, _delta, _exe) in &processes {
-            if *pid == 0 {
+        for row in &processes {
+            if row.pid == 0 {
                 continue;
             }
-            assert!(*pid > 0, "PID > 0");
-            assert!(!name.is_empty(), "name not empty");
-            assert!(*ram_bytes > 0 || *virtual_bytes > 0, "has memory");
+            assert!(row.pid > 0, "PID > 0");
+            assert!(!row.name.is_empty(), "name not empty");
+            assert!(row.ram_bytes > 0 || row.virtual_bytes > 0, "has memory");
         }
         #[cfg(target_os = "windows")]
         assert!(
-            processes.iter().any(|row| row.5.is_some()),
+            processes.iter().any(|row| row.exe_path.is_some()),
             "at least one process exposes an exe path"
         );
+    }
+
+    #[test]
+    fn test_collect_process_memory_skips_when_disabled() {
+        let mut sys = System::new_all();
+        let total_ram = sys.total_memory();
+        let mut delta_tracker = ProcessDeltaTracker::new();
+        let (processes, spike) =
+            collect_process_memory(&mut sys, total_ram, 0.0, &mut delta_tracker, false);
+        assert!(processes.is_empty(), "refresh=false skips process iteration");
+        assert!(spike.is_none());
     }
 
     #[test]

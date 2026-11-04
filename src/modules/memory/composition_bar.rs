@@ -73,7 +73,7 @@ pub fn render_composition_bar(ui: &mut egui::Ui, snap: &MemorySnapshot) {
             );
             if response.hovered() {
                 let tooltip = format!(
-                    "In Use (Active): {:.2} GB ({:.1}%)\nSystem Cache (Reclaimable): {:.2} GB ({:.1}%)\nFree Memory: {:.2} GB ({:.1}%)\nCommitted / Limit: {:.2} / {:.2} GB ({:.1}%)",
+                    "In Use (Active): {:.2} GB ({:.1}%)\nWindows File & System Cache (K32GetPerformanceInfo.SystemCache): {:.2} GB ({:.1}%)\nFree Memory: {:.2} GB ({:.1}%)\nCommitted / Limit: {:.2} / {:.2} GB ({:.1}%)",
                     in_use / GIB, in_use_pct, cache / GIB, cache_pct, true_free / GIB, free_pct,
                     snap.commit_total_bytes as f64 / GIB, snap.commit_limit_bytes as f64 / GIB, snap.commit_charge_pct()
                 );

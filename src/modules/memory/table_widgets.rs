@@ -6,9 +6,9 @@ use crate::modules::memory::formatters::format_bytes;
 use crate::modules::memory::process_model::MemorySpikeEvent;
 use crate::theme::colors;
 
-use super::table_view::MemoryTableState;
+use super::table_state::MemoryTableState;
 
-/// Renders the amber/red "black box" spike banner.
+/// Renders the amber/red "black box" high RAM pressure banner.
 pub(super) fn render_spike_banner(ui: &mut egui::Ui, spike: &MemorySpikeEvent) {
     egui::Frame::none()
         .fill(colors::ACCENT_RED.gamma_multiply(0.12))
@@ -18,7 +18,7 @@ pub(super) fn render_spike_banner(ui: &mut egui::Ui, spike: &MemorySpikeEvent) {
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new("⚠️ RAM SPIKE")
+                    egui::RichText::new("⚠️ HIGH RAM PRESSURE")
                         .monospace()
                         .size(12.0)
                         .strong()
@@ -39,7 +39,7 @@ pub(super) fn render_spike_banner(ui: &mut egui::Ui, spike: &MemorySpikeEvent) {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
                         egui::RichText::new(format!(
-                            "{} [PID {}] • {}",
+                            "Largest consumer: {} [PID {}] • {}",
                             spike.culprit_name,
                             spike.culprit_pid,
                             format_bytes(spike.culprit_bytes)

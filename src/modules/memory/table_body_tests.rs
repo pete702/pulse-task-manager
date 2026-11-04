@@ -4,7 +4,7 @@
 mod tests {
     use crate::modules::memory::process_model::MemorySortCol;
     use crate::modules::memory::table_body::toggle_sort;
-    use crate::modules::memory::table_view::MemoryTableState;
+    use crate::modules::memory::table_state::MemoryTableState;
 
     #[test]
     fn test_toggle_sort() {

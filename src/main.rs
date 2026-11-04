@@ -66,6 +66,19 @@ fn generate_icon() -> Arc<egui::IconData> {
     Arc::new(egui::IconData { rgba, width: SIZE, height: SIZE })
 }
 
+fn print_version() {
+    println!("PULSE v0.1.2 (pulse_manager)");
+}
+
+fn print_help() {
+    println!("Usage: pulse_manager [--self-test | --version | --help]");
+    println!();
+    println!("Options:");
+    println!("  --self-test    Run headless self-test (CI mode)");
+    println!("  --version, -V  Print version and exit");
+    println!("  --help, -h, /? Print this help and exit");
+}
+
 fn main() -> eframe::Result<()> {
     // Initialize panic hook
     std::panic::set_hook(Box::new(|info| {
@@ -77,10 +90,24 @@ fn main() -> eframe::Result<()> {
 
     // Parse CLI arguments
     let args: Vec<String> = env::args().collect();
-    let self_test = args.iter().any(|a| a == "--self-test");
+    let args_skip = &args[1..];
+
+    if args_skip.iter().any(|a| a == "--version" || a == "-V") {
+        print_version();
+        return Ok(());
+    }
+    if args_skip.iter().any(|a| a == "--help" || a == "-h" || a == "/?") {
+        print_help();
+        return Ok(());
+    }
+
+    let self_test = args_skip.iter().any(|a| a == "--self-test");
 
     let lang_override =
-        args.iter().find(|a| a.starts_with("--lang=")).and_then(|a| a.strip_prefix("--lang="));
+        args_skip.iter().find(|a| a.starts_with("--lang=")).and_then(|a| a.strip_prefix("--lang="));
+
+    // Warm up elevation check once at startup (uses OnceLock internally)
+    let _ = crate::modules::memory::safe_handle::is_app_elevated();
 
     // Initialize language from OS detection (or CLI override)
     i18n::init_language(lang_override);

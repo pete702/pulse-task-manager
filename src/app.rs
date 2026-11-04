@@ -11,7 +11,7 @@ use crate::i18n::Key;
 use crate::modules::memory::action_bar::MemoryActionBarState;
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::page::{self, MemorySubView};
-use crate::modules::memory::table_view::MemoryTableState;
+use crate::modules::memory::table_state::MemoryTableState;
 use crate::ui::{chrome, sidebar};
 
 pub struct PulseApp {
@@ -67,7 +67,7 @@ impl PulseApp {
         while let Ok(snap) = self.snapshot_rx.try_recv() {
             self.ingest_snapshot(snap);
         }
-        if let Some(snap) = self.latest_slot.lock().ok().and_then(|slot| slot.clone()) {
+        if let Some(snap) = self.latest_slot.take() {
             self.ingest_snapshot(snap);
         }
     }

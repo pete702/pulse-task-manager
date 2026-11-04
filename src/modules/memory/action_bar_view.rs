@@ -6,8 +6,8 @@ use crate::modules::memory::action_bar::{
 use crate::modules::memory::action_bar_status::{mode_label, selection_info};
 use crate::modules::memory::actions;
 use crate::modules::memory::model::MemorySnapshot;
-use crate::modules::memory::selection::{raw_targets, resolve_selection, SelectionView};
-use crate::modules::memory::table_view::MemoryTableState;
+use crate::modules::memory::process_target::ProcessTarget;
+use crate::modules::memory::table_state::{MemoryTableState, SelectedGroupSummary};
 use crate::theme::colors;
 use eframe::egui;
 use std::time::Instant;
@@ -16,13 +16,13 @@ use std::time::Instant;
 pub fn render_action_bar(
     ui: &mut egui::Ui,
     mem: &MemorySnapshot,
-    ts: &MemoryTableState,
+    ts: &mut MemoryTableState,
     st: &mut MemoryActionBarState,
 ) {
     let now = Instant::now();
     st.poll(now);
     let busy = st.is_busy();
-    let sel = resolve_selection(mem, ts.selected_group.as_deref());
+    let sel = ts.resolved_selection(mem.process_scan_id, &mem.processes);
     crate::theme::card_frame().show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.horizontal(|ui| {
@@ -39,7 +39,7 @@ pub fn render_action_bar(
     });
 }
 
-fn hint(sel: &Option<SelectionView>, busy: bool) -> &'static str {
+fn hint(sel: &Option<SelectedGroupSummary>, busy: bool) -> &'static str {
     if busy {
         BUSY_HINT
     } else if sel.is_some() {
@@ -65,24 +65,21 @@ fn trim_all_button(
         btn.on_disabled_hover_text("No processes in the live snapshot yet")
     };
     if btn.clicked() {
-        let items = raw_targets(mem);
-        st.spawn(move || {
-            let report = actions::purge_system_working_sets(&items);
-            let _ = crate::core::win32::self_trim_working_set();
-            format_trim_status(&report)
-        });
+        let items = mem.processes.iter().map(ProcessTarget::from_raw).collect::<Vec<_>>();
+        crate::core::request_process_scan();
+        st.spawn(move || format_trim_status(&actions::purge_system_working_sets(&items)));
     }
 }
 
 fn selection_actions(
     ui: &mut egui::Ui,
-    sel: &Option<SelectionView>,
+    sel: &Option<SelectedGroupSummary>,
     st: &mut MemoryActionBarState,
     now: Instant,
     busy: bool,
 ) {
     let hint = hint(sel, busy);
-    let can_modify = !busy && sel.as_ref().is_some_and(|v| v.can_modify());
+    let can_modify = !busy && sel.as_ref().is_some_and(|v| !v.blocked && !v.targets.is_empty());
     let trim = ui.add_enabled(can_modify, egui::Button::new("Trim Selected"));
     let trim = if can_modify {
         trim.on_hover_text("Trim every raw process in the selected group")
@@ -92,6 +89,7 @@ fn selection_actions(
     if trim.clicked() {
         if let Some(v) = sel {
             let items = v.targets.clone();
+            crate::core::request_process_scan();
             st.spawn(move || format_trim_status(&actions::trim_process_group(&items)));
         }
     }
@@ -101,7 +99,7 @@ fn selection_actions(
 
 fn open_location_button(
     ui: &mut egui::Ui,
-    sel: &Option<SelectionView>,
+    sel: &Option<SelectedGroupSummary>,
     st: &mut MemoryActionBarState,
     now: Instant,
     busy: bool,
@@ -132,7 +130,7 @@ fn open_location_button(
 
 fn end_task_button(
     ui: &mut egui::Ui,
-    sel: &Option<SelectionView>,
+    sel: &Option<SelectedGroupSummary>,
     st: &mut MemoryActionBarState,
     now: Instant,
     can_modify: bool,
@@ -149,14 +147,17 @@ fn end_task_button(
     if end.clicked() {
         if let Some(v) = sel {
             if confirming {
-                let (pids, items) = (v.pids.clone(), v.targets.clone());
-                st.cancel_confirm();
-                st.spawn(move || match actions::terminate_process_group(&pids, &items) {
-                    Ok(n) => format!("End task: {n}/{} processes terminated", pids.len()),
-                    Err(e) => format!("End task blocked: {e}"),
-                });
+                if let Some(targets) = st.confirmed_targets(&v.name, now) {
+                    let groups = targets.len();
+                    st.cancel_confirm();
+                    crate::core::request_process_scan();
+                    st.spawn(move || match actions::terminate_process_group(&targets) {
+                        Ok(n) => format!("End task: {n}/{groups} processes terminated"),
+                        Err(e) => format!("End task blocked: {e}"),
+                    });
+                }
             } else {
-                st.begin_confirm_kill(&v.name, now);
+                st.begin_confirm_kill(&v.name, &v.targets, now);
             }
         }
     }

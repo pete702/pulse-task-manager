@@ -2,7 +2,7 @@
 
 use crate::modules::memory::action_bar::{MemoryActionBarState, NO_SELECTION_HINT, PROTECTED_HINT};
 use crate::modules::memory::safe_handle::is_app_elevated;
-use crate::modules::memory::selection::SelectionView;
+use crate::modules::memory::table_state::SelectedGroupSummary;
 use crate::theme::{colors, TEXT_MUTED};
 use eframe::egui;
 use std::sync::OnceLock;
@@ -25,7 +25,7 @@ pub(super) fn mode_label(ui: &mut egui::Ui) {
 
 pub(super) fn selection_info(
     ui: &mut egui::Ui,
-    sel: &Option<SelectionView>,
+    sel: &Option<SelectedGroupSummary>,
     st: &MemoryActionBarState,
     now: Instant,
 ) {

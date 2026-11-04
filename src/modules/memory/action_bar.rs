@@ -1,11 +1,12 @@
 //! Non-blocking memory action state: working-set trim, open location, and end task.
 
 use crate::modules::memory::actions::ReclaimReport;
+use crate::modules::memory::process_target::ProcessTarget;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 pub const STATUS_TTL: Duration = Duration::from_secs(8);
-pub const CONFIRM_TTL: Duration = Duration::from_secs(4);
+pub const CONFIRM_TTL: Duration = Duration::from_secs(3);
 /// Tooltip for the row actions while nothing is selected.
 pub const NO_SELECTION_HINT: &str = "Click any process row in the table below to select it";
 /// Tooltip when the PID safety gate rejects the selected process.
@@ -25,12 +26,20 @@ pub fn format_trim_status(r: &ReclaimReport) -> String {
     )
 }
 
+/// Frozen kill confirmation: group key + exact targets captured on first click.
+#[derive(Debug, Clone)]
+pub struct PendingKillConfirm {
+    pub group_key: String,
+    pub targets: Vec<ProcessTarget>,
+    pub armed_at: Instant,
+}
+
 /// Shared state for the action bar: background result channel and confirmation timers.
 #[derive(Debug, Default)]
 pub struct MemoryActionBarState {
     pending_rx: Option<Receiver<String>>,
     last_status: Option<(Instant, String)>,
-    confirm_kill_group: Option<(String, Instant)>,
+    confirm_kill: Option<PendingKillConfirm>,
 }
 
 impl MemoryActionBarState {
@@ -42,16 +51,32 @@ impl MemoryActionBarState {
             .as_ref()
             .and_then(|(at, t)| (now.duration_since(*at) < STATUS_TTL).then_some(t.as_str()))
     }
-    pub fn begin_confirm_kill(&mut self, g: &str, now: Instant) {
-        self.confirm_kill_group = Some((g.to_owned(), now));
+    pub fn begin_confirm_kill(&mut self, group_key: &str, targets: &[ProcessTarget], now: Instant) {
+        // Only set if no active confirmation exists for this group
+        if !self.confirm_kill.as_ref().is_some_and(|c| {
+            c.group_key == group_key && now.duration_since(c.armed_at) < CONFIRM_TTL
+        }) {
+            self.confirm_kill = Some(PendingKillConfirm {
+                group_key: group_key.to_owned(),
+                targets: targets.to_vec(),
+                armed_at: now,
+            });
+        }
     }
     pub fn cancel_confirm(&mut self) {
-        self.confirm_kill_group = None;
+        self.confirm_kill = None;
     }
-    pub fn confirm_kill_active(&self, g: &str, now: Instant) -> bool {
-        self.confirm_kill_group
+    pub fn confirm_kill_active(&self, group_key: &str, now: Instant) -> bool {
+        self.confirm_kill.as_ref().is_some_and(|c| {
+            c.group_key == group_key && now.duration_since(c.armed_at) < CONFIRM_TTL
+        })
+    }
+    /// Returns the frozen targets if confirmation is active for the given group.
+    pub fn confirmed_targets(&self, group_key: &str, now: Instant) -> Option<Vec<ProcessTarget>> {
+        self.confirm_kill
             .as_ref()
-            .is_some_and(|(gr, at)| gr == g && now.duration_since(*at) < CONFIRM_TTL)
+            .filter(|c| c.group_key == group_key && now.duration_since(c.armed_at) < CONFIRM_TTL)
+            .map(|c| c.targets.clone())
     }
     /// Polls the background worker without blocking the UI thread.
     pub(crate) fn poll(&mut self, now: Instant) {
@@ -67,12 +92,9 @@ impl MemoryActionBarState {
         if self.last_status.as_ref().is_some_and(|(at, _)| now.duration_since(*at) >= STATUS_TTL) {
             self.last_status = None;
         }
-        if self
-            .confirm_kill_group
-            .as_ref()
-            .is_some_and(|(_, at)| now.duration_since(*at) >= CONFIRM_TTL)
+        if self.confirm_kill.as_ref().is_some_and(|c| now.duration_since(c.armed_at) >= CONFIRM_TTL)
         {
-            self.confirm_kill_group = None;
+            self.confirm_kill = None;
         }
     }
     /// True while a background action is in flight; buttons stay disabled.

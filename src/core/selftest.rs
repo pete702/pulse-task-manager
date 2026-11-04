@@ -5,33 +5,34 @@ use std::thread;
 use std::time::Duration;
 
 use crate::core::selftest_app::SelfTestApp;
-use crate::core::spawn_telemetry_worker;
+use crate::core::{spawn_telemetry_worker, TelemetryWorker};
 use crate::i18n::{current_lang, set_lang, Lang};
 use crate::modules::memory::actions::{
     open_process_file_location, purge_system_working_sets, terminate_process_group,
     trim_process_group, ReclaimReport, TrimSkipReason,
 };
 use crate::modules::memory::history::MemoryHistory;
-use crate::modules::memory::process_model::ProcessMemoryItem;
+use crate::modules::memory::process_target::ProcessTarget;
 use crate::modules::memory::safe_handle::{
     is_app_elevated, is_protected_process, verify_pid_safety_gate, SafeHandle,
 };
 
 /// Runs a completely headless self-test without eframe/OpenGL.
-/// Validates: live snapshot (pulse_ram_mb > 0), MemorySnapshot fields, MemoryHistory, i18n toggle.
 pub fn run_headless_self_test() -> Result<(), String> {
     println!("[SelfTest] Starting headless self-test...");
-    let rx = spawn_telemetry_worker().rx;
-    let mut snapshot = None;
+    let TelemetryWorker { rx, latest, .. } = spawn_telemetry_worker();
+    let mut samples = Vec::new();
     let start = std::time::Instant::now();
-    while start.elapsed() < Duration::from_secs(5) {
+    while start.elapsed() < Duration::from_secs(6) && samples.len() < 2 {
         if let Ok(snap) = rx.try_recv() {
-            snapshot = Some(snap);
-            break;
+            samples.push(snap);
         }
         thread::sleep(Duration::from_millis(50));
     }
-    let snap = snapshot.ok_or("No snapshot received within 5 seconds".to_string())?;
+    if samples.len() < 2 {
+        return Err(format!("Expected 2 snapshots, received {}", samples.len()));
+    }
+    let snap = &samples[0];
     println!(
         "[SelfTest] Received snapshot: uptime={}s, pulse_ram_mb={:.1}",
         snap.uptime_secs, snap.pulse_ram_mb
@@ -56,6 +57,25 @@ pub fn run_headless_self_test() -> Result<(), String> {
                 mem.ram_usage_percent()
             ));
         }
+        println!(
+            "[SelfTest] FULL scan: scan_ms={:.3}, processes={}, snapshot_id={}, process_scan_id={}, overflows={}",
+            mem.scan_duration_ms,
+            mem.processes.len(),
+            mem.snapshot_id,
+            mem.process_scan_id,
+            mem.channel_overflows
+        );
+        if let Some(ref fast) = samples[1].memory {
+            let shared = std::sync::Arc::ptr_eq(&mem.processes, &fast.processes);
+            println!(
+                "[SelfTest] FAST RAM tick: scan_ms={:.3}, processes={}, snapshot_id={}, process_scan_id={}, arc_shared={}",
+                fast.scan_duration_ms,
+                fast.processes.len(),
+                fast.snapshot_id,
+                fast.process_scan_id,
+                shared
+            );
+        }
         let mut history = MemoryHistory::new();
         history.push(mem);
         if history.len() != 1 {
@@ -75,6 +95,11 @@ pub fn run_headless_self_test() -> Result<(), String> {
     } else {
         println!("[SelfTest] WARNING: MemorySnapshot not available (collector not integrated yet)");
     }
+    println!(
+        "[SelfTest] self_ram_mb={:.1}, channel_overflows={}",
+        snap.pulse_ram_mb,
+        latest.overflow_count()
+    );
     set_lang(Lang::En);
     if current_lang() != Lang::En {
         return Err("i18n set_lang En failed".to_string());
@@ -84,10 +109,10 @@ pub fn run_headless_self_test() -> Result<(), String> {
     let _ = is_protected_process(0, "system");
     let _ = verify_pid_safety_gate(0, "system");
     let _ = SafeHandle::open(0, 0);
-    let _targets: &[ProcessMemoryItem] = &[];
+    let _targets: &[ProcessTarget] = &[];
     let _report: ReclaimReport = trim_process_group(_targets);
     let _ = purge_system_working_sets(_targets);
-    let _ = terminate_process_group(&[], _targets);
+    let _ = terminate_process_group(_targets);
     let _ = open_process_file_location(std::path::Path::new(""));
     let _ = TrimSkipReason::Protected;
     println!("[SelfTest] Memory Actions Engine & Safety Gate: API surface OK");
@@ -96,7 +121,6 @@ pub fn run_headless_self_test() -> Result<(), String> {
 }
 
 /// Runs the self-test: headless in CI (without OpenGL), with 5-frame GUI locally.
-/// If CI environment detected or eframe fails (e.g., no OpenGL), falls back to headless mode.
 pub fn run_self_test(options: eframe::NativeOptions) -> eframe::Result<()> {
     let is_ci = env::var("CI").is_ok() || env::var("GITHUB_ACTIONS").is_ok();
     if is_ci {

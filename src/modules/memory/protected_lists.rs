@@ -1,0 +1,47 @@
+//! Protected process name lists for the PID safety gate.
+
+/// Windows OS processes that must never be modified.
+pub(crate) const CRITICAL_OS_PROCESSES: &[&str] = &[
+    "system",
+    "registry",
+    "memory compression",
+    "smss.exe",
+    "csrss.exe",
+    "wininit.exe",
+    "services.exe",
+    "lsass.exe",
+    "lsaiso.exe",
+    "svchost.exe",
+    "dwm.exe",
+    "winlogon.exe",
+    "fontdrvhost.exe",
+    "sihost.exe",
+    "taskhostw.exe",
+    "msmpeng.exe",
+    "nissrv.exe",
+    "securityhealthservice.exe",
+    "spoolsv.exe",
+    "audiodg.exe",
+    "wmiprvse.exe",
+    "searchindexer.exe",
+    "startmenuexperiencehost.exe",
+    "searchhost.exe",
+    "shellexperiencehost.exe",
+    "textinputhost.exe",
+    "conhost.exe",
+];
+
+/// Known anti-cheat processes that must never be modified.
+pub(crate) const ANTI_CHEAT_PROCESSES: &[&str] = &[
+    "vgc.exe",
+    "vgtray.exe",
+    "easyanticheat.exe",
+    "easyanticheat_eos.exe",
+    "beservice.exe",
+    "bedaisy.sys",
+    "zksvc.exe",
+    "faceitclient.exe",
+    "eseaclient.exe",
+    "ricochet.exe",
+    "hoyokprotect.sys",
+];

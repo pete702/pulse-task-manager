@@ -3,6 +3,17 @@
 All notable changes to **PULSE** (`pulse_manager`) are documented in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
 
+## [0.1.2] - 2026-11-04
+
+- **Zero-Copy `Arc` Sharing & Decoupled 1 Hz / 0.5 Hz Polling**: System RAM at 1 Hz, full process scans at 0.5 Hz (2 s); minimized mode pauses process scans and shares `Arc<Vec<RawProcessRow>>` zero-copy — RAM fast ticks ~0.12 ms (~70× faster than full scan).
+- **O(1) UI Table & Selection Cache**: `MemoryTableState` keyed by `process_scan_id` — rebuild returns immediately when scan ID and filter/sort/group unchanged; `SelectedGroupSummary` cached per scan ID so action bar never iterates raw rows or allocates per frame.
+- **3-Point PID Identity Verification**: `basename + creation_time + full_path` checked before `EmptyWorkingSet` / `TerminateProcess`; creation time cached per `(pid, start_time)`; full path via `QueryFullProcessImageNameW`; all checks fail closed.
+- **Frozen `[ End Task ]` Confirmation Targets**: First click freezes exact `Vec<ProcessTarget>` into `PendingKillConfirm`; second click sends frozen list; newly spawned same-name PIDs excluded.
+- **Background `Open Location` + `OnceLock` Elevation**: Path validated synchronously; `explorer.exe` spawned on background thread; `is_app_elevated()` uses `OnceLock<bool>` for single Win32 query per process lifetime.
+- **Single Frame-#3 Self-Trim**: `K32EmptyWorkingSet` called exactly once on frame #3 after GPU init; no trim on minimize transition.
+- **CLI `--version` / `--help` Flags**: Clean exit without GUI launch; elevation check warmed at startup.
+- **118 Passing Tests**: 114 unit + 4 docs-guard; clippy clean, fmt clean, release build verified.
+
 ## [0.1.1] - 2026-11-03
 
 - **Raw Process Actions**: `Trim Working Sets`, `Trim Selected`, `Open Location`, and `End Task` now target raw process rows with explicit PID; `exe_path` feeds `Open Location`.

@@ -1,16 +1,23 @@
 //! Pure mathematical model for memory telemetry — zero dependencies on egui/sysinfo.
-//!
-//! This module provides the core data structures and pure functions for memory
-//! monitoring. It is completely independent of any GUI or OS-specific libraries,
-//! making it trivially testable and portable.
+
+use std::sync::Arc;
 
 use crate::modules::memory::process_model::MemorySpikeEvent;
 
-/// Raw process row: (PID, name, RAM bytes, virtual bytes, delta bytes/sec, exe path).
-pub type RawProcessRow = (u32, String, u64, u64, i64, Option<String>);
+/// One raw process row with stable identity metadata.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RawProcessRow {
+    pub pid: u32,
+    pub name: String,
+    pub ram_bytes: u64,
+    pub virtual_bytes: u64,
+    pub delta_bytes_per_sec: i64,
+    pub exe_path: Option<String>,
+    pub creation_time: Option<u64>,
+}
 
-/// Incoming process sample: (PID, name, RAM bytes, virtual bytes, exe path).
-pub type ProcessSample = (u32, String, u64, u64, Option<String>);
+/// Incoming process sample: (PID, name, RAM, virtual, exe path, sysinfo start time).
+pub type ProcessSample = (u32, String, u64, u64, Option<String>, u64);
 
 /// Number of history points to retain (900 points = 15 minutes at 1s interval).
 #[allow(dead_code)]
@@ -20,23 +27,21 @@ pub const HISTORY_CAPACITY: usize = 900;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[allow(clippy::enum_variant_names)]
 pub enum ChartWindow {
-    /// 1 minute (60 seconds / 60 points at 1s interval).
+    /// 1 minute (60 points at 1s interval).
     #[default]
     OneMin = 60,
-    /// 5 minutes (300 seconds / 300 points at 1s interval).
+    /// 5 minutes (300 points at 1s interval).
     FiveMin = 300,
-    /// 15 minutes (900 seconds / 900 points at 1s interval).
+    /// 15 minutes (900 points at 1s interval).
     FifteenMin = 900,
 }
 
 impl ChartWindow {
-    /// Returns the window duration in seconds.
     #[inline]
     pub fn seconds(self) -> u32 {
         self as u32
     }
 
-    /// Returns English label for the button.
     pub fn label_en(self) -> &'static str {
         match self {
             ChartWindow::OneMin => "1m",
@@ -46,64 +51,42 @@ impl ChartWindow {
     }
 }
 
-/// A single snapshot of system memory state.
-///
-/// All values are in **bytes** (`u64`).
+/// A single snapshot of system memory state. All byte values use `u64`.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MemorySnapshot {
-    /// Total physical RAM in bytes.
     pub ram_total_bytes: u64,
-    /// Currently used physical RAM in bytes.
     pub ram_used_bytes: u64,
-    /// Available physical RAM in bytes (free + reclaimable system cache).
     pub ram_available_bytes: u64,
-    /// Free physical RAM in bytes (completely unused).
     pub ram_free_bytes: u64,
-    /// Total swap (pagefile) size in bytes.
     pub swap_total_bytes: u64,
-    /// Currently used swap in bytes.
     pub swap_used_bytes: u64,
-    /// Free swap in bytes.
     pub swap_free_bytes: u64,
 
-    // ===== v0.0.6: Windows Kernel Metrics (from K32GetPerformanceInfo) =====
-    /// Total commit charge (pages committed) in bytes.
+    // Windows kernel metrics (K32GetPerformanceInfo).
     pub commit_total_bytes: u64,
-    /// Commit limit (max commit charge) in bytes.
     pub commit_limit_bytes: u64,
-    /// Kernel paged pool in bytes.
     pub kernel_paged_bytes: u64,
-    /// Kernel non-paged pool in bytes.
     pub kernel_nonpaged_bytes: u64,
-    /// System-wide handle count.
     pub system_handles: u32,
-    /// System-wide thread count.
     pub system_threads: u32,
-    /// System-wide process count.
     pub system_processes: u32,
-    /// Real Windows System Cache (from K32GetPerformanceInfo.SystemCache * PageSize).
-    /// When > 0, this overrides the calculated `available - free` fallback.
     pub ram_cached_bytes_override: u64,
 
-    // ===== v0.0.9: Process table data =====
-    /// Process memory rows, including the executable path used by `Open Location`.
-    pub processes: Vec<RawProcessRow>,
-    /// Most recent memory spike (RAM >= 85%), kept as a "black box" event.
+    // Telemetry identity and timing.
+    pub snapshot_id: u64,
+    pub process_scan_id: u64,
+    pub sample_elapsed_secs: f64,
+    pub scan_duration_ms: f32,
+    pub channel_overflows: u64,
+
+    // Shared raw process rows (zero-copy on fast RAM-only ticks).
+    pub processes: Arc<Vec<RawProcessRow>>,
     pub latest_spike: Option<MemorySpikeEvent>,
-    /// Precomputed flag: true if any process has RAM >= 2.5 GiB (for O(1) status bar heuristic).
     pub has_heavy_process: bool,
 }
 
 impl MemorySnapshot {
-    /// Returns the system cache (cached RAM) in bytes.
-    ///
-    /// If `ram_cached_bytes_override` is set (from K32GetPerformanceInfo on Windows),
-    /// returns that real kernel value. Otherwise falls back to calculated
-    /// `available - free` using **saturating subtraction** to avoid panic
-    /// if `free > available` (race conditions in OS reporting).
-    ///
-    /// # Formula
-    /// `cached = override.or(available.saturating_sub(free))`
+    /// Returns real System Cache, falling back to `available - free`.
     #[inline]
     pub fn ram_cached_bytes(&self) -> u64 {
         if self.ram_cached_bytes_override > 0 {
@@ -114,8 +97,6 @@ impl MemorySnapshot {
     }
 
     /// Returns RAM usage as percentage, clamped to `[0.0, 100.0]`.
-    ///
-    /// Returns `0.0` if `ram_total_bytes == 0` (division by zero guard).
     #[allow(dead_code)]
     #[inline]
     pub fn ram_usage_percent(&self) -> f32 {
@@ -127,8 +108,6 @@ impl MemorySnapshot {
     }
 
     /// Returns Swap usage as percentage, clamped to `[0.0, 100.0]`.
-    ///
-    /// Returns `0.0` if `swap_total_bytes == 0` (swap disabled / division by zero guard).
     #[allow(dead_code)]
     #[inline]
     pub fn swap_usage_percent(&self) -> f32 {
@@ -140,8 +119,6 @@ impl MemorySnapshot {
     }
 
     /// Returns Commit usage as percentage, clamped to `[0.0, 100.0]`.
-    ///
-    /// Returns `0.0` if `commit_limit_bytes == 0`.
     #[allow(dead_code)]
     #[inline]
     pub fn commit_usage_percent(&self) -> f32 {

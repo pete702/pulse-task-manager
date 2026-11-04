@@ -1,128 +1,13 @@
 //! Virtualized process memory table with search, clone grouping, sorting, and selection.
 
 use eframe::egui;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 
 use crate::modules::memory::model::MemorySnapshot;
-use crate::modules::memory::process_model::{
-    filter_group_and_sort, MemorySortCol, ProcessMemoryItem,
-};
 use crate::theme::colors;
 
 use super::table_body::render_table;
+use super::table_state::MemoryTableState;
 use super::table_widgets::{empty_label, render_spike_banner, render_toolbar};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct TableCacheKey {
-    snapshot_id: u64,
-    search_hash: u64,
-    sort_col: MemorySortCol,
-    sort_asc: bool,
-    group_clones: bool,
-}
-
-/// UI state for the process memory table with 1 Hz caching.
-#[derive(Debug, Clone)]
-pub struct MemoryTableState {
-    pub search_query: String,
-    pub group_clones: bool,
-    pub sort_col: MemorySortCol,
-    pub sort_asc: bool,
-    pub selected_pid: Option<u32>,
-    pub selected_group: Option<String>,
-    cached_rows: Option<Arc<[ProcessMemoryItem]>>,
-    cache_key: Option<TableCacheKey>,
-}
-
-impl Default for MemoryTableState {
-    fn default() -> Self {
-        Self {
-            search_query: String::new(),
-            group_clones: true,
-            sort_col: MemorySortCol::RamBytes,
-            sort_asc: false,
-            selected_pid: None,
-            selected_group: None,
-            cached_rows: None,
-            cache_key: None,
-        }
-    }
-}
-
-/// Fast 64-bit signature of dynamic telemetry for cache invalidation.
-fn compute_snapshot_signature(snap: &MemorySnapshot, uptime_secs: u64) -> u64 {
-    let mut h = uptime_secs;
-    h = h.wrapping_add(snap.ram_used_bytes.rotate_left(13));
-    h = h.wrapping_add(snap.ram_available_bytes.rotate_left(29));
-    h = h.wrapping_add(snap.swap_used_bytes.rotate_left(41));
-    h = h.wrapping_add(snap.ram_cached_bytes().rotate_left(53));
-    for (_, _, ram, _, delta, _) in &snap.processes {
-        if *ram > 0 {
-            let ratio = (*delta as i128 * 1_000_000) / (*ram as i128);
-            h = h.wrapping_add((ratio as u64).rotate_left(7));
-        }
-    }
-    h
-}
-
-fn hash_search_query(query: &str) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    query.hash(&mut hasher);
-    hasher.finish()
-}
-
-impl MemoryTableState {
-    pub(crate) fn get_or_compute_rows(
-        &mut self,
-        snap: &MemorySnapshot,
-        uptime_secs: u64,
-    ) -> Arc<[ProcessMemoryItem]> {
-        let new_key = TableCacheKey {
-            snapshot_id: compute_snapshot_signature(snap, uptime_secs),
-            search_hash: hash_search_query(&self.search_query),
-            sort_col: self.sort_col,
-            sort_asc: self.sort_asc,
-            group_clones: self.group_clones,
-        };
-        if self.cache_key.as_ref() == Some(&new_key) {
-            if let Some(ref rows) = self.cached_rows {
-                return Arc::clone(rows);
-            }
-        }
-        let rows: Arc<[ProcessMemoryItem]> = filter_group_and_sort(
-            &snap.processes,
-            snap.ram_total_bytes,
-            &self.search_query,
-            self.group_clones,
-            self.sort_col,
-            self.sort_asc,
-        )
-        .into();
-        self.cached_rows = Some(Arc::clone(&rows));
-        self.cache_key = Some(new_key);
-        rows
-    }
-
-    pub(crate) fn invalidate_cache(&mut self) {
-        self.cached_rows = None;
-        self.cache_key = None;
-    }
-
-    /// Toggles name-based row selection, storing the clean base group key.
-    pub fn toggle_selection(&mut self, item: &ProcessMemoryItem) {
-        let key = crate::modules::memory::selection::base_group_key(&item.name);
-        let same = self.selected_group.as_deref() == Some(key);
-        self.selected_pid = if same { None } else { Some(item.pid) };
-        self.selected_group = if same { None } else { Some(key.to_owned()) };
-    }
-
-    #[cfg(test)]
-    pub fn has_cached_rows(&self) -> bool {
-        self.cached_rows.is_some()
-    }
-}
 
 /// Renders the spike banner, toolbar, and virtualized process table.
 pub fn render_memory_table(
@@ -131,6 +16,7 @@ pub fn render_memory_table(
     state: &mut MemoryTableState,
     uptime_secs: u64,
 ) {
+    state.rebuild_for_scan(snap.process_scan_id, &snap.processes);
     let rows = state.get_or_compute_rows(snap, uptime_secs);
     let clone_groups = rows.iter().filter(|r| r.process_count > 1).count();
     let total_processes = snap.processes.len();

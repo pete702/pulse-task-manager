@@ -2,7 +2,7 @@
 
 use crate::i18n::Key;
 use crate::modules::memory::page::MemorySubView;
-use crate::modules::memory::table_view::MemoryTableState;
+use crate::modules::memory::table_state::MemoryTableState;
 use eframe::egui;
 
 /// Active tab in the left sidebar.

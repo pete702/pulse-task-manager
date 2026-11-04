@@ -39,7 +39,7 @@ fn window_button(ui: &mut egui::Ui, w: ChartWindow, active: bool) -> bool {
 
 /// Returns cached plot points, rebuilding them whenever the history revision
 /// or the selected window changes (works after the ring buffer is full).
-fn cached_points(
+pub(crate) fn cached_points(
     ui: &egui::Ui,
     key: &str,
     revision: u64,

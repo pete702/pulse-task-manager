@@ -2,17 +2,37 @@
 
 #[cfg(test)]
 mod tests {
+    use crate::modules::memory::model::RawProcessRow;
     use crate::modules::memory::process_model::{
         detect_memory_spike, filter_group_and_sort, MemorySortCol, ProcessMemoryItem,
     };
+
+    fn raw(
+        pid: u32,
+        name: &str,
+        ram: u64,
+        virt: u64,
+        delta: i64,
+        exe: Option<&str>,
+    ) -> RawProcessRow {
+        RawProcessRow {
+            pid,
+            name: name.to_owned(),
+            ram_bytes: ram,
+            virtual_bytes: virt,
+            delta_bytes_per_sec: delta,
+            exe_path: exe.map(str::to_owned),
+            creation_time: None,
+        }
+    }
 
     #[test]
     fn test_filter_group_and_sort_delta_aggregation() {
         let total_ram = 16_000_000_000u64;
         let processes = vec![
-            (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 5_000_000, None),
-            (101, "chrome.exe".to_owned(), 2_000_000_000, 3_000_000_000, -3_000_000, None),
-            (200, "game.exe".to_owned(), 3_000_000_000, 4_000_000_000, 10_000_000, None),
+            raw(100, "chrome.exe", 1_000_000_000, 2_000_000_000, 5_000_000, None),
+            raw(101, "chrome.exe", 2_000_000_000, 3_000_000_000, -3_000_000, None),
+            raw(200, "game.exe", 3_000_000_000, 4_000_000_000, 10_000_000, None),
         ];
 
         let result =
@@ -30,14 +50,14 @@ mod tests {
     #[test]
     fn test_grouping_preserves_first_available_exe_path() {
         let processes = vec![
-            (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 0, None),
-            (
+            raw(100, "chrome.exe", 1_000_000_000, 2_000_000_000, 0, None),
+            raw(
                 101,
-                "chrome.exe".to_owned(),
+                "chrome.exe",
                 1_000_000_000,
                 2_000_000_000,
                 0,
-                Some(r"C:\Program Files\Chrome\chrome.exe".to_owned()),
+                Some(r"C:\Program Files\Chrome\chrome.exe"),
             ),
         ];
         let items =
@@ -50,8 +70,8 @@ mod tests {
     #[test]
     fn test_ungrouped_items_keep_their_exe_path() {
         let processes = vec![
-            (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 0, Some("a".to_owned())),
-            (200, "game.exe".to_owned(), 3_000_000_000, 4_000_000_000, 0, Some("b".to_owned())),
+            raw(100, "chrome.exe", 1_000_000_000, 2_000_000_000, 0, Some("a")),
+            raw(200, "game.exe", 3_000_000_000, 4_000_000_000, 0, Some("b")),
         ];
         let items =
             filter_group_and_sort(&processes, 16_000_000_000, "", false, MemorySortCol::Name, true);
@@ -75,15 +95,16 @@ mod tests {
         assert_eq!(item.virtual_bytes, 2_000_000_000);
         assert_eq!(item.process_count, 1);
         assert_eq!(item.delta_bytes_per_sec, 0);
-        assert!(!item.is_hog); // 1GB / 16GB = 6.25% < 15%
+        assert!(!item.is_hog);
+        assert!(item.creation_time.is_none());
     }
 
     #[test]
     fn test_detect_memory_spike_above_threshold() {
         let total_ram = 16_000_000_000u64;
         let processes = vec![
-            (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 0, None),
-            (200, "game.exe".to_owned(), 14_000_000_000, 16_000_000_000, 0, None),
+            raw(100, "chrome.exe", 1_000_000_000, 2_000_000_000, 0, None),
+            raw(200, "game.exe", 14_000_000_000, 16_000_000_000, 0, None),
         ];
 
         let spike = detect_memory_spike(&processes, total_ram, 87.5);
@@ -99,8 +120,8 @@ mod tests {
     fn test_detect_memory_spike_below_threshold() {
         let total_ram = 16_000_000_000u64;
         let processes = vec![
-            (100, "chrome.exe".to_owned(), 1_000_000_000, 2_000_000_000, 0, None),
-            (200, "game.exe".to_owned(), 10_000_000_000, 12_000_000_000, 0, None),
+            raw(100, "chrome.exe", 1_000_000_000, 2_000_000_000, 0, None),
+            raw(200, "game.exe", 10_000_000_000, 12_000_000_000, 0, None),
         ];
 
         let spike = detect_memory_spike(&processes, total_ram, 62.5);

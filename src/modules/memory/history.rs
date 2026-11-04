@@ -74,10 +74,11 @@ impl MemoryHistory {
             self.timestamps.pop_front();
         }
 
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs_f64())
-            .unwrap_or(0.0);
+        let ts = if snap.sample_elapsed_secs > 0.0 {
+            snap.sample_elapsed_secs
+        } else {
+            self.timestamps.back().copied().unwrap_or(0.0) + 1.0
+        };
 
         self.ram_points.push_back(ram_pct);
         self.swap_points.push_back(swap_pct);
@@ -137,12 +138,13 @@ impl MemoryHistory {
     }
 
     /// Unix timestamp (seconds) of the newest sample, or `0.0` when empty.
+    /// Samples now store monotonic worker-relative seconds.
     #[inline]
     pub fn latest_timestamp(&self) -> f64 {
         self.timestamps.back().copied().unwrap_or(0.0)
     }
 
-    /// RAM samples inside the selected window as `(unix_seconds, percent)`.
+    /// RAM samples inside the selected window as `(elapsed_seconds, percent)`.
     pub fn windowed_ram_timed(&self) -> impl Iterator<Item = (f64, f32)> + '_ {
         let now = self.latest_timestamp();
         let window = self.chart_window.seconds() as f64;
@@ -153,7 +155,7 @@ impl MemoryHistory {
             .map(|(t, v)| (*t, *v))
     }
 
-    /// Swap samples inside the selected window as `(unix_seconds, percent)`.
+    /// Swap samples inside the selected window as `(elapsed_seconds, percent)`.
     pub fn windowed_swap_timed(&self) -> impl Iterator<Item = (f64, f32)> + '_ {
         let now = self.latest_timestamp();
         let window = self.chart_window.seconds() as f64;

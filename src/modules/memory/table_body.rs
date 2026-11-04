@@ -1,5 +1,5 @@
 //! Virtualized table body for the memory process list.
-use super::table_view::MemoryTableState;
+use super::table_state::MemoryTableState;
 use super::table_widgets::header_labels;
 use crate::modules::memory::formatters::format_bytes;
 use crate::modules::memory::process_model::{MemorySortCol, ProcessMemoryItem};

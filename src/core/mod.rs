@@ -5,12 +5,12 @@ pub mod selftest_app;
 pub mod win32;
 pub mod worker;
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 
 use crate::modules::memory::model::MemorySnapshot as MemSnapshot;
 
 /// System state snapshot sent from background thread to UI.
-/// Contains uptime, self-process RAM usage (MB), and OS memory snapshot.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SystemSnapshot {
     /// System uptime in seconds (from `sysinfo::System::uptime()`).
@@ -24,14 +24,12 @@ pub struct SystemSnapshot {
 }
 
 impl SystemSnapshot {
-    /// Creates a new snapshot with the given uptime, process RAM, and memory.
     #[allow(dead_code)]
     #[inline]
     pub fn new(uptime_secs: u64, pulse_ram_mb: f32, memory: Option<MemSnapshot>) -> Self {
         Self { uptime_secs, pulse_ram_mb, memory, os_scheduler_jitter_ms: 0 }
     }
 
-    /// Creates a new snapshot with OS scheduler jitter.
     #[inline]
     pub fn new_with_jitter(
         uptime_secs: u64,
@@ -42,7 +40,6 @@ impl SystemSnapshot {
         Self { uptime_secs, pulse_ram_mb, memory, os_scheduler_jitter_ms: jitter_ms }
     }
 
-    /// Creates a minimal snapshot (for backward compatibility / tests).
     #[allow(dead_code)]
     #[inline]
     pub fn minimal(uptime_secs: u64, pulse_ram_mb: f32) -> Self {
@@ -53,13 +50,52 @@ impl SystemSnapshot {
 /// Channel type for snapshot transmission: `Sender` in background thread, `Receiver` in UI.
 pub type SnapshotTx = mpsc::SyncSender<Arc<SystemSnapshot>>;
 
-/// Shared slot for the latest snapshot (newest always wins).
-pub type LatestSlot = Arc<Mutex<Option<Arc<SystemSnapshot>>>>;
+/// Newest-snapshot slot. Tracks how many unread values were overwritten.
+#[derive(Default)]
+pub struct LatestSlot {
+    inner: Arc<Mutex<Option<Arc<SystemSnapshot>>>>,
+    overflows: Arc<AtomicU64>,
+}
 
-pub use worker::TelemetryWorker;
+impl Clone for LatestSlot {
+    fn clone(&self) -> Self {
+        Self { inner: Arc::clone(&self.inner), overflows: Arc::clone(&self.overflows) }
+    }
+}
+
+impl LatestSlot {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Replaces the slot contents and counts an overflow when a value was unread.
+    pub fn store(&self, value: Arc<SystemSnapshot>) {
+        if let Ok(mut slot) = self.inner.lock() {
+            if slot.replace(value).is_some() {
+                self.overflows.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// Clones the newest value without clearing it.
+    #[allow(dead_code)]
+    pub fn get(&self) -> Option<Arc<SystemSnapshot>> {
+        self.inner.lock().ok().and_then(|slot| slot.clone())
+    }
+
+    /// Takes the newest value, marking it as read.
+    pub fn take(&self) -> Option<Arc<SystemSnapshot>> {
+        self.inner.lock().ok().and_then(|mut slot| slot.take())
+    }
+
+    pub fn overflow_count(&self) -> u64 {
+        self.overflows.load(Ordering::Relaxed)
+    }
+}
+
+pub use worker::{request_process_scan, TelemetryWorker};
 
 /// Spawns the background telemetry worker thread.
-/// Returns the worker handle (receiver, latest slot, minimized flag).
 pub fn spawn_telemetry_worker() -> TelemetryWorker {
     worker::spawn()
 }

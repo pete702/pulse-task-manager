@@ -4,22 +4,18 @@ mod tests {
         open_process_file_location, purge_system_working_sets, terminate_process_group,
         trim_process_group, ReclaimReport, TrimSkipReason,
     };
-    use crate::modules::memory::process_model::ProcessMemoryItem;
+    use crate::modules::memory::process_target::ProcessTarget;
     use crate::modules::memory::safe_handle::{
-        is_app_elevated, is_protected_process, verify_pid_safety_gate, SafeHandle,
+        is_app_elevated, is_protected_process, query_creation_time_by_pid, verify_pid_safety_gate,
+        SafeHandle,
     };
     use std::path::PathBuf;
     use windows_sys::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION;
-    fn make_test_item(pid: u32, name: &str) -> ProcessMemoryItem {
-        ProcessMemoryItem {
+    fn make_test_target(pid: u32, name: &str) -> ProcessTarget {
+        ProcessTarget {
             pid,
+            creation_time: Some(133_000_000_000_000_000),
             name: name.to_string(),
-            ram_bytes: 100_000_000,
-            virtual_bytes: 200_000_000,
-            ram_pct: 1.0,
-            process_count: 1,
-            is_hog: false,
-            delta_bytes_per_sec: 0,
             exe_path: None,
         }
     }
@@ -107,11 +103,11 @@ mod tests {
     #[test]
     fn test_trim_process_group_skips_protected() {
         let targets = vec![
-            make_test_item(0, "system"),
-            make_test_item(4, "system"),
-            make_test_item(std::process::id(), "pulse"),
-            make_test_item(123, "csrss.exe"),
-            make_test_item(99999, "notepad.exe"),
+            make_test_target(0, "system"),
+            make_test_target(4, "system"),
+            make_test_target(std::process::id(), "pulse"),
+            make_test_target(123, "csrss.exe"),
+            make_test_target(99999, "notepad.exe"),
         ];
         let report = trim_process_group(&targets);
         assert_eq!(report.skipped_protected, 4);
@@ -119,7 +115,7 @@ mod tests {
     }
     #[test]
     fn test_purge_system_working_sets_matches_trim() {
-        let targets = vec![make_test_item(99999, "notepad.exe")];
+        let targets = vec![make_test_target(99999, "notepad.exe")];
         let r1 = purge_system_working_sets(&targets);
         let r2 = trim_process_group(&targets);
         assert_eq!(r1.trimmed_count, r2.trimmed_count);
@@ -128,10 +124,16 @@ mod tests {
     }
     #[test]
     fn test_terminate_process_group_blocks_protected() {
-        let snapshot = vec![make_test_item(0, "system")];
-        let result = terminate_process_group(&[0], &snapshot);
+        let result = terminate_process_group(&[make_test_target(0, "system")]);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("OS kernel process is protected"));
+    }
+    #[test]
+    fn test_creation_time_is_stable_for_own_process() {
+        let pid = std::process::id();
+        let first = query_creation_time_by_pid(pid).expect("own creation time");
+        assert_ne!(first, 0);
+        assert_eq!(query_creation_time_by_pid(pid), Some(first));
     }
     #[test]
     fn test_open_process_file_location_missing() {

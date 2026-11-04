@@ -133,4 +133,39 @@ mod tests {
         assert_eq!(axis_label(300, -4.0), "-4m");
         assert_eq!(axis_label(900, 0.0), "0m");
     }
+
+    #[test]
+    fn test_history_wrap_invalidates_chart_cache() {
+        let mut history = MemoryHistory::new();
+        for i in 0..905 {
+            let snap = MemorySnapshot {
+                ram_total_bytes: 1000,
+                ram_used_bytes: 500 + (i % 10) as u64,
+                sample_elapsed_secs: (i + 1) as f64,
+                ..Default::default()
+            };
+            history.push(&snap);
+        }
+        assert_eq!(history.len(), 900, "ring buffer evicts the oldest samples");
+        history.chart_window = ChartWindow::FifteenMin;
+        assert_eq!(history.windowed_ram_timed().count(), 900);
+        let rev = history.revision();
+        egui::__run_test_ui(|ui| {
+            let first =
+                crate::modules::memory::chart_view::cached_points(ui, "wrap", rev, 900, || {
+                    vec![[0.0, 1.0]]
+                });
+            assert_eq!(first, vec![[0.0, 1.0]]);
+            let second =
+                crate::modules::memory::chart_view::cached_points(ui, "wrap", rev + 1, 900, || {
+                    vec![[0.0, 2.0]]
+                });
+            assert_eq!(second, vec![[0.0, 2.0]], "new revision rebuilds points");
+            let reused =
+                crate::modules::memory::chart_view::cached_points(ui, "wrap", rev + 1, 900, || {
+                    vec![[0.0, 3.0]]
+                });
+            assert_eq!(reused, vec![[0.0, 2.0]], "same revision keeps cached points");
+        });
+    }
 }

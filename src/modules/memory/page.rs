@@ -6,7 +6,8 @@ use crate::modules::memory::action_bar::MemoryActionBarState;
 use crate::modules::memory::action_bar_view::render_action_bar;
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::model::MemorySnapshot;
-use crate::modules::memory::table_view::{render_memory_table, MemoryTableState};
+use crate::modules::memory::table_state::MemoryTableState;
+use crate::modules::memory::table_view::render_memory_table;
 use crate::modules::memory::view;
 use crate::theme::{card_frame, colors, load_color};
 

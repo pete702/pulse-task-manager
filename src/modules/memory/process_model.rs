@@ -20,6 +20,8 @@ pub struct ProcessMemoryItem {
     /// Per-second working set delta (bytes/sec). Positive = growing (leak), negative = shrinking (reclaim).
     pub delta_bytes_per_sec: i64,
     pub exe_path: Option<String>,
+    /// Stable process creation time used for PID-reuse-safe actions.
+    pub creation_time: Option<u64>,
 }
 
 /// Column for sorting process list.
@@ -60,17 +62,23 @@ impl ProcessMemoryItem {
             is_hog: ram_pct >= 15.0,
             delta_bytes_per_sec: 0,
             exe_path: None,
+            creation_time: None,
         }
     }
 }
 
 /// Builds a display item from one raw process row, keeping its executable path.
 pub fn item_from_raw(row: &RawProcessRow, total_ram: u64) -> ProcessMemoryItem {
-    let (pid, name, ram_bytes, virtual_bytes, delta, exe_path) = row;
-    let mut item =
-        ProcessMemoryItem::new(*pid, name.clone(), *ram_bytes, *virtual_bytes, total_ram);
-    item.delta_bytes_per_sec = *delta;
-    item.exe_path.clone_from(exe_path);
+    let mut item = ProcessMemoryItem::new(
+        row.pid,
+        row.name.clone(),
+        row.ram_bytes,
+        row.virtual_bytes,
+        total_ram,
+    );
+    item.delta_bytes_per_sec = row.delta_bytes_per_sec;
+    item.exe_path.clone_from(&row.exe_path);
+    item.creation_time = row.creation_time;
     item
 }
 
@@ -87,10 +95,10 @@ pub fn filter_group_and_sort(
     let search_lower = search.to_lowercase();
     let mut items: Vec<ProcessMemoryItem> = processes
         .iter()
-        .filter(|(pid, name, _, _, _, _)| {
+        .filter(|row| {
             search.is_empty()
-                || search_lower == pid.to_string()
-                || name.to_lowercase().contains(&search_lower)
+                || search_lower == row.pid.to_string()
+                || row.name.to_lowercase().contains(&search_lower)
         })
         .map(|row| item_from_raw(row, total_ram))
         .collect();
@@ -151,12 +159,12 @@ pub fn detect_memory_spike(
     if current_ram_pct < 85.0 || total_ram == 0 {
         return None;
     }
-    let culprit = processes.iter().max_by_key(|(_, _, rb, _, _, _)| *rb);
-    culprit.map(|(pid, name, rb, _, _, _)| MemorySpikeEvent {
+    let culprit = processes.iter().max_by_key(|row| row.ram_bytes);
+    culprit.map(|row| MemorySpikeEvent {
         timestamp: format_timestamp_now(),
         peak_ram_pct: current_ram_pct,
-        culprit_name: name.clone(),
-        culprit_pid: *pid,
-        culprit_bytes: *rb,
+        culprit_name: row.name.clone(),
+        culprit_pid: row.pid,
+        culprit_bytes: row.ram_bytes,
     })
 }
