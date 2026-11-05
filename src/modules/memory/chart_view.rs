@@ -50,12 +50,15 @@ pub(crate) fn cached_points(
 }
 
 /// Extends a series so it spans the full window from `-span` to `0`.
-/// For a single point (startup), only draw a 1-second lead-in [-1.0, 0.0]
+/// For a single point (startup), only draw a 1-second lead-in [-1/60, 0]
 /// instead of stretching across the entire window.
+/// X coordinates are in MINUTES (see chart_axis::minutes_ago).
+const ONE_SEC_MIN: f64 = 1.0 / 60.0;
+
 fn anchored(mut points: Vec<[f64; 2]>, span: f64) -> Vec<[f64; 2]> {
     if points.len() == 1 {
         let y = points[0][1];
-        points.insert(0, [-1.0, y]);
+        points.insert(0, [-ONE_SEC_MIN, y]);
         points.push([0.0, y]);
         return points;
     }
@@ -106,7 +109,7 @@ pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemoryS
                     h.windowed_swap_timed().map(|(t, v)| [minutes_ago(t, now), v as f64]).collect()
                 };
                 if points.is_empty() {
-                    points.push([-span, flat_value]);
+                    points.push([-ONE_SEC_MIN, flat_value]);
                 }
                 anchored(points, span)
             });
