@@ -3,6 +3,16 @@
 All notable changes to **PULSE** (`pulse_manager`) are documented in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
 
+## [0.1.15] - 2026-11-05
+
+- **Zero Steady-State Syscalls**: `DeltaTracker` single-pass with cached `creation_time` (FILETIME) — eliminates ~70 `OpenProcess`/`GetProcessTimes` syscalls/s in steady state.
+- **Conditional `Arc<str>` Formatting**: `ProcessMemoryItem::update_formatted` now only re-allocates display strings when underlying numeric values change (RAM, virtual, delta, process count).
+- **Startup Chart Fix**: Single-point series renders a 1-second lead-in `[-1.0, y]..[0.0, y]` instead of stretching across the full window.
+- **Repaint Watchdog**: Fallback `request_repaint_after` reduced from 30 s to 2 s; minimized mode stays at 0 repaints.
+- **Cache Precision**: `TableCacheKey` now stores full `search_query: String` (no hash collisions); dead helper functions removed.
+- **Thread-Spam Guard**: `MemoryActionBarState::spawn` refuses new jobs while one is pending (0 deps, 2 lines).
+- **Automated Releases**: GitHub Actions `release.yml` builds on `stable` toolchain and publishes `PULSE_vX.Y.Z_windows_x64.exe` on tag push.
+
 ## [0.1.14] - 2026-11-04
 
 - **Adaptive Telemetry Cadence**: Background worker scans every `3 s` while the window is visible, `5 s` in the background, and stops rendering (`0 fps`) when minimized; event-driven UI wakeup plus zero-allocation `Arc<str>` process rows.

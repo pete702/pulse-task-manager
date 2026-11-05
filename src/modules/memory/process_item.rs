@@ -29,6 +29,13 @@ pub struct ProcessMemoryItem {
     pub pct_text: Arc<str>,
     pub delta_text: Arc<str>,
     pub clone_text: Arc<str>,
+
+    // Internal tracking for conditional formatting (avoids re-allocation when values unchanged)
+    last_fmt_ram_bytes: u64,
+    last_fmt_virt_bytes: u64,
+    last_fmt_delta: i64,
+    last_fmt_process_count: usize,
+    last_fmt_total_ram: u64,
 }
 
 impl ProcessMemoryItem {
@@ -42,6 +49,12 @@ impl ProcessMemoryItem {
     ) -> Self {
         let ram_pct =
             if total_ram > 0 { (ram_bytes as f64 / total_ram as f64 * 100.0) as f32 } else { 0.0 };
+        let pid_text = Arc::from(pid.to_string());
+        let ram_text = Arc::from(format_bytes(ram_bytes));
+        let virt_text = Arc::from(format_bytes(virtual_bytes));
+        let pct_text = Arc::from(format!("{ram_pct:.1}%"));
+        let delta_text = Arc::from("0 B/s");
+        let clone_text = Arc::from("");
         Self {
             pid,
             name: Arc::clone(&name),
@@ -53,33 +66,64 @@ impl ProcessMemoryItem {
             delta_bytes_per_sec: 0,
             exe_path: None,
             creation_time: None,
-            pid_text: Arc::from(pid.to_string()),
-            ram_text: Arc::from(format_bytes(ram_bytes)),
-            virt_text: Arc::from(format_bytes(virtual_bytes)),
-            pct_text: Arc::from(format!("{ram_pct:.1}%")),
-            delta_text: Arc::from("0 B/s"),
-            clone_text: Arc::from(""),
+            pid_text,
+            ram_text,
+            virt_text,
+            pct_text,
+            delta_text,
+            clone_text,
+            // Initialize tracking fields to force first formatting
+            last_fmt_ram_bytes: u64::MAX,
+            last_fmt_virt_bytes: u64::MAX,
+            last_fmt_delta: i64::MAX,
+            last_fmt_process_count: usize::MAX,
+            last_fmt_total_ram: u64::MAX,
         }
     }
 
-    /// Updates pre-formatted fields after values change.
+    /// Updates pre-formatted fields only when underlying numeric values change.
+    /// Avoids allocating new `Arc<str>` on every scan for stable processes.
     pub fn update_formatted(&mut self, total_ram: u64) {
-        self.ram_pct = if total_ram > 0 {
+        let new_ram_pct = if total_ram > 0 {
             (self.ram_bytes as f64 / total_ram as f64 * 100.0) as f32
         } else {
             0.0
         };
-        self.is_hog = self.ram_pct >= 15.0;
-        self.pid_text = Arc::from(self.pid.to_string());
-        self.ram_text = Arc::from(format_bytes(self.ram_bytes));
-        self.virt_text = Arc::from(format_bytes(self.virtual_bytes));
-        self.pct_text = Arc::from(format!("{:.1}%", self.ram_pct));
-        self.delta_text = Arc::from(format_delta(self.delta_bytes_per_sec));
-        self.clone_text = if self.process_count > 1 {
-            Arc::from(format!("[{}]x", self.process_count))
-        } else {
-            Arc::from("")
-        };
+        let new_is_hog = new_ram_pct >= 15.0;
+
+        // pid_text never changes (PID is stable), skip reformatting
+        // ram_text: only if ram_bytes changed
+        if self.ram_bytes != self.last_fmt_ram_bytes {
+            self.ram_text = Arc::from(format_bytes(self.ram_bytes));
+            self.last_fmt_ram_bytes = self.ram_bytes;
+        }
+        // virt_text: only if virtual_bytes changed
+        if self.virtual_bytes != self.last_fmt_virt_bytes {
+            self.virt_text = Arc::from(format_bytes(self.virtual_bytes));
+            self.last_fmt_virt_bytes = self.virtual_bytes;
+        }
+        // pct_text: only if ram_pct changed (depends on ram_bytes and total_ram)
+        if self.ram_bytes != self.last_fmt_ram_bytes || total_ram != self.last_fmt_total_ram {
+            self.pct_text = Arc::from(format!("{new_ram_pct:.1}%"));
+            self.last_fmt_total_ram = total_ram;
+        }
+        // delta_text: only if delta_bytes_per_sec changed
+        if self.delta_bytes_per_sec != self.last_fmt_delta {
+            self.delta_text = Arc::from(format_delta(self.delta_bytes_per_sec));
+            self.last_fmt_delta = self.delta_bytes_per_sec;
+        }
+        // clone_text: only if process_count changed
+        if self.process_count != self.last_fmt_process_count {
+            self.clone_text = if self.process_count > 1 {
+                Arc::from(format!("[{}]x", self.process_count))
+            } else {
+                Arc::from("")
+            };
+            self.last_fmt_process_count = self.process_count;
+        }
+
+        self.ram_pct = new_ram_pct;
+        self.is_hog = new_is_hog;
     }
 }
 

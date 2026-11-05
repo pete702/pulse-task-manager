@@ -169,7 +169,7 @@ impl eframe::App for PulseApp {
                 );
             });
         self.last_ui_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
-        ctx.request_repaint_after(std::time::Duration::from_millis(30000));
+        ctx.request_repaint_after(std::time::Duration::from_millis(2000));
     }
 }
 
