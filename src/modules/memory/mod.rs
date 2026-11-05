@@ -8,6 +8,7 @@ pub mod action_bar_view;
 pub mod actions;
 pub mod chart_axis;
 pub mod chart_chrome;
+pub mod chart_hud;
 pub mod chart_view;
 pub mod collector;
 pub mod composition_bar;

@@ -1,9 +1,10 @@
 //! Multi-horizon neon chart for PULSE memory telemetry (1m / 5m / 15m).
 use crate::i18n::Key;
-use crate::modules::memory::chart_axis::{
-    format_tick_label, minutes_ago, window_minutes, x_axis_ticks,
-};
+use crate::modules::memory::chart_axis::{minutes_ago, window_minutes};
 use crate::modules::memory::chart_chrome::render_header;
+use crate::modules::memory::chart_hud::{
+    draw_hud_legend, draw_x_axis_hud_labels, draw_y_axis_hud_labels,
+};
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::model::{ChartWindow, MemorySnapshot};
 use crate::theme::colors;
@@ -74,53 +75,6 @@ fn anchored(mut points: Vec<[f64; 2]>, _span: f64) -> Vec<[f64; 2]> {
     points
 }
 
-/// Draws Y-axis percentage labels (100%, 75%, 50%, 25%) inside the right edge of plot_rect.
-fn draw_y_axis_hud_labels(ui: &egui::Ui, plot_rect: egui::Rect) {
-    let painter = ui.painter();
-    let hud_label = egui::Color32::from_rgba_unmultiplied(148, 163, 184, 135);
-    // 100% at top
-    painter.text(
-        egui::pos2(plot_rect.right() - 6.0, plot_rect.top() + 3.0),
-        egui::Align2::RIGHT_TOP,
-        "100%",
-        egui::FontId::monospace(10.0),
-        hud_label,
-    );
-    // 75%, 50%, 25% down the right edge
-    for (pct, label) in [(75.0, "75%"), (50.0, "50%"), (25.0, "25%")] {
-        let y = plot_rect.bottom() - (pct / 100.0) * plot_rect.height();
-        painter.text(
-            egui::pos2(plot_rect.right() - 6.0, y - 2.0),
-            egui::Align2::RIGHT_BOTTOM,
-            label,
-            egui::FontId::monospace(10.0),
-            hud_label,
-        );
-    }
-}
-
-/// Draws X-axis time labels inside the bottom edge of plot_rect.
-fn draw_x_axis_hud_labels(ui: &egui::Ui, plot_rect: egui::Rect, window: ChartWindow) {
-    let painter = ui.painter();
-    let hud_label = egui::Color32::from_rgba_unmultiplied(148, 163, 184, 165);
-    let ticks = x_axis_ticks(window);
-    let y = plot_rect.bottom() - 4.0;
-    let count = ticks.len();
-    for (idx, tick) in ticks.iter().enumerate() {
-        let fraction = if count > 1 { idx as f32 / (count - 1) as f32 } else { 0.0 };
-        let x = plot_rect.left() + fraction * plot_rect.width();
-        let label = format_tick_label(window, *tick);
-        let align = if idx == 0 {
-            egui::Align2::LEFT_BOTTOM
-        } else if idx + 1 == count {
-            egui::Align2::RIGHT_BOTTOM
-        } else {
-            egui::Align2::CENTER_BOTTOM
-        };
-        painter.text(egui::pos2(x, y), align, label, egui::FontId::monospace(11.0), hud_label);
-    }
-}
-
 pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemorySnapshot) {
     let mut selected = selected_window(ui.ctx());
     crate::theme::card_frame().show(ui, |ui| {
@@ -162,18 +116,15 @@ pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemoryS
 
             let (ram_points, purple_points) =
                 (PlotPoints::new(ram_raw), PlotPoints::new(purple_raw));
-            // Full-width, full-height plot inside the card
+            // Full-width, full-height plot inside the card — flush with MEMORY COMPOSITION bar
             let plot_height = ui.available_height().max(90.0);
             let plot_width = ui.available_width().max(120.0);
-            let legend = if has_commit { "Commit %" } else { "Swap %" };
-            let plot = Plot::new(("mpp", selected.seconds()))
+            let plot_response = Plot::new(("mpp", selected.seconds()))
                 .width(plot_width)
                 .height(plot_height)
-                .show_grid([false, true])
+                .show_axes([false, false])
+                .show_grid([true, true])
                 .auto_bounds(egui::Vec2b::new(false, false))
-                // Disable built-in axis formatters — we draw our own HUD labels
-                .x_axis_formatter(|_, _, _| String::new())
-                .y_axis_formatter(|_, _, _| String::new())
                 .y_grid_spacer(move |_| Y_GRID.to_vec())
                 .include_x(-span)
                 .include_x(0.0)
@@ -196,11 +147,6 @@ pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemoryS
                         format!("{}\n{}: {:.1}%", name, when, value.y)
                     }
                 })
-                .legend(
-                    egui_plot::Legend::default()
-                        .position(egui_plot::Corner::LeftTop)
-                        .text_style(egui::TextStyle::Monospace),
-                )
                 .show(ui, |pu| {
                     pu.hline(
                         HLine::new(85.0)
@@ -216,15 +162,16 @@ pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemoryS
                     );
                     pu.line(
                         Line::new(purple_points)
-                            .name(legend)
+                            .name(if has_commit { "Commit %" } else { "Swap %" })
                             .color(colors::ACCENT_PURPLE)
                             .width(1.8_f32),
                     );
                 });
-            // Draw in-canvas HUD axis labels using the plot's frame rect
-            let frame = plot.transform.frame();
-            draw_y_axis_hud_labels(ui, *frame);
-            draw_x_axis_hud_labels(ui, *frame, selected);
+            // Draw in-canvas HUD axis labels and legend using the plot's frame rect
+            let plot_rect = *plot_response.transform.frame();
+            draw_y_axis_hud_labels(ui, plot_rect);
+            draw_x_axis_hud_labels(ui, plot_rect, selected);
+            draw_hud_legend(ui, plot_rect, has_commit);
         });
     });
 }

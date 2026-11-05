@@ -19,6 +19,28 @@ pub enum MemorySortCol {
     RamPct,
 }
 
+/// Checks if `haystack` contains `needle` case-insensitively.
+/// For ASCII needle: zero-allocation byte-wise comparison.
+/// For non-ASCII needle: falls back to lowercase comparison (allocates).
+#[inline]
+fn contains_ci(haystack: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    if needle.is_ascii() {
+        let needle_bytes = needle.as_bytes();
+        let haystack_bytes = haystack.as_bytes();
+        if needle_bytes.len() > haystack_bytes.len() {
+            return false;
+        }
+        // Case-insensitive ASCII search using byte windows
+        haystack_bytes.windows(needle_bytes.len()).any(|w| w.eq_ignore_ascii_case(needle_bytes))
+    } else {
+        // Non-ASCII: fall back to lowercase (allocates, but rare)
+        haystack.to_lowercase().contains(&needle.to_lowercase())
+    }
+}
+
 /// Filters, groups (by name), and sorts process memory items.
 #[allow(dead_code)]
 pub fn filter_group_and_sort(
@@ -29,13 +51,13 @@ pub fn filter_group_and_sort(
     sort_col: MemorySortCol,
     sort_asc: bool,
 ) -> Vec<ProcessMemoryItem> {
-    let search_lower = search.to_lowercase();
+    let search_trimmed = search.trim();
     let mut items: Vec<ProcessMemoryItem> = processes
         .iter()
         .filter(|row| {
-            search.is_empty()
-                || search_lower == row.pid.to_string()
-                || row.name.to_lowercase().contains(&search_lower)
+            search_trimmed.is_empty()
+                || search_trimmed == row.pid.to_string()
+                || contains_ci(&row.name, search_trimmed)
         })
         .map(|row| item_from_raw(row, total_ram))
         .collect();

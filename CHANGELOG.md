@@ -3,6 +3,15 @@
 All notable changes to **PULSE** (`pulse_manager`) are documented in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
 
+## [0.1.17] - 2026-11-05
+
+- **Flush-Aligned Chart**: Memory chart now uses `.show_axes([false, false])` + `.show_grid([true, true])` for pixel-perfect left/right alignment with the `MEMORY COMPOSITION` bar above; no more gutter gaps.
+- **Translucent In-Canvas HUD Legend**: Removed opaque `egui_plot` legend box; custom HUD legend drawn at top-left of plot canvas with filled circles (cyan RAM, purple Commit/Swap) and monospace labels — zero background, translucent text.
+- **HUD Axis Labels Refined**: X-axis time labels now use `plot_rect.left() + 8.0` / `plot_rect.right() - 8.0` padding for first/last ticks so `-60s`/`-5m`/`-15m` and `0s`/`0m` are never clipped.
+- **Font RAM Savings**: Removed redundant `seguisym.ttf` loading (~6 MB glyph cache / GPU texture atlas saved); all geometric symbols (`•`, `▲`, `▼`, `✓`, `[01]..[05]`, `||`, `>`) natively supported by `segoeui.ttf` + `consola.ttf`.
+- **Zero-Allocation Process Search**: Added `contains_ci()` helper using `as_bytes().windows().eq_ignore_ascii_case()` for ASCII queries — no `to_lowercase()` allocations per process row per scan; falls back to lowercase only for non-ASCII.
+- **README Latest Release Link**: Stale `v0.1.14` download link replaced with version-independent `releases/latest`; guarded by `docs_guard` test.
+
 ## [0.1.16] - 2026-11-05
 
 - **Chart Growth Fix**: `anchored()` now only anchors right edge to `0.0`; left edge grows naturally leftward as history accumulates — no more full-width jump on sample #2.
@@ -30,41 +39,41 @@ Binary assets and checksums are published on [GitHub Releases](https://github.co
 
 ## [0.1.11] - 2026-11-04
 
-- **Phase 1 Memory Subsystem Frozen**: 3-segment RAM composition bar (In Use / Cached / Free), live Commit % history chart (`1m/5m/15m`), frame-aligned time scale.
-- **Unified O(1) Table Cache & Identity Gates**: `MemoryTableState` keyed by `process_scan_id`; `verify_handle_identity` fails closed without a valid `creation_time`; frozen `PendingKillConfirm` targets.
-- **dGPU Sleep Exports & Kernel Tile Fixes**: Zeroed 3D buffers cut ~29 MB of working set; tiles sized from inner width with correct 100% bar allocation.
+- **Phase 1 Memory Subsystem Frozen**: 3-segment RAM composition bar, live Commit % chart (`1m/5m/15m`), frame-aligned time scale.
+- **Unified O(1) Table Cache & Identity Gates**: `MemoryTableState` keyed by `process_scan_id`; `verify_handle_identity` fails closed.
+- **dGPU Sleep Exports & Kernel Tiles**: Zeroed 3D buffers cut ~29 MB working set.
 - **130 Tests Passing**: 126 unit + 4 `docs_guard`; release build verified.
 
 ## [0.1.2] - 2026-11-04
 
-- **Zero-Copy `Arc` Polling**: System RAM at 1 Hz, process scans at 0.5 Hz (2 s); minimized mode pauses scans and shares `Arc<Vec<RawProcessRow>>` zero-copy (~0.12 ms fast ticks).
-- **O(1) UI Table & Selection Cache**: `MemoryTableState` keyed by `process_scan_id` short-circuits on unchanged scan ID, filter, sort, or grouping; `SelectedGroupSummary` never re-iterates raw rows.
-- **3-Point PID Identity & Frozen Kills**: `basename + creation_time + full_path` checked before `EmptyWorkingSet` / `TerminateProcess`; first `[ End Task ]` click freezes the exact target list; background `Open Location` with `OnceLock` elevation.
-- **Single Frame-#3 Self-Trim & CLI Flags**: One `K32EmptyWorkingSet` after GPU init; `--version` / `--help` exit cleanly without launching the GUI; 124 tests passing.
+- **Zero-Copy `Arc` Polling**: System RAM 1 Hz, process scans 0.5 Hz; minimized pauses scans, shares `Arc<Vec<RawProcessRow>>` zero-copy.
+- **O(1) UI Table & Selection Cache**: `MemoryTableState` keyed by `process_scan_id` short-circuits on unchanged scan ID.
+- **3-Point PID Identity & Frozen Kills**: `basename + creation_time + full_path` checked before `EmptyWorkingSet` / `TerminateProcess`.
+- **Single Frame-#3 Self-Trim & CLI Flags**: One `K32EmptyWorkingSet` after GPU init; `--version` / `--help` exit cleanly.
 
 ## [0.1.1] - 2026-11-03
 
-- **Raw Process Actions**: `Trim Working Sets`, `Trim Selected`, `Open Location`, and `End Task` target raw process rows with explicit PID; `exe_path` feeds `Open Location`.
-- **`dt`-Normalized `Δ RAM/s`**: Per-process deltas divide by the real sample interval, removing 1 Hz drift from the leak hunter.
-- **Minute-Based `1m/5m/15m` Chart**: X-axis labeled in minutes with right-edge padding; worker `LatestSlot` keeps the newest snapshot when bounded channels are full.
-- **Rust 1.85 CI Lockfile Fix**: MSRV pinned to `rust-version = "1.85"`; locked dependencies, fmt/clippy/test/build all run on `stable`.
+- **Raw Process Actions**: `Trim Working Sets`, `Trim Selected`, `Open Location`, `End Task` target raw rows with explicit PID.
+- **`dt`-Normalized `Δ RAM/s`**: Per-process deltas divide by real sample interval.
+- **Minute-Based `1m/5m/15m` Chart**: X-axis in minutes with right-edge padding; worker `LatestSlot` keeps newest snapshot.
+- **Rust 1.85 CI Lockfile Fix**: MSRV pinned to `rust-version = "1.85"`; locked deps, fmt/clippy/test/build on `stable`.
 
 ## [0.1.0] - 2026-11-03
 
-- **Phase 1 Memory Subsystem Complete**: Non-blocking Memory Action Bar (`action_bar.rs`) with working-set trim, trim selected, end task, open file location, and Before/After `ReclaimReport` audit.
-- **Three Walls Badge & Chart Selector**: Live `SYSTEM OPTIMAL` / `MEMORY WALL` / `COMPUTE WALL` / `I/O WALL` header badge; cached `PlotPoints` for zero-realloc `1m/5m/15m` switching.
-- **5-Column Aligned Process Table**: Column definitions match header/row cells 1-to-1; selection via the Process Name cell; worker `LatestSlot` channel for newest-snapshot access.
-- **Audit Fixes**: Removed all 24 `rustfmt` skip attributes; 180-line limit for all `.rs` files in `src/` and `tests/`; panic log hook in `main.rs`; `[0u16; 1024]` identity buffer in `safe_handle.rs`.
+- **Phase 1 Memory Subsystem Complete**: Non-blocking Action Bar with trim, end task, open location, `ReclaimReport` audit.
+- **Three Walls Badge & Chart Selector**: Live `SYSTEM OPTIMAL` / `MEMORY WALL` badge; cached `PlotPoints` for zero-realloc switching.
+- **5-Column Aligned Process Table**: Column defs match header/row 1-to-1; selection via Process Name cell.
+- **Audit Fixes**: Removed all fmt skip attrs; 180-line limit; panic log hook; `[0u16; 1024]` identity buffer.
 
 ## [0.0.16] - 2026-11-03
 
-- **TOCTOU Handle Identity Verification**: `verify_handle_identity` via `QueryFullProcessImageNameW` with enforced `IsProcessCritical` checks in trim and terminate paths; cross-platform `CommandExt` gating.
-- **Resource P1 Optimizations**: `search_hash: u64` + `uptime_secs` cache key, cached uptime formatting, reusable delta `HashSet<u32>`, and a compacted process table body.
-- **CI & Repo Hygiene**: `--locked` on all cargo commands, MSRV `1.85` CI job, and a recursive guard enforcing `0` NUL bytes, `0` Cyrillic characters, and per-file line limits.
+- **TOCTOU Handle Identity Verification**: `verify_handle_identity` via `QueryFullProcessImageNameW` with `IsProcessCritical` checks.
+- **Resource P1 Optimizations**: `search_hash: u64` + `uptime_secs` cache key, cached uptime formatting, reusable delta `HashSet<u32>`.
+- **CI & Repo Hygiene**: `--locked` on all cargo commands, MSRV `1.85` CI job, recursive guard for `0` NUL/Cyrillic/line limits.
 
 ## [0.0.15] - 2026-11-03
 
-- **Win32 Safety & Path Normalization Fixes**: Made `SafeHandle` raw field private, wrapped `OpenProcessToken` in RAII, added `IsProcessCritical` checks, and fixed full-path normalization in `verify_pid_safety_gate`.
-- **Accurate Trim Accounting & Explorer Launch**: Fixed post-trim `K32GetProcessMemoryInfo` failure handling in `ReclaimReport` and switched `open_process_file_location` to `CommandExt::raw_arg` for paths with spaces.
-- **Documentation & Placeholder Sync**: Synced `ARCHITECTURE.md` theme/FFI tokens with `src/theme.rs` and `src/main.rs`, and matched placeholder tab versions to the roadmap.
+- **Win32 Safety & Path Normalization**: `SafeHandle` raw field private, `OpenProcessToken` RAII, `IsProcessCritical` checks.
+- **Accurate Trim Accounting & Explorer Launch**: Fixed post-trim `K32GetProcessMemoryInfo` handling; `CommandExt::raw_arg` for paths with spaces.
+- **Documentation & Placeholder Sync**: Synced `ARCHITECTURE.md` tokens with `src/theme.rs` / `src/main.rs`.
 

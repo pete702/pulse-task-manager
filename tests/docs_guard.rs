@@ -22,6 +22,8 @@ const FORBIDDEN_TOKENS: &[&str] = &[
     "100% Anti-Cheat",
     "free forever",
     "rustfmt::skip",
+    "/releases/download/v0.1.14",
+    "/releases/tag/v0.1.14",
 ];
 
 const SOURCE_FILES: &[&str] = &["Cargo.toml", "tests/docs_guard.rs"];
@@ -95,6 +97,13 @@ fn markdown_docs_respect_size_and_content_rules() {
         );
         for token in FORBIDDEN_TOKENS {
             assert!(!content.contains(token), "{} contains forbidden token: {:?}", rel, token);
+        }
+        // README.md must link to latest release, not a specific version
+        if *rel == "README.md" {
+            assert!(
+                content.contains("https://github.com/pete702/pulse-task-manager/releases/latest"),
+                "README.md must contain latest release link"
+            );
         }
         check_text_file(&path, rel);
     }
