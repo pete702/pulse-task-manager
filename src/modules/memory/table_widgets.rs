@@ -18,7 +18,7 @@ pub(super) fn render_spike_banner(ui: &mut egui::Ui, spike: &MemorySpikeEvent) {
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new("⚠️ HIGH RAM PRESSURE")
+                    egui::RichText::new("▲ HIGH RAM PRESSURE")
                         .monospace()
                         .size(12.0)
                         .strong()
@@ -62,13 +62,13 @@ pub(super) fn render_toolbar(
     state: &mut MemoryTableState,
 ) {
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("🔍").size(14.0));
+        ui.label(egui::RichText::new("Search:").monospace().size(12.0));
         ui.add(
             egui::TextEdit::singleline(&mut state.search_query)
                 .desired_width(220.0)
                 .hint_text("Search: name or PID"),
         );
-        if !state.search_query.is_empty() && ui.button("✕").clicked() {
+        if !state.search_query.is_empty() && ui.button("×").clicked() {
             state.search_query.clear();
         }
         ui.separator();

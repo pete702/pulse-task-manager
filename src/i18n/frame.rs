@@ -8,16 +8,16 @@ impl Lang {
     pub(super) fn translate_frame(self, key: Key) -> Option<&'static str> {
         match (self, key) {
             // Top bar / window chrome
-            (Lang::En, Key::AppTitle) => Some("⚡ PULSE // TELEMETRY"),
+            (Lang::En, Key::AppTitle) => Some("▲ PULSE // TELEMETRY"),
             (Lang::En, Key::VersionPrefix) => Some("v"),
             (Lang::En, Key::UptimeLabel) => Some("Uptime"),
 
             // Sidebar tabs (geometric Unicode symbols, no emoji)
-            (Lang::En, Key::TabMemory) => Some("◈ Memory (RAM)"),
-            (Lang::En, Key::TabCpu) => Some("▣ Processor (CPU)"),
-            (Lang::En, Key::TabStorage) => Some("◧ Storage (Disks)"),
-            (Lang::En, Key::TabNetwork) => Some("⇅ Network & Ping"),
-            (Lang::En, Key::TabSystem) => Some("⚙ System & GPU"),
+            (Lang::En, Key::TabMemory) => Some("[01] Memory (RAM)"),
+            (Lang::En, Key::TabCpu) => Some("[02] Processor (CPU)"),
+            (Lang::En, Key::TabStorage) => Some("[03] Storage (Disks)"),
+            (Lang::En, Key::TabNetwork) => Some("[04] Network & Ping"),
+            (Lang::En, Key::TabSystem) => Some("[05] System & GPU"),
 
             // Central panel
             (Lang::En, Key::AwaitingMemoryModel) => {

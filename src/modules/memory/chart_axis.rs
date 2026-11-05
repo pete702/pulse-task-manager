@@ -43,3 +43,28 @@ pub fn axis_label(window_secs: u32, mark: f64) -> String {
         format_minutes(mark)
     }
 }
+
+/// Returns the X-axis tick marks (in minutes) for the given chart window.
+/// These are used for in-canvas HUD labels.
+pub fn x_axis_ticks(window: ChartWindow) -> Vec<f64> {
+    match window {
+        ChartWindow::OneMin => vec![-1.0, -0.75, -0.5, -0.25, 0.0],
+        ChartWindow::FiveMin => vec![-5.0, -4.0, -3.0, -2.0, -1.0, 0.0],
+        ChartWindow::FifteenMin => vec![-15.0, -12.0, -9.0, -6.0, -3.0, 0.0],
+    }
+}
+
+/// Formats a tick value (in minutes) to a label string.
+pub fn format_tick_label(window: ChartWindow, tick: f64) -> String {
+    if tick.abs() < 0.01 {
+        if window.seconds() == 60 {
+            "0s".to_owned()
+        } else {
+            "0m".to_owned()
+        }
+    } else if window.seconds() == 60 {
+        format!("{:.0}s", tick * 60.0)
+    } else {
+        format!("{:.0}m", tick.abs())
+    }
+}

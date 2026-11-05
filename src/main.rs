@@ -131,7 +131,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1180.0_f32, 760.0_f32])
             .with_min_inner_size([950.0_f32, 620.0_f32])
-            .with_title("⚡ PULSE")
+            .with_title("▲ PULSE")
             .with_icon(generate_icon()),
         // 2D telemetry UI needs zero 3D depth/stencil/MSAA buffers
         depth_buffer: 0,

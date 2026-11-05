@@ -3,6 +3,14 @@
 All notable changes to **PULSE** (`pulse_manager`) are documented in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
 
+## [0.1.16] - 2026-11-05
+
+- **Chart Growth Fix**: `anchored()` now only anchors right edge to `0.0`; left edge grows naturally leftward as history accumulates — no more full-width jump on sample #2.
+- **Flush Full-Width Plot**: Chart now uses full card width/height; external time-scale row removed.
+- **In-Canvas HUD Axis Labels**: Y-axis `%` labels (100/75/50/25) drawn inside right edge; X-axis time labels drawn inside bottom edge — both translucent monospace.
+- **Font Fallback**: Added `seguisym.ttf` (Segoe UI Symbol) as fallback for geometric symbols in both Proportional and Monospace families.
+- **Emoji → Geometric Symbols**: All UI emojis replaced with crisp geometric symbols (`▲`, `▣`, `◧`, `×`, `◻`, `||`, `>`, `•`, `[01]..[05]` prefixes) — no more `?` missing-glyph boxes.
+
 ## [0.1.15] - 2026-11-05
 
 - **Zero Steady-State Syscalls**: `DeltaTracker` single-pass with cached `creation_time` (FILETIME) — eliminates ~70 `OpenProcess`/`GetProcessTimes` syscalls/s in steady state.

@@ -10,14 +10,14 @@ pub(super) fn render_context_menu(
     _state: &mut MemoryTableState,
 ) {
     if let Some(path) = item.exe_path.as_deref() {
-        if ui.button("📂 Open File Location").clicked() {
+        if ui.button("◧ Open File Location").clicked() {
             let _ = crate::modules::memory::actions::open_process_file_location(
                 std::path::Path::new(path),
             );
             ui.close_menu();
         }
     }
-    if ui.button("✂ Terminate Process").clicked() {
+    if ui.button("× Terminate Process").clicked() {
         crate::core::request_process_scan();
         let items = vec![ProcessTarget::from_raw(&RawProcessRow {
             pid: item.pid,
@@ -31,7 +31,7 @@ pub(super) fn render_context_menu(
         let _ = crate::modules::memory::actions::terminate_process_group(&items);
         ui.close_menu();
     }
-    if ui.button("📋 Copy Name & PID").clicked() {
+    if ui.button("◻ Copy Name & PID").clicked() {
         ui.output_mut(|o| o.copied_text = format!("{} (PID {})", item.name, item.pid));
         ui.close_menu();
     }

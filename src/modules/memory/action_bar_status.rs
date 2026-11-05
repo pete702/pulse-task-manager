@@ -50,7 +50,7 @@ pub(super) fn selection_info(
             );
             if v.blocked {
                 ui.label(
-                    egui::RichText::new("[ 🛡️ OS PROTECTED ]")
+                    egui::RichText::new("[ ▣ OS PROTECTED ]")
                         .monospace()
                         .size(10.0)
                         .color(colors::ACCENT_RED),

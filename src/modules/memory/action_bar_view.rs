@@ -42,7 +42,7 @@ fn trim_all_button(
     busy: bool,
 ) {
     let enabled = !busy && !mem.processes.is_empty();
-    let btn = ui.add_enabled(enabled, egui::Button::new("⚡ Trim Working Sets"));
+    let btn = ui.add_enabled(enabled, egui::Button::new("Trim Working Sets"));
     let btn = if enabled {
         btn.on_hover_text("Trim every eligible raw process (ignores search and grouping)")
     } else if busy {
@@ -163,7 +163,7 @@ fn end_task_button(
     }
 }
 fn pause_button(ui: &mut egui::Ui, paused: &mut bool, busy: bool) {
-    let label = if *paused { "▶ Resume (Paused)" } else { "⏸ Pause" };
+    let label = if *paused { "> Resume (Paused)" } else { "|| Pause" };
     let color = if *paused { colors::ACCENT_AMBER } else { colors::ACCENT_CYAN };
     let btn = ui
         .add_enabled(!busy, egui::Button::new(egui::RichText::new(label).color(color).monospace()));

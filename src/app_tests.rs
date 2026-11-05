@@ -48,17 +48,17 @@ fn test_active_tab_all() {
 #[test]
 fn test_active_tab_label_en() {
     set_lang(Lang::En);
-    assert_eq!(ActiveTab::Memory.label(), "◈ Memory (RAM)");
-    assert_eq!(ActiveTab::Cpu.label(), "▣ Processor (CPU)");
-    assert_eq!(ActiveTab::Storage.label(), "◧ Storage (Disks)");
-    assert_eq!(ActiveTab::Network.label(), "⇅ Network & Ping");
-    assert_eq!(ActiveTab::System.label(), "⚙ System & GPU");
+    assert_eq!(ActiveTab::Memory.label(), "[01] Memory (RAM)");
+    assert_eq!(ActiveTab::Cpu.label(), "[02] Processor (CPU)");
+    assert_eq!(ActiveTab::Storage.label(), "[03] Storage (Disks)");
+    assert_eq!(ActiveTab::Network.label(), "[04] Network & Ping");
+    assert_eq!(ActiveTab::System.label(), "[05] System & GPU");
 }
 
 #[test]
 fn test_i18n_keys() {
     set_lang(Lang::En);
-    assert_eq!(Key::AppTitle.t(), "⚡ PULSE // TELEMETRY");
+    assert_eq!(Key::AppTitle.t(), "▲ PULSE // TELEMETRY");
     assert_eq!(Key::VersionPrefix.t(), "v");
     assert_eq!(Key::UptimeLabel.t(), "Uptime");
     assert_eq!(Key::AwaitingMemoryModel.t(), "Telemetry core active. Awaiting memory model...");

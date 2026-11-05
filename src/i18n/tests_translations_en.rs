@@ -6,16 +6,16 @@ use crate::i18n::{set_lang, Key, Lang};
 fn test_key_translation_en() {
     set_lang(Lang::En);
     // Top bar / window chrome
-    assert_eq!(Key::AppTitle.t(), "⚡ PULSE // TELEMETRY");
+    assert_eq!(Key::AppTitle.t(), "▲ PULSE // TELEMETRY");
     assert_eq!(Key::VersionPrefix.t(), "v");
     assert_eq!(Key::UptimeLabel.t(), "Uptime");
 
     // Sidebar tabs
-    assert_eq!(Key::TabMemory.t(), "◈ Memory (RAM)");
-    assert_eq!(Key::TabCpu.t(), "▣ Processor (CPU)");
-    assert_eq!(Key::TabStorage.t(), "◧ Storage (Disks)");
-    assert_eq!(Key::TabNetwork.t(), "⇅ Network & Ping");
-    assert_eq!(Key::TabSystem.t(), "⚙ System & GPU");
+    assert_eq!(Key::TabMemory.t(), "[01] Memory (RAM)");
+    assert_eq!(Key::TabCpu.t(), "[02] Processor (CPU)");
+    assert_eq!(Key::TabStorage.t(), "[03] Storage (Disks)");
+    assert_eq!(Key::TabNetwork.t(), "[04] Network & Ping");
+    assert_eq!(Key::TabSystem.t(), "[05] System & GPU");
 
     // Central panel
     assert_eq!(Key::AwaitingMemoryModel.t(), "Telemetry core active. Awaiting memory model...");
@@ -29,8 +29,8 @@ fn test_key_translation_en() {
     assert_eq!(Key::StatusReady.t(), "● READY");
 
     // Memory module - Card headers
-    assert_eq!(Key::PhysicalRamTitle.t(), "◈ PHYSICAL MEMORY (RAM)");
-    assert_eq!(Key::SwapCommitTitle.t(), "▣ SWAP FILE & COMMIT");
+    assert_eq!(Key::PhysicalRamTitle.t(), "• PHYSICAL MEMORY (RAM)");
+    assert_eq!(Key::SwapCommitTitle.t(), "• SWAP FILE & COMMIT");
 
     // Memory module - Grid labels (Card 1: RAM)
     assert_eq!(Key::UsedTotal.t(), "Used / Total");

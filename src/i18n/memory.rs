@@ -9,8 +9,8 @@ impl Lang {
     pub(super) fn translate_memory(self, key: Key) -> Option<&'static str> {
         match (self, key) {
             // Memory module - Card headers
-            (Lang::En, Key::PhysicalRamTitle) => Some("◈ PHYSICAL MEMORY (RAM)"),
-            (Lang::En, Key::SwapCommitTitle) => Some("▣ SWAP FILE & COMMIT"),
+            (Lang::En, Key::PhysicalRamTitle) => Some("• PHYSICAL MEMORY (RAM)"),
+            (Lang::En, Key::SwapCommitTitle) => Some("• SWAP FILE & COMMIT"),
             (Lang::En, Key::MemoryCompositionTitle) => Some("● MEMORY COMPOSITION"),
 
             // Memory module - Grid labels (Card 1: RAM)

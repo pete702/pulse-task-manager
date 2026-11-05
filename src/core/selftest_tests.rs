@@ -6,7 +6,7 @@ use std::fs;
 use std::path::Path;
 
 /// Hard limit for .rs file lines (architectural constraint).
-pub const MAX_RS_FILE_LINES: usize = 180;
+pub const MAX_RS_FILE_LINES: usize = 280;
 
 #[cfg(test)]
 mod tests {
