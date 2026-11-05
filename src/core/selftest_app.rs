@@ -15,11 +15,13 @@ pub struct SelfTestApp {
     snapshot_rx: mpsc::Receiver<Arc<SystemSnapshot>>,
     latest_snapshot: Option<Arc<SystemSnapshot>>,
     test_passed: bool,
+    /// Keep the worker alive to produce snapshots.
+    _worker: crate::core::TelemetryWorker,
 }
 
 impl SelfTestApp {
     pub fn new(headless: bool) -> Self {
-        let snapshot_rx = spawn_telemetry_worker().rx;
+        let (worker, snapshot_rx) = spawn_telemetry_worker();
         Self {
             headless,
             frames_rendered: 0,
@@ -27,6 +29,7 @@ impl SelfTestApp {
             snapshot_rx,
             latest_snapshot: None,
             test_passed: false,
+            _worker: worker,
         }
     }
 }

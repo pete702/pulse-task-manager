@@ -5,11 +5,12 @@
 //! - `group_clones == false` → only the single process matching `selected_pid`.
 
 use crate::modules::memory::model::RawProcessRow;
+use crate::modules::memory::process_target::ProcessTarget;
+use crate::modules::memory::safe_handle::verify_pid_safety_gate;
+use crate::modules::memory::win32_api::query_process_exe_path;
 
 #[cfg(test)]
 use crate::modules::memory::model::MemorySnapshot;
-use crate::modules::memory::process_target::ProcessTarget;
-use crate::modules::memory::safe_handle::verify_pid_safety_gate;
 
 /// Strips a trailing clone marker such as `[60x]` or `(60x)` from a display name.
 pub fn base_group_key(name: &str) -> &str {
@@ -90,6 +91,13 @@ pub fn resolve_selection(
     let pids: Vec<u32> = targets.iter().map(|item| item.pid).collect();
     let blocked =
         pids.is_empty() || pids.iter().any(|pid| verify_pid_safety_gate(*pid, key).is_err());
-    let path = targets.iter().find_map(|t| t.exe_path.clone().filter(|p| !p.is_empty()));
+
+    // Find the first target with an exe_path, or query on-demand if none available
+    let path =
+        targets.iter().find_map(|t| t.exe_path.clone().filter(|p| !p.is_empty())).or_else(|| {
+            // On-demand query: try to get exe_path for the first target
+            targets.first().and_then(|t| query_process_exe_path(t.pid))
+        });
+
     Some(SelectionView { name: key.to_owned(), targets, pids, blocked, path })
 }

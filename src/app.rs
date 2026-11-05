@@ -21,9 +21,12 @@ pub struct PulseApp {
     snapshot_rx: mpsc::Receiver<Arc<SystemSnapshot>>,
     latest_slot: LatestSlot,
     worker_minimized: Arc<AtomicBool>,
+    /// True when the Processes sub-tab is active (drives 3s vs 5s scan cadence).
+    processes_tab_active: Arc<AtomicBool>,
     latest_snapshot: Option<Arc<SystemSnapshot>>,
     active_tab: crate::app_tabs::ActiveTab,
     memory_sub_view: MemorySubView,
+    prev_memory_sub_view: MemorySubView,
     table_state: MemoryTableState,
     action_state: MemoryActionBarState,
     frame_count: u64,
@@ -32,17 +35,29 @@ pub struct PulseApp {
     was_minimized: bool,
     startup_frames: u8,
     telemetry_paused: bool,
+    /// Worker handle for instant process scan requests and graceful shutdown.
+    worker: crate::core::TelemetryWorker,
+    /// Last known viewport size for resize detection (debounced trim).
+    last_viewport_size: Option<egui::Vec2>,
 }
 
 impl PulseApp {
-    fn with_worker(worker: crate::core::TelemetryWorker) -> Self {
+    fn with_worker(
+        worker: crate::core::TelemetryWorker,
+        snapshot_rx: mpsc::Receiver<Arc<SystemSnapshot>>,
+    ) -> Self {
+        let latest_slot = worker.latest.clone();
+        let worker_minimized = worker.is_minimized.clone();
+        let processes_tab_active = worker.processes_tab_active.clone();
         Self {
-            snapshot_rx: worker.rx,
-            latest_slot: worker.latest,
-            worker_minimized: worker.is_minimized,
+            snapshot_rx,
+            latest_slot,
+            worker_minimized,
+            processes_tab_active,
             latest_snapshot: None,
             active_tab: crate::app_tabs::ActiveTab::Memory,
             memory_sub_view: MemorySubView::default(),
+            prev_memory_sub_view: MemorySubView::default(),
             table_state: MemoryTableState::default(),
             action_state: MemoryActionBarState::default(),
             frame_count: 0,
@@ -51,13 +66,16 @@ impl PulseApp {
             was_minimized: false,
             startup_frames: 0,
             telemetry_paused: false,
+            worker,
+            last_viewport_size: None,
         }
     }
 }
 
 impl Default for PulseApp {
     fn default() -> Self {
-        Self::with_worker(spawn_telemetry_worker())
+        let (worker, snapshot_rx) = spawn_telemetry_worker();
+        Self::with_worker(worker, snapshot_rx)
     }
 }
 
@@ -66,7 +84,8 @@ impl PulseApp {
     pub fn new(ctx: &egui::Context) -> Self {
         let ui_ctx = ctx.clone();
         let wakeup: Wakeup = Arc::new(move || ui_ctx.request_repaint());
-        Self::with_worker(spawn_telemetry_worker_with_wakeup(wakeup))
+        let (worker, snapshot_rx) = spawn_telemetry_worker_with_wakeup(wakeup);
+        Self::with_worker(worker, snapshot_rx)
     }
 
     fn ingest_snapshot(&mut self, snap: Arc<SystemSnapshot>) {
@@ -117,16 +136,45 @@ impl eframe::App for PulseApp {
             ctx.request_repaint_after(std::time::Duration::from_millis(1000));
             return;
         }
+
+        // Sync processes_tab_active with current sub-view (drives 3s vs 5s scan cadence)
+        let processes_active = self.active_tab == crate::app_tabs::ActiveTab::Memory
+            && self.memory_sub_view == MemorySubView::Processes;
+        self.processes_tab_active.store(processes_active, Ordering::Relaxed);
+
+        // Instant process scan when switching TO Processes sub-view
+        if self.prev_memory_sub_view != self.memory_sub_view {
+            if self.memory_sub_view == MemorySubView::Processes {
+                self.worker.request_process_scan();
+            }
+            self.prev_memory_sub_view = self.memory_sub_view;
+        }
+
         self.frame_count = self.frame_count.wrapping_add(1);
         self.collect_snapshots();
         let is_minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         self.worker_minimized.store(is_minimized, Ordering::Relaxed);
+
+        // Detect significant viewport size change (e.g. restore from maximized/fullscreen)
+        // and trim working set to reclaim driver resize buffers.
+        let current_size =
+            ctx.input(|i| i.viewport().outer_rect.map(|r| r.size()).unwrap_or(egui::Vec2::ZERO));
+        let should_trim = match self.last_viewport_size {
+            Some(prev) => (prev - current_size).length() > 100.0, // ~100px threshold
+            None => false,
+        };
+        if should_trim {
+            let _ = crate::core::win32::self_trim_working_set();
+        }
+        self.last_viewport_size = Some(current_size);
 
         if !self.was_minimized && is_minimized {
             let _ = crate::core::win32::self_trim_working_set();
         }
         self.was_minimized = is_minimized;
         if is_minimized {
+            // Minimized: 30s fallback repaint (no wakeup from worker)
+            ctx.request_repaint_after(std::time::Duration::from_secs(30));
             return;
         }
 
@@ -169,6 +217,7 @@ impl eframe::App for PulseApp {
                 );
             });
         self.last_ui_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
+        // Normal visible mode: 2s fallback repaint (worker wakeup handles most repaints)
         ctx.request_repaint_after(std::time::Duration::from_millis(2000));
     }
 }

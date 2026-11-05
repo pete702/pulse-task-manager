@@ -16,13 +16,14 @@ fn render_tile(
     main_val: &str,
     main_color: egui::Color32,
     subtitle: &str,
+    tooltip: &str,
 ) {
     // Fixed dimensions to prevent height mismatch. Use the width available
     // inside the card frame so the tile never widens the parent layout.
     let size = egui::vec2(ui.available_width(), 66.0);
     ui.set_min_size(size);
     ui.set_max_size(size);
-    ui.vertical_centered(|ui| {
+    let response = ui.vertical_centered(|ui| {
         ui.add_space(2.0);
         ui.label(egui::RichText::new(title).monospace().size(11.0).color(colors::TEXT_SECONDARY));
         ui.add_space(3.0);
@@ -30,6 +31,7 @@ fn render_tile(
         ui.add_space(1.0);
         ui.label(egui::RichText::new(subtitle).monospace().size(9.0).color(colors::TEXT_SECONDARY));
     });
+    response.response.on_hover_text(tooltip);
 }
 
 /// Renders the 4 kernel metrics mini-tiles (System Cache, Kernel Pool, Commit Charge, OS Activity).
@@ -53,7 +55,14 @@ pub fn render_kernel_tiles(ui: &mut egui::Ui, mem: &MemorySnapshot) {
             } else {
                 (NA_TEXT.to_owned(), "OS Cache • N/A".to_owned(), colors::TEXT_SECONDARY)
             };
-            render_tile(ui, "System Cache", &cache_val, cache_color, &cache_subtitle);
+            render_tile(
+                ui,
+                "System Cache",
+                &cache_val,
+                cache_color,
+                &cache_subtitle,
+                "Standby / File Cache: reclaimable memory Windows uses for prefetch/superfetch. High % = good (cached I/O). Low % = cache pressure. Use 'Trim Working Sets' to reclaim.",
+            );
         });
 
         // Tile 2: Kernel Pool (using integer MiB to prevent wrapping)
@@ -73,7 +82,14 @@ pub fn render_kernel_tiles(ui: &mut egui::Ui, mem: &MemorySnapshot) {
                     colors::TEXT_SECONDARY,
                 )
             };
-            render_tile(ui, Key::KernelPool.t(), &pool_val, pool_color, &pool_subtitle);
+            render_tile(
+                ui,
+                Key::KernelPool.t(),
+                &pool_val,
+                pool_color,
+                &pool_subtitle,
+                "Kernel Pool: Paged (pageable to disk) + Non-Paged (locked in RAM). Non-Paged > 2 GiB = driver leak suspect. Paged growth = handle leak or filesystem filter driver issue.",
+            );
         });
 
         // Tile 3: Commit Charge
@@ -92,7 +108,14 @@ pub fn render_kernel_tiles(ui: &mut egui::Ui, mem: &MemorySnapshot) {
             } else {
                 (NA_TEXT.to_owned(), "Limit: N/A (N/A%)".to_owned(), colors::TEXT_SECONDARY)
             };
-            render_tile(ui, Key::CommitCharge.t(), &commit_val, commit_color, &commit_subtitle);
+            render_tile(
+                ui,
+                Key::CommitCharge.t(),
+                &commit_val,
+                commit_color,
+                &commit_subtitle,
+                "Virtual Commit Charge vs Commit Limit (RAM + Pagefile). >85% = OOM risk, apps may crash. 70-85% = monitor closely. <70% = healthy headroom. Increase pagefile or add RAM to raise limit.",
+            );
         });
 
         // Tile 4: OS Activity (2-level structure like other tiles)
@@ -116,6 +139,7 @@ pub fn render_kernel_tiles(ui: &mut egui::Ui, mem: &MemorySnapshot) {
                 &activity_val,
                 activity_color,
                 &activity_subtitle,
+                "OS Activity: Process/Thread/Handle counts. Sudden spikes = runaway service or fork bomb. Handles > 1M = handle leak. Threads > 50k = thread pool exhaustion.",
             );
         });
     });

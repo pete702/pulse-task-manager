@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use crate::modules::memory::constants::MEMORY_HOG_THRESHOLD_PCT;
 use crate::modules::memory::formatters::{format_bytes, format_delta};
 
 /// A single process memory entry for display and analysis.
@@ -62,7 +63,7 @@ impl ProcessMemoryItem {
             virtual_bytes,
             ram_pct,
             process_count: 1,
-            is_hog: ram_pct >= 15.0,
+            is_hog: ram_pct >= MEMORY_HOG_THRESHOLD_PCT,
             delta_bytes_per_sec: 0,
             exe_path: None,
             creation_time: None,
@@ -89,31 +90,38 @@ impl ProcessMemoryItem {
         } else {
             0.0
         };
-        let new_is_hog = new_ram_pct >= 15.0;
+        let new_is_hog = new_ram_pct >= MEMORY_HOG_THRESHOLD_PCT;
+
+        // Compute change flags BEFORE updating tracking fields
+        let ram_changed = self.ram_bytes != self.last_fmt_ram_bytes;
+        let virt_changed = self.virtual_bytes != self.last_fmt_virt_bytes;
+        let delta_changed = self.delta_bytes_per_sec != self.last_fmt_delta;
+        let count_changed = self.process_count != self.last_fmt_process_count;
+        let total_ram_changed = total_ram != self.last_fmt_total_ram;
 
         // pid_text never changes (PID is stable), skip reformatting
         // ram_text: only if ram_bytes changed
-        if self.ram_bytes != self.last_fmt_ram_bytes {
+        if ram_changed {
             self.ram_text = Arc::from(format_bytes(self.ram_bytes));
             self.last_fmt_ram_bytes = self.ram_bytes;
         }
         // virt_text: only if virtual_bytes changed
-        if self.virtual_bytes != self.last_fmt_virt_bytes {
+        if virt_changed {
             self.virt_text = Arc::from(format_bytes(self.virtual_bytes));
             self.last_fmt_virt_bytes = self.virtual_bytes;
         }
         // pct_text: only if ram_pct changed (depends on ram_bytes and total_ram)
-        if self.ram_bytes != self.last_fmt_ram_bytes || total_ram != self.last_fmt_total_ram {
+        if ram_changed || total_ram_changed {
             self.pct_text = Arc::from(format!("{new_ram_pct:.1}%"));
             self.last_fmt_total_ram = total_ram;
         }
         // delta_text: only if delta_bytes_per_sec changed
-        if self.delta_bytes_per_sec != self.last_fmt_delta {
+        if delta_changed {
             self.delta_text = Arc::from(format_delta(self.delta_bytes_per_sec));
             self.last_fmt_delta = self.delta_bytes_per_sec;
         }
         // clone_text: only if process_count changed
-        if self.process_count != self.last_fmt_process_count {
+        if count_changed {
             self.clone_text = if self.process_count > 1 {
                 Arc::from(format!("[{}]x", self.process_count))
             } else {

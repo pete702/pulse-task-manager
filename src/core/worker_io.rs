@@ -15,17 +15,20 @@ pub enum PublishResult {
 }
 
 /// Stores the freshest snapshot in the shared slot, then forwards it if the channel has room.
-/// Calls the wakeup callback on successful send to trigger UI repaint.
+/// Calls the wakeup callback on successful send to trigger UI repaint (unless minimized).
 pub fn publish(
     tx: &SnapshotTx,
     latest: &LatestSlot,
     snapshot: Arc<SystemSnapshot>,
     wakeup: &Wakeup,
+    minimized: bool,
 ) -> PublishResult {
     latest.store(snapshot.clone());
     match tx.try_send(snapshot) {
         Ok(()) => {
-            wakeup();
+            if !minimized {
+                wakeup();
+            }
             PublishResult::Sent
         }
         Err(mpsc::TrySendError::Full(_)) => PublishResult::Full,

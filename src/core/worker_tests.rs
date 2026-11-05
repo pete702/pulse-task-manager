@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::core::worker::{io_PublishResult, io_publish, spawn};
+    use crate::core::worker::{io_PublishResult, io_publish, spawn_telemetry_worker};
     use crate::core::worker_loop::should_scan_processes;
     use crate::core::{LatestSlot, SystemSnapshot};
     use std::sync::{mpsc, Arc};
@@ -10,9 +10,8 @@ mod tests {
 
     #[test]
     fn test_worker_sends_first_snapshot() {
-        let worker = spawn(None);
-        let snapshot = worker
-            .rx
+        let (worker, rx) = spawn_telemetry_worker();
+        let snapshot = rx
             .recv_timeout(Duration::from_secs(5))
             .expect("Worker should send first snapshot within 5 seconds");
         assert!(snapshot.uptime_secs > 0, "Uptime should be positive");
@@ -27,9 +26,9 @@ mod tests {
 
     #[test]
     fn test_multiple_snapshots_increasing() {
-        let worker = spawn(None);
-        let first = worker.rx.recv_timeout(Duration::from_secs(5)).expect("First snapshot");
-        let second = worker.rx.recv_timeout(Duration::from_secs(5)).expect("Second snapshot");
+        let (_worker, rx) = spawn_telemetry_worker();
+        let first = rx.recv_timeout(Duration::from_secs(5)).expect("First snapshot");
+        let second = rx.recv_timeout(Duration::from_secs(5)).expect("Second snapshot");
         assert!(second.uptime_secs >= first.uptime_secs, "Uptime should not decrease");
         assert!(first.pulse_ram_mb >= 0.0);
         assert!(second.pulse_ram_mb >= 0.0);
@@ -43,8 +42,8 @@ mod tests {
 
     #[test]
     fn test_memory_snapshot_in_worker() {
-        let worker = spawn(None);
-        let snapshot = worker.rx.recv_timeout(Duration::from_secs(5)).expect("First snapshot");
+        let (_worker, rx) = spawn_telemetry_worker();
+        let snapshot = rx.recv_timeout(Duration::from_secs(5)).expect("First snapshot");
         let mem = snapshot.memory.as_ref().expect("Memory should be present");
         assert!(mem.ram_total_bytes > 0);
         assert!(mem.ram_used_bytes > 0);
@@ -55,15 +54,15 @@ mod tests {
 
     #[test]
     fn test_os_scheduler_jitter_recorded() {
-        let worker = spawn(None);
-        let snapshot = worker.rx.recv_timeout(Duration::from_secs(5)).expect("First snapshot");
+        let (_worker, rx) = spawn_telemetry_worker();
+        let snapshot = rx.recv_timeout(Duration::from_secs(5)).expect("First snapshot");
         let _ = snapshot.os_scheduler_jitter_ms;
     }
 
     #[test]
     fn test_latest_slot_updated() {
-        let worker = spawn(None);
-        let _ = worker.rx.recv_timeout(Duration::from_secs(5)).expect("First snapshot");
+        let (worker, rx) = spawn_telemetry_worker();
+        let _ = rx.recv_timeout(Duration::from_secs(5)).expect("First snapshot");
         std::thread::sleep(Duration::from_millis(1100));
         assert!(worker.latest.get().is_some(), "Latest slot should be updated");
     }
@@ -89,10 +88,10 @@ mod tests {
         let wakeup: Arc<dyn Fn() + Send + Sync + 'static> = Arc::new(|| {});
 
         let first = Arc::new(SystemSnapshot::new(10, 1.0, Some(Default::default())));
-        assert!(matches!(io_publish(&tx, &slot, first, &wakeup), io_PublishResult::Sent));
+        assert!(matches!(io_publish(&tx, &slot, first, &wakeup, false), io_PublishResult::Sent));
 
         let newest = Arc::new(SystemSnapshot::new(20, 2.0, Some(Default::default())));
-        assert!(matches!(io_publish(&tx, &slot, newest, &wakeup), io_PublishResult::Full));
+        assert!(matches!(io_publish(&tx, &slot, newest, &wakeup, false), io_PublishResult::Full));
         assert_eq!(slot.overflow_count(), 1);
 
         let stored = slot.get().expect("slot always holds the newest");

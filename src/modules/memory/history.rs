@@ -1,14 +1,14 @@
 //! Memory history ring buffer and chart window types.
 
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 use super::model::{ChartWindow, MemorySnapshot, HISTORY_CAPACITY};
+use crate::modules::memory::constants::CHART_ANCHOR_TOLERANCE_SECS;
+use crate::modules::memory::downsampling::lttb_downsample;
 
-/// Ring buffer for memory usage history.
-///
-/// Stores up to `HISTORY_CAPACITY` (900) data points representing
-/// RAM, Swap and Commit usage percentages. At 1s interval this covers
-/// 15 minutes of history. Also tracks session peaks.
+/// Ring buffer for memory usage history. Stores up to `HISTORY_CAPACITY` (900) points
+/// (RAM/Swap/Commit %) at 1s interval covering 15 min. Tracks session peaks.
 #[derive(Clone, Debug, Default)]
 pub struct MemoryHistory {
     pub ram_points: VecDeque<f32>,
@@ -19,10 +19,19 @@ pub struct MemoryHistory {
     pub chart_window: ChartWindow,
     pub revision: u64,
     pub timestamps: VecDeque<f64>,
+    cached_ram_1m: Option<Arc<Vec<[f64; 2]>>>,
+    cached_ram_5m: Option<Arc<Vec<[f64; 2]>>>,
+    cached_ram_15m: Option<Arc<Vec<[f64; 2]>>>,
+    cached_swap_1m: Option<Arc<Vec<[f64; 2]>>>,
+    cached_swap_5m: Option<Arc<Vec<[f64; 2]>>>,
+    cached_swap_15m: Option<Arc<Vec<[f64; 2]>>>,
+    cached_commit_1m: Option<Arc<Vec<[f64; 2]>>>,
+    cached_commit_5m: Option<Arc<Vec<[f64; 2]>>>,
+    cached_commit_15m: Option<Arc<Vec<[f64; 2]>>>,
+    cached_revision: u64,
 }
 
 impl MemoryHistory {
-    #[allow(dead_code)]
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -34,10 +43,19 @@ impl MemoryHistory {
             chart_window: ChartWindow::default(),
             revision: 0,
             timestamps: VecDeque::with_capacity(HISTORY_CAPACITY),
+            cached_ram_1m: None,
+            cached_ram_5m: None,
+            cached_ram_15m: None,
+            cached_swap_1m: None,
+            cached_swap_5m: None,
+            cached_swap_15m: None,
+            cached_commit_1m: None,
+            cached_commit_5m: None,
+            cached_commit_15m: None,
+            cached_revision: 0,
         }
     }
 
-    #[allow(dead_code)]
     pub fn push(&mut self, snap: &MemorySnapshot) {
         let ram_pct = snap.ram_usage_percent();
         let swap_pct = snap.swap_usage_percent();
@@ -70,27 +88,124 @@ impl MemoryHistory {
         self.commit_points.push_back(commit_pct);
         self.timestamps.push_back(ts);
         self.revision = self.revision.wrapping_add(1);
+        self.invalidate_caches();
     }
 
-    #[allow(dead_code)]
     #[inline]
+    fn invalidate_caches(&mut self) {
+        self.cached_ram_1m = None;
+        self.cached_ram_5m = None;
+        self.cached_ram_15m = None;
+        self.cached_swap_1m = None;
+        self.cached_swap_5m = None;
+        self.cached_swap_15m = None;
+        self.cached_commit_1m = None;
+        self.cached_commit_5m = None;
+        self.cached_commit_15m = None;
+        self.cached_revision = self.revision;
+    }
+
+    fn get_ram_series(&mut self, window: ChartWindow) -> Arc<Vec<[f64; 2]>> {
+        let cached = match window {
+            ChartWindow::OneMin => self.cached_ram_1m.clone(),
+            ChartWindow::FiveMin => self.cached_ram_5m.clone(),
+            ChartWindow::FifteenMin => self.cached_ram_15m.clone(),
+        };
+        if let Some(c) = cached {
+            return c;
+        }
+        let points = self.build_windowed_series(&self.ram_points, window);
+        let arc = Arc::new(lttb_downsample(&points, 300));
+        match window {
+            ChartWindow::OneMin => self.cached_ram_1m = Some(arc.clone()),
+            ChartWindow::FiveMin => self.cached_ram_5m = Some(arc.clone()),
+            ChartWindow::FifteenMin => self.cached_ram_15m = Some(arc.clone()),
+        };
+        arc
+    }
+
+    fn get_swap_series(&mut self, window: ChartWindow) -> Arc<Vec<[f64; 2]>> {
+        let cached = match window {
+            ChartWindow::OneMin => self.cached_swap_1m.clone(),
+            ChartWindow::FiveMin => self.cached_swap_5m.clone(),
+            ChartWindow::FifteenMin => self.cached_swap_15m.clone(),
+        };
+        if let Some(c) = cached {
+            return c;
+        }
+        let points = self.build_windowed_series(&self.swap_points, window);
+        let arc = Arc::new(lttb_downsample(&points, 300));
+        match window {
+            ChartWindow::OneMin => self.cached_swap_1m = Some(arc.clone()),
+            ChartWindow::FiveMin => self.cached_swap_5m = Some(arc.clone()),
+            ChartWindow::FifteenMin => self.cached_swap_15m = Some(arc.clone()),
+        };
+        arc
+    }
+
+    fn get_commit_series(&mut self, window: ChartWindow) -> Arc<Vec<[f64; 2]>> {
+        let cached = match window {
+            ChartWindow::OneMin => self.cached_commit_1m.clone(),
+            ChartWindow::FiveMin => self.cached_commit_5m.clone(),
+            ChartWindow::FifteenMin => self.cached_commit_15m.clone(),
+        };
+        if let Some(c) = cached {
+            return c;
+        }
+        let points = self.build_windowed_series(&self.commit_points, window);
+        let arc = Arc::new(lttb_downsample(&points, 300));
+        match window {
+            ChartWindow::OneMin => self.cached_commit_1m = Some(arc.clone()),
+            ChartWindow::FiveMin => self.cached_commit_5m = Some(arc.clone()),
+            ChartWindow::FifteenMin => self.cached_commit_15m = Some(arc.clone()),
+        };
+        arc
+    }
+
+    /// Build raw windowed [timestamp, value] points for a given series and window.
+    /// Ensures the left edge reaches exactly -span when history spans the full window,
+    /// while allowing natural growth during startup.
+    #[allow(clippy::needless_range_loop)]
+    fn build_windowed_series(&self, points: &VecDeque<f32>, window: ChartWindow) -> Vec<[f64; 2]> {
+        let now = self.latest_timestamp();
+        let window_secs = window.seconds() as f64;
+        let len = points.len();
+        let timestamps = &self.timestamps;
+        let mut start_idx = 0;
+        for i in 0..len {
+            if now - timestamps[i] <= window_secs {
+                start_idx = i;
+                break;
+            }
+        }
+        let mut out = Vec::with_capacity(len - start_idx + 1);
+        for i in start_idx..len {
+            out.push([timestamps[i], points[i] as f64]);
+        }
+        // Anchor left edge to exact -span when:
+        // 1. History buffer spans at least window_secs - tolerance (oldest sample old enough), OR
+        // 2. First sample in windowed series is within tolerance of -span.
+        // Both conditions require at least 2 samples in the windowed series.
+        let history_span = now - timestamps[0];
+        let tol = CHART_ANCHOR_TOLERANCE_SECS;
+        let first_x_ok = !out.is_empty() && out.len() >= 2 && out[0][0] <= now - window_secs + tol;
+        let history_ok = history_span >= window_secs - tol;
+        if (history_ok || first_x_ok) && !out.is_empty() {
+            let first_y = out[0][1];
+            out.insert(0, [now - window_secs, first_y]);
+        }
+        out
+    }
+
+    #[inline]
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.ram_points.len()
     }
-    #[allow(dead_code)]
     #[inline]
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.ram_points.is_empty()
-    }
-    #[allow(dead_code)]
-    #[inline]
-    pub fn ram_iter(&self) -> impl Iterator<Item = f32> + '_ {
-        self.ram_points.iter().copied()
-    }
-    #[allow(dead_code)]
-    #[inline]
-    pub fn swap_iter(&self) -> impl Iterator<Item = f32> + '_ {
-        self.swap_points.iter().copied()
     }
     #[allow(dead_code)]
     pub fn windowed_ram_points(&self) -> impl Iterator<Item = f32> + '_ {
@@ -98,14 +213,8 @@ impl MemoryHistory {
         let skip = self.ram_points.len().saturating_sub(ws);
         self.ram_points.iter().skip(skip).copied()
     }
-    #[allow(dead_code)]
-    pub fn windowed_swap_points(&self) -> impl Iterator<Item = f32> + '_ {
-        let ws = self.chart_window.seconds() as usize;
-        let skip = self.swap_points.len().saturating_sub(ws);
-        self.swap_points.iter().skip(skip).copied()
-    }
-    #[allow(dead_code)]
     #[inline]
+    #[allow(dead_code)]
     pub fn revision(&self) -> u64 {
         self.revision
     }
@@ -114,6 +223,17 @@ impl MemoryHistory {
         self.timestamps.back().copied().unwrap_or(0.0)
     }
 
+    pub fn ram_series(&mut self, window: ChartWindow) -> Arc<Vec<[f64; 2]>> {
+        self.get_ram_series(window)
+    }
+    pub fn swap_series(&mut self, window: ChartWindow) -> Arc<Vec<[f64; 2]>> {
+        self.get_swap_series(window)
+    }
+    pub fn commit_series(&mut self, window: ChartWindow) -> Arc<Vec<[f64; 2]>> {
+        self.get_commit_series(window)
+    }
+
+    #[allow(dead_code)]
     pub fn windowed_ram_timed(&self) -> impl Iterator<Item = (f64, f32)> + '_ {
         let now = self.latest_timestamp();
         let window = self.chart_window.seconds() as f64;
@@ -123,21 +243,13 @@ impl MemoryHistory {
             .filter(move |(t, _)| now - **t <= window)
             .map(|(t, v)| (*t, *v))
     }
+    #[allow(dead_code)]
     pub fn windowed_swap_timed(&self) -> impl Iterator<Item = (f64, f32)> + '_ {
         let now = self.latest_timestamp();
         let window = self.chart_window.seconds() as f64;
         self.timestamps
             .iter()
             .zip(self.swap_points.iter())
-            .filter(move |(t, _)| now - **t <= window)
-            .map(|(t, v)| (*t, *v))
-    }
-    pub fn windowed_commit_timed(&self) -> impl Iterator<Item = (f64, f32)> + '_ {
-        let now = self.latest_timestamp();
-        let window = self.chart_window.seconds() as f64;
-        self.timestamps
-            .iter()
-            .zip(self.commit_points.iter())
             .filter(move |(t, _)| now - **t <= window)
             .map(|(t, v)| (*t, *v))
     }
@@ -151,15 +263,15 @@ impl MemoryHistory {
         self.peak_ram_percent = 0.0;
         self.peak_swap_percent = 0.0;
         self.revision = self.revision.wrapping_add(1);
+        self.invalidate_caches();
     }
 
-    #[allow(dead_code)]
     #[inline]
     pub fn current_ram_percent(&self) -> f32 {
         self.ram_points.back().copied().unwrap_or(0.0)
     }
-    #[allow(dead_code)]
     #[inline]
+    #[allow(dead_code)]
     pub fn current_swap_percent(&self) -> f32 {
         self.swap_points.back().copied().unwrap_or(0.0)
     }

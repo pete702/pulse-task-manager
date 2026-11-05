@@ -3,6 +3,7 @@ use crate::i18n::Key;
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::theme::{card_frame, colors};
+use crate::ui::primitives::draw_segmented_led_bar;
 use eframe::egui;
 
 /// Renders the Physical RAM card.
@@ -30,29 +31,12 @@ pub fn render_ram_card(ui: &mut egui::Ui, mem: &MemorySnapshot, history: &Memory
             });
             ui.add_space(8.0);
 
-            // Progress bar - full inner width with tick marks at 25/50/75%
+            // Segmented LED bar (28 segments) — hardware telemetry style
             let bar_w = ui.available_width().max(80.0);
             let pct = mem.ram_usage_percent() / 100.0;
-            let bar_color = crate::theme::load_color(mem.ram_usage_percent());
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(bar_w, 10.0), egui::Sense::hover());
-            ui.painter().rect_filled(
-                rect,
-                egui::Rounding::same(3.0),
-                egui::Color32::from_rgb(0x1E, 0x22, 0x30),
-            );
-            let fill_w = (rect.width() * pct).clamp(0.0, rect.width());
-            if fill_w > 0.0 {
-                ui.painter().rect_filled(
-                    egui::Rect::from_min_max(rect.min, egui::pos2(rect.min.x + fill_w, rect.max.y)),
-                    egui::Rounding::same(3.0),
-                    bar_color,
-                );
-            }
-            ui.painter().rect_stroke(
-                rect,
-                egui::Rounding::same(3.0),
-                egui::Stroke::new(1.0_f32, colors::BORDER),
-            );
+            let (rect, resp) = ui.allocate_exact_size(egui::vec2(bar_w, 16.0), egui::Sense::hover());
+            resp.on_hover_text("Physical RAM usage: In-use memory vs total installed RAM. >85% = critical pressure, 70-85% = elevated, <70% = optimal");
+            draw_segmented_led_bar(ui, rect, pct, 28, colors::ACCENT_CYAN);
             ui.add_space(12.0);
 
             // Grid of values (4 rows to match Swap/Commit card)

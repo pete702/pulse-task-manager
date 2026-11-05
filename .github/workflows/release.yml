@@ -48,7 +48,10 @@ jobs:
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ env.RELEASE_FILE }}
+          files: |
+            ${{ env.RELEASE_FILE }}
+            LICENSE
+            THIRD_PARTY_NOTICES.md
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

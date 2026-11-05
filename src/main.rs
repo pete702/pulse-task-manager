@@ -133,10 +133,13 @@ fn main() -> eframe::Result<()> {
             .with_min_inner_size([950.0_f32, 620.0_f32])
             .with_title("▲ PULSE")
             .with_icon(generate_icon()),
-        // 2D telemetry UI needs zero 3D depth/stencil/MSAA buffers
+        // 2D telemetry UI needs zero 3D depth/stencil/MSAA buffers.
+        // Disable them to avoid ~30-50 MB driver Private Memory on fullscreen.
         depth_buffer: 0,
         stencil_buffer: 0,
         multisampling: 0,
+        vsync: true,
+        hardware_acceleration: eframe::HardwareAcceleration::Preferred,
         ..Default::default()
     };
 

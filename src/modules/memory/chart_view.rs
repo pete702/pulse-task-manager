@@ -9,7 +9,8 @@ use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::model::{ChartWindow, MemorySnapshot};
 use crate::theme::colors;
 use eframe::egui;
-use egui_plot::{GridMark, HLine, Line, LineStyle, Plot, PlotPoints};
+use egui_plot::{GridInput, GridMark, HLine, Line, LineStyle, Plot, PlotPoints};
+use std::sync::Arc;
 
 const Y_GRID: &[GridMark] = &[
     GridMark { value: 0.0, step_size: 25.0 },
@@ -18,6 +19,35 @@ const Y_GRID: &[GridMark] = &[
     GridMark { value: 75.0, step_size: 25.0 },
     GridMark { value: 100.0, step_size: 25.0 },
 ];
+
+/// Custom X-axis grid spacer for consistent major/minor grid lines across all windows.
+/// X coordinates are in minutes (negative = minutes ago, 0 = now).
+/// Returns combined grid marks for the given window span.
+fn x_grid_spacer(span_min: f64, _input: &GridInput) -> Vec<GridMark> {
+    let (major_step, minor_step) = if span_min <= 1.0 {
+        // 1m window: major every 15s (0.25 min), minor every 5s (1/12 min)
+        (0.25, 1.0 / 12.0)
+    } else if span_min <= 5.0 {
+        // 5m window: major every 1m, minor every 15s (0.25 min)
+        (1.0, 0.25)
+    } else {
+        // 15m window: major every 3m, minor every 1m
+        (3.0, 1.0)
+    };
+
+    let mut marks = Vec::new();
+    // Major marks
+    for i in 0..=(span_min / major_step).ceil() as i32 {
+        let val = -i as f64 * major_step;
+        marks.push(GridMark { value: val, step_size: major_step });
+    }
+    // Minor marks
+    for i in 0..=(span_min / minor_step).ceil() as i32 {
+        let val = -i as f64 * minor_step;
+        marks.push(GridMark { value: val, step_size: minor_step });
+    }
+    marks
+}
 
 fn window_id() -> egui::Id {
     egui::Id::new("pulse_memory_chart_window")
@@ -33,25 +63,6 @@ pub fn set_window(ctx: &egui::Context, window: ChartWindow) {
     ctx.data_mut(|d| d.insert_temp(window_id(), window));
 }
 
-pub(crate) fn cached_points(
-    ui: &egui::Ui,
-    key: &str,
-    revision: u64,
-    window_secs: usize,
-    build: impl FnOnce() -> Vec<[f64; 2]>,
-) -> Vec<[f64; 2]> {
-    ui.ctx().data_mut(|d| {
-        let cache: &mut (u64, usize, Vec<[f64; 2]>) =
-            d.get_temp_mut_or_insert_with(egui::Id::new(key), || (u64::MAX, 0, Vec::new()));
-        if cache.0 != revision || cache.1 != window_secs {
-            cache.2 = build();
-            cache.0 = revision;
-            cache.1 = window_secs;
-        }
-        cache.2.clone()
-    })
-}
-
 /// Anchors a series to the right edge (now = 0.0).
 /// For a single point (startup), draw a 1-second lead-in [-1/60, 0].
 /// For 2+ points, only anchor the right edge to 0.0 (if last_x < 0).
@@ -59,20 +70,26 @@ pub(crate) fn cached_points(
 /// X coordinates are in MINUTES (see chart_axis::minutes_ago).
 const ONE_SEC_MIN: f64 = 1.0 / 60.0;
 
-fn anchored(mut points: Vec<[f64; 2]>, _span: f64) -> Vec<[f64; 2]> {
+fn anchored(points: &[[f64; 2]], _span: f64) -> Vec<[f64; 2]> {
+    if points.is_empty() {
+        return vec![];
+    }
     if points.len() == 1 {
         let y = points[0][1];
-        points.insert(0, [-ONE_SEC_MIN, y]);
-        points.push([0.0, y]);
-        return points;
+        return vec![[-ONE_SEC_MIN, y], [0.0, y]];
     }
     // Only anchor right edge to 0.0; left edge grows naturally.
-    if let Some(last) = points.last().copied() {
+    let mut out = points.to_vec();
+    if let Some(last) = out.last().copied() {
         if last[0] < 0.0 {
-            points.push([0.0, last[1]]);
+            out.push([0.0, last[1]]);
         }
     }
-    points
+    out
+}
+
+fn convert_to_minutes_ago(points: &[[f64; 2]], now: f64) -> Vec<[f64; 2]> {
+    points.iter().map(|p| [minutes_ago(p[0], now), p[1]]).collect()
 }
 
 pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemorySnapshot) {
@@ -87,38 +104,44 @@ pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemoryS
             ui.add_space(6.0);
             h.chart_window = selected;
 
-            let window_secs = selected.seconds() as usize;
             let now = h.latest_timestamp();
-            let revision = h.revision();
             let span = window_minutes(selected);
 
-            let ram_raw = cached_points(ui, "pulse_chart_ram", revision, window_secs, || {
-                let points =
-                    h.windowed_ram_timed().map(|(t, v)| [minutes_ago(t, now), v as f64]).collect();
-                anchored(points, span)
-            });
+            // Get precomputed LTTB-downsampled series (zero allocation on render path)
+            let ram_series: Arc<Vec<[f64; 2]>> = h.ram_series(selected);
+            let purple_series: Arc<Vec<[f64; 2]>> =
+                if has_commit { h.commit_series(selected) } else { h.swap_series(selected) };
 
-            let purple_key = if has_commit { "pulse_chart_commit" } else { "pulse_chart_swap" };
-            let flat_value: f64 = if has_commit { commit as f64 } else { swap as f64 };
-            let purple_raw = cached_points(ui, purple_key, revision, window_secs, || {
-                let mut points: Vec<[f64; 2]> = if has_commit {
-                    h.windowed_commit_timed()
-                        .map(|(t, v)| [minutes_ago(t, now), v as f64])
-                        .collect()
-                } else {
-                    h.windowed_swap_timed().map(|(t, v)| [minutes_ago(t, now), v as f64]).collect()
-                };
-                if points.is_empty() {
-                    points.push([-ONE_SEC_MIN, flat_value]);
-                }
-                anchored(points, span)
-            });
+            // Convert timestamps to minutes-ago and anchor to right edge
+            let ram_raw = anchored(&convert_to_minutes_ago(&ram_series, now), span);
+            let purple_raw = anchored(&convert_to_minutes_ago(&purple_series, now), span);
 
-            let (ram_points, purple_points) =
-                (PlotPoints::new(ram_raw), PlotPoints::new(purple_raw));
+            // Handle empty series (startup)
+            let ram_points = if ram_raw.is_empty() {
+                PlotPoints::new(vec![[-ONE_SEC_MIN, ram as f64], [0.0, ram as f64]])
+            } else {
+                PlotPoints::new(ram_raw)
+            };
+            let purple_points = if purple_raw.is_empty() {
+                let flat = if has_commit { commit as f64 } else { swap as f64 };
+                PlotPoints::new(vec![[-ONE_SEC_MIN, flat], [0.0, flat]])
+            } else {
+                PlotPoints::new(purple_raw)
+            };
+
             // Full-width, full-height plot inside the card — flush with MEMORY COMPOSITION bar
             let plot_height = ui.available_height().max(90.0);
             let plot_width = ui.available_width().max(120.0);
+
+            // Read toggle states BEFORE plot.show() for conditional series rendering
+            let ram_id = egui::Id::new("mem_chart_show_ram");
+            let commit_id = egui::Id::new("mem_chart_show_commit");
+            let show_ram: bool =
+                ui.ctx().data_mut(|d| *d.get_temp_mut_or_insert_with(ram_id, || true));
+            let show_commit: bool =
+                ui.ctx().data_mut(|d| *d.get_temp_mut_or_insert_with(commit_id, || true));
+
+            // Full-width, full-height plot inside the card — flush with MEMORY COMPOSITION bar
             let plot_response = Plot::new(("mpp", selected.seconds()))
                 .width(plot_width)
                 .height(plot_height)
@@ -126,6 +149,7 @@ pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemoryS
                 .show_grid([true, true])
                 .auto_bounds(egui::Vec2b::new(false, false))
                 .y_grid_spacer(move |_| Y_GRID.to_vec())
+                .x_grid_spacer(move |input| x_grid_spacer(span, &input))
                 .include_x(-span)
                 .include_x(0.0)
                 .include_y(0.0)
@@ -153,25 +177,50 @@ pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemoryS
                             .color(egui::Color32::from_rgba_unmultiplied(255, 42, 84, 110))
                             .style(LineStyle::Dashed { length: 6.0 }),
                     );
-                    pu.line(
-                        Line::new(ram_points)
-                            .name(Key::RamPercent.t())
-                            .color(colors::ACCENT_CYAN)
-                            .width(2.2_f32)
-                            .fill(0.0_f32),
-                    );
-                    pu.line(
-                        Line::new(purple_points)
-                            .name(if has_commit { "Commit %" } else { "Swap %" })
-                            .color(colors::ACCENT_PURPLE)
-                            .width(1.8_f32),
-                    );
+
+                    if show_ram {
+                        pu.line(
+                            Line::new(ram_points)
+                                .name(Key::RamPercent.t())
+                                .color(colors::ACCENT_CYAN)
+                                .width(2.2_f32)
+                                .fill(0.0_f32),
+                        );
+                    }
+                    if show_commit {
+                        pu.line(
+                            Line::new(purple_points)
+                                .name(if has_commit { "Commit %" } else { "Swap %" })
+                                .color(colors::ACCENT_PURPLE)
+                                .width(1.8_f32),
+                        );
+                    }
                 });
-            // Draw in-canvas HUD axis labels and legend using the plot's frame rect
+
+            // Draw in-canvas HUD axis labels using the plot's frame rect
             let plot_rect = *plot_response.transform.frame();
             draw_y_axis_hud_labels(ui, plot_rect);
             draw_x_axis_hud_labels(ui, plot_rect, selected);
-            draw_hud_legend(ui, plot_rect, has_commit);
+
+            // Draw interactive horizontal legend on top of the plot (using actual plot rect)
+            // Use previous frame's legend rect for interaction (stored in ctx.data), fallback to current plot_rect
+            let legend_rect_id = egui::Id::new("mem_chart_legend_rect");
+            let prev_legend_rect: Option<egui::Rect> =
+                ui.ctx().data(|d| d.get_temp(legend_rect_id));
+            let interaction_rect = prev_legend_rect.unwrap_or(plot_rect);
+
+            let (new_show_ram, new_show_commit) = draw_hud_legend(ui, interaction_rect, has_commit);
+
+            // Store current legend rect for next frame's interaction
+            ui.ctx().data_mut(|d| d.insert_temp(legend_rect_id, plot_rect));
+
+            // Persist toggle states if changed
+            if new_show_ram != show_ram {
+                ui.ctx().data_mut(|d| d.insert_temp(ram_id, new_show_ram));
+            }
+            if new_show_commit != show_commit {
+                ui.ctx().data_mut(|d| d.insert_temp(commit_id, new_show_commit));
+            }
         });
     });
 }

@@ -45,16 +45,19 @@ pub fn axis_label(window_secs: u32, mark: f64) -> String {
 }
 
 /// Returns the X-axis tick marks (in minutes) for the given chart window.
-/// These are used for in-canvas HUD labels.
+/// These are used for in-canvas HUD labels. All values are positive (minutes ago),
+/// matching the "time ago" semantic. The plot X coordinates are still negative
+/// (minutes ago from now=0), but we store positive values here for cleaner labels.
 pub fn x_axis_ticks(window: ChartWindow) -> Vec<f64> {
     match window {
-        ChartWindow::OneMin => vec![-1.0, -0.75, -0.5, -0.25, 0.0],
-        ChartWindow::FiveMin => vec![-5.0, -4.0, -3.0, -2.0, -1.0, 0.0],
-        ChartWindow::FifteenMin => vec![-15.0, -12.0, -9.0, -6.0, -3.0, 0.0],
+        ChartWindow::OneMin => vec![1.0, 0.75, 0.5, 0.25, 0.0], // 60s, 45s, 30s, 15s, 0s
+        ChartWindow::FiveMin => vec![5.0, 4.0, 3.0, 2.0, 1.0, 0.0],
+        ChartWindow::FifteenMin => vec![15.0, 12.0, 9.0, 6.0, 3.0, 0.0],
     }
 }
 
-/// Formats a tick value (in minutes) to a label string.
+/// Formats a tick value (in minutes, positive = minutes ago) to a label string.
+/// No minus signs — all labels show "time ago" semantics.
 pub fn format_tick_label(window: ChartWindow, tick: f64) -> String {
     if tick.abs() < 0.01 {
         if window.seconds() == 60 {
@@ -63,8 +66,9 @@ pub fn format_tick_label(window: ChartWindow, tick: f64) -> String {
             "0m".to_owned()
         }
     } else if window.seconds() == 60 {
+        // tick is positive minutes ago (e.g., 1.0 = 60s ago, 0.25 = 15s ago)
         format!("{:.0}s", tick * 60.0)
     } else {
-        format!("{:.0}m", tick.abs())
+        format!("{:.0}m", tick)
     }
 }

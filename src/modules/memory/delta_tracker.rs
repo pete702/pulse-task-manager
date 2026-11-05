@@ -1,5 +1,6 @@
 //! Process memory delta tracker for PULSE.
 //! Tracks per-process working set changes across collection ticks.
+//! Single HashMap keyed by (pid, start_time). creation_time cached once on Vacant entry.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -21,7 +22,7 @@ struct DeltaState {
     name: Arc<str>,
     exe_path: Option<Arc<str>>,
     /// Cached Win32 FILETIME creation_time (100ns since 1601).
-    /// Populated once on first sighting of the process.
+    /// Populated once on first sighting of the process (Vacant entry).
     creation_time: Option<u64>,
     last_gen: u32,
 }
@@ -58,10 +59,10 @@ impl ProcessDeltaTracker {
         let mut result = Vec::with_capacity(processes.len());
 
         for (pid, name, ram, virt, exe_path, start_time) in processes {
-            let start_key = (*pid, *start_time);
+            let key = (*pid, *start_time);
 
             // Single lookup: get or create the DeltaState, caching creation_time only on Vacant entry.
-            let state = self.states.entry(start_key).or_insert_with(|| {
+            let state = self.states.entry(key).or_insert_with(|| {
                 let ct = query_creation_time_by_pid(*pid);
                 DeltaState {
                     prev_ram: *ram,
@@ -72,41 +73,24 @@ impl ProcessDeltaTracker {
                 }
             });
 
-            // Identity for delta tracking: (pid, creation_time) — falls back to start_time if Win32 query failed.
-            let identity = state.creation_time.unwrap_or(*start_time);
-            let key = (*pid, identity);
+            // Use the cached creation_time (FILETIME) for PID-reuse safety in actions (Open Location / Terminate).
+            // No fallback to Unix start_time — they are incompatible time bases.
+            let identity = state.creation_time;
 
-            // If we're tracking by a different identity key than the start_key,
-            // we need to ensure the delta state exists under the identity key too.
-            // This handles the rare case where creation_time differs from start_time.
-            if key != start_key {
-                // Migrate or create the delta-tracking entry under the identity key.
-                // This is a no-op if already present.
-                self.states.entry(key).or_insert_with(|| DeltaState {
-                    prev_ram: *ram,
-                    name: Arc::clone(name),
-                    exe_path: exe_path.clone(),
-                    creation_time: Some(identity),
-                    last_gen: 0,
-                });
-            }
-
-            // Now use the identity-keyed state for delta calculation.
-            let delta_state = self.states.get_mut(&key).expect("identity key must exist");
-            let is_new = delta_state.last_gen == 0;
-            let prev = if is_new { *ram } else { delta_state.prev_ram };
+            let is_new = state.last_gen == 0;
+            let prev = if is_new { *ram } else { state.prev_ram };
             let delta_bytes = *ram as i64 - prev as i64;
             let delta_per_sec = (delta_bytes as f64 / dt).round() as i64;
 
-            delta_state.prev_ram = *ram;
-            delta_state.last_gen = self.current_gen;
+            state.prev_ram = *ram;
+            state.last_gen = self.current_gen;
 
             // Update name and exe_path if they changed
-            if !Arc::ptr_eq(&delta_state.name, name) {
-                delta_state.name = Arc::clone(name);
+            if !Arc::ptr_eq(&state.name, name) {
+                state.name = Arc::clone(name);
             }
-            if delta_state.exe_path.as_ref() != exe_path.as_ref() {
-                delta_state.exe_path = exe_path.clone();
+            if state.exe_path.as_ref() != exe_path.as_ref() {
+                state.exe_path = exe_path.clone();
             }
 
             result.push(RawProcessRow {
@@ -116,7 +100,7 @@ impl ProcessDeltaTracker {
                 virtual_bytes: *virt,
                 delta_bytes_per_sec: delta_per_sec,
                 exe_path: exe_path.clone(),
-                creation_time: Some(identity),
+                creation_time: identity,
             });
         }
 
@@ -130,5 +114,49 @@ impl ProcessDeltaTracker {
 impl Default for ProcessDeltaTracker {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_single_key_retains_cached_creation_time() {
+        let mut tracker = ProcessDeltaTracker::new();
+        let pid = 1234;
+        let start_time = 5678u64;
+
+        // First sample - Vacant entry, creation_time queried once
+        // ProcessSample = (u32, Arc<str>, u64, u64, Option<Arc<str>>, u64)
+        let sample1 = vec![(pid, Arc::from("test.exe"), 1000u64, 2000u64, None, start_time)];
+        let result1 = tracker.track_at(&sample1, Instant::now());
+        assert_eq!(result1.len(), 1);
+        assert_eq!(result1[0].creation_time, None); // mock returns None, no fallback
+
+        // Second sample - same (pid, start_time), Occupied entry, no new syscall
+        let sample2 = vec![(pid, Arc::from("test.exe"), 1500u64, 2000u64, None, start_time)];
+        let result2 = tracker.track_at(&sample2, Instant::now());
+        assert_eq!(result2.len(), 1);
+
+        // Verify map has exactly 1 entry
+        assert_eq!(tracker.states.len(), 1);
+        let state = tracker.states.get(&(pid, start_time)).unwrap();
+        assert_eq!(state.last_gen, tracker.current_gen);
+        assert_eq!(state.creation_time, None); // mock returns None, but cached
+    }
+
+    #[test]
+    fn test_new_pid_gets_new_entry() {
+        let mut tracker = ProcessDeltaTracker::new();
+
+        // Both processes in the same tick (same call) - both should be in the map
+        let sample = vec![
+            (111u32, Arc::from("a.exe"), 100u64, 200u64, None, 1000u64),
+            (222u32, Arc::from("b.exe"), 200u64, 300u64, None, 2000u64),
+        ];
+        tracker.track_at(&sample, Instant::now());
+
+        assert_eq!(tracker.states.len(), 2);
     }
 }

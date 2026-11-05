@@ -1,39 +1,84 @@
 # Contributing to PULSE
 
-## Pinned 6-Crate Stack (MSRV 1.85)
+Thank you for your interest in contributing to PULSE! This document outlines the
+process and standards for contributions.
 
-| Crate | Version | Purpose |
-|-------|---------|---------|
-| `eframe` | `=0.27.2` | GUI framework |
-| `egui` | `=0.27.2` | Immediate-mode UI |
-| `egui_plot` | `=0.27.2` | Real-time charts |
-| `egui_extras` | `=0.27.2` | TableBuilder, extras |
-| `sysinfo` | `=0.30.12` | System/process metrics (default-features=false) |
-| `windows-sys` | `=0.52.0` | Win32 FFI (ProcessStatus, Threading, Foundation, Globalization, Security) |
+## Code of Conduct
 
-**No other dependencies are accepted.** Version pins are exact (`=`). MSRV is **1.85** — do not use features stabilized after 1.85.
+All contributors are expected to maintain a respectful and professional environment.
+Harassment, discrimination, or disruptive behavior will not be tolerated.
 
-## Code Structure & Hygiene
+## Developer Certificate of Origin (DCO)
 
-- **Line cap**: Every `.rs` file in `src/` and `tests/` must be `<= 280` lines after `cargo fmt`. Enforced by `src/core/selftest_tests.rs` and `tests/docs_guard.rs`.
-- **Zero `rustfmt::skip`**: The attribute is forbidden repository-wide. Run `cargo fmt --all` before commit.
-- **Language hygiene**: 0 Cyrillic characters (`U+0400..=U+052F`), 0 NUL bytes (`\0`) in all repository files. Enforced by `tests/docs_guard.rs`.
-- **Module boundaries**: Submodule tests live in sibling `*_tests.rs` files inside `src/`.
+By contributing to this project, you certify that:
 
-## Mandatory Checks (CI Parity)
+> **Signed-off-by: Your Name <your.email@example.com>**
+>
+> You certify that you have the right to submit the contribution under the
+> project's license (MIT), and that the contribution is your original work
+> or based on work that has been appropriately licensed.
 
-Before pushing, run locally and ensure all pass:
-
-```powershell
-cargo fmt --all -- --check
-cargo test --locked
-cargo clippy --locked --all-targets -- -D warnings
-cargo build --release --locked
-.\target\release\pulse_manager.exe --self-test
+Include `Signed-off-by` in every commit message:
+```bash
+git commit -s -m "Fix issue: description"
 ```
 
-The `--self-test` must print `SELF-TEST PASSED` and exit 0.
+## Pull Request Process
 
-## License Agreement
+1. Fork the repository and create a feature branch from `main`.
+2. Ensure all code follows the project style (`cargo fmt --all`).
+3. Run the full verification chain before submitting:
+   ```powershell
+   cargo fmt --all
+   cargo clippy --locked --all-targets -- -D warnings
+   cargo test --locked -q
+   cargo build --release --locked
+   ```
+4. Keep changes focused and minimal. Large refactors should be discussed first.
+5. Update `CHANGELOG.md` with a brief entry under `## [Unreleased]`.
+6. Submit the PR with a clear title and description.
 
-By contributing, you agree that your contributions will be licensed under the **MIT License** (same as the project). See `LICENSE` for full text.
+## Coding Standards
+
+- **Rust Edition**: 2021
+- **MSRV**: 1.85 (stable toolchain only)
+- **Line Limit**: Every `.rs` file ≤ 280 lines after `cargo fmt --all`
+- **Dependencies**: Maximum 6 direct dependencies (enforced by `tests/docs_guard.rs`)
+- **No Unstable Features**: No `#![feature(...)]`, no nightly-only syntax
+- **Zero Allocations on Hot Paths**: Prefer stack allocation, `Arc<str>` for shared strings
+- **Forbidden**: `rustfmt::skip`, Cyrillic characters, NUL bytes, `unwrap()`/`expect()` on hot paths
+
+## Architecture Guidelines
+
+- **Zero-Copy Telemetry**: Background worker sends `Arc<SystemSnapshot>` via bounded channel
+- **O(1) UI Caching**: `MemoryTableState` keyed by `process_scan_id` short-circuits unchanged scans
+- **Adaptive Cadence**: 1 Hz system telemetry, 3 s process scan (Processes tab), 5 s (Overview), 0 fps minimized
+- **PID Safety**: All mutating actions verify 3-point identity (basename + creation_time + full_path)
+
+## Testing
+
+- Unit tests in `#[cfg(test)]` modules alongside source
+- Integration tests in `tests/`
+- `docs_guard` tests enforce line limits, forbidden tokens, and README link freshness
+- All 130+ tests must pass on Windows x64 MSVC
+
+## Legal
+
+All contributions are licensed under the MIT License (see `LICENSE`).
+
+By submitting a contribution, you grant **Petro (pete702)** perpetual rights to:
+- Distribute the contribution under the MIT License (open-source)
+- Include the contribution in official commercial/enterprise distributions of PULSE
+- Sublicense the contribution as part of PULSE binary releases
+
+This grant is irrevocable and applies to all current and future versions of PULSE.
+
+## Reporting Issues
+
+- Use GitHub Issues for bugs and feature requests
+- Include: OS version, PULSE version, steps to reproduce, expected vs actual behavior
+- Attach relevant logs or screenshots if applicable
+
+## Questions?
+
+Open a GitHub Discussion or issue for any questions about contributing.

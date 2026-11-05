@@ -39,7 +39,7 @@ pub fn render_status_bar(
                 let any_heavy_process = mem.has_heavy_process;
                 let total_ram_pct = mem.ram_usage_percent();
                 if any_heavy_process {
-                    ("[ ◈ MODE: GAMING / HEAVY APP ]", colors::ACCENT_RED)
+                    ("[ ▲ MODE: GAMING / HEAVY APP ]", colors::ACCENT_RED)
                 } else if total_ram_pct >= 75.0 {
                     ("[ ▣ MODE: WORKSTATION LOAD ]", colors::ACCENT_AMBER)
                 } else {

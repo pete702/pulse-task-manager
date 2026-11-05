@@ -3,77 +3,30 @@
 All notable changes to **PULSE** (`pulse_manager`) are documented in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
 
-## [0.1.17] - 2026-11-05
+## [0.1.22] - 2026-11-05
 
-- **Flush-Aligned Chart**: Memory chart now uses `.show_axes([false, false])` + `.show_grid([true, true])` for pixel-perfect left/right alignment with the `MEMORY COMPOSITION` bar above; no more gutter gaps.
-- **Translucent In-Canvas HUD Legend**: Removed opaque `egui_plot` legend box; custom HUD legend drawn at top-left of plot canvas with filled circles (cyan RAM, purple Commit/Swap) and monospace labels — zero background, translucent text.
-- **HUD Axis Labels Refined**: X-axis time labels now use `plot_rect.left() + 8.0` / `plot_rect.right() - 8.0` padding for first/last ticks so `-60s`/`-5m`/`-15m` and `0s`/`0m` are never clipped.
-- **Font RAM Savings**: Removed redundant `seguisym.ttf` loading (~6 MB glyph cache / GPU texture atlas saved); all geometric symbols (`•`, `▲`, `▼`, `✓`, `[01]..[05]`, `||`, `>`) natively supported by `segoeui.ttf` + `consola.ttf`.
-- **Zero-Allocation Process Search**: Added `contains_ci()` helper using `as_bytes().windows().eq_ignore_ascii_case()` for ASCII queries — no `to_lowercase()` allocations per process row per scan; falls back to lowercase only for non-ASCII.
-- **README Latest Release Link**: Stale `v0.1.14` download link replaced with version-independent `releases/latest`; guarded by `docs_guard` test.
+- **OpenGL Driver Memory Optimization**: `eframe::NativeOptions` explicitly disables depth buffer, stencil buffer, and multisampling (`0`); enables `vsync` and `Preferred` hardware acceleration — eliminates ~30–50 MB driver Private Memory (`nvoglv64.dll`) on fullscreen windows.
+- **Viewport Resize Trim**: `PulseApp` detects significant viewport size changes (e.g., restore from maximized/fullscreen) and calls `self_trim_working_set()` to reclaim stale driver resize buffers.
+- **Unified X-Axis Grid**: Custom `x_grid_spacer` provides consistent major/minor grid lines for all windows: 1m (major 15s, minor 5s), 5m (major 1m, minor 15s), 15m (major 3m, minor 1m).
+- **Removed Minus Signs on 1m Labels**: X-axis HUD labels now show positive "time ago" values (`60s`, `45s`, `30s`, `15s`, `0s`) instead of `-60s`..`-15s`; matches 5m/15m style.
+- **Guaranteed Zero Left-Edge Chart Gap**: `build_windowed_series` anchors to exact `-span` when history spans `window_secs - 2s` OR first sample within 2s of `-span`; 1m/5m/15m touch left border with 0 px gap on fullscreen.
+- **Version bump to 0.1.22**.
 
-## [0.1.16] - 2026-11-05
+## [0.1.21] - 2026-11-05
 
-- **Chart Growth Fix**: `anchored()` now only anchors right edge to `0.0`; left edge grows naturally leftward as history accumulates — no more full-width jump on sample #2.
-- **Flush Full-Width Plot**: Chart now uses full card width/height; external time-scale row removed.
-- **In-Canvas HUD Axis Labels**: Y-axis `%` labels (100/75/50/25) drawn inside right edge; X-axis time labels drawn inside bottom edge — both translucent monospace.
-- **Font Fallback**: Added `seguisym.ttf` (Segoe UI Symbol) as fallback for geometric symbols in both Proportional and Monospace families.
-- **Emoji → Geometric Symbols**: All UI emojis replaced with crisp geometric symbols (`▲`, `▣`, `◧`, `×`, `◻`, `||`, `>`, `•`, `[01]..[05]` prefixes) — no more `?` missing-glyph boxes.
+- **Chart Left-Edge Gap Fix**: 1m/5m windows now clamp left edge to exact `-span` once history spans the full window (within 1.5s tolerance); startup still grows naturally from right to left.
+- **Grouped Process RAM % Fix**: Clone groups (`chrome.exe [37x]`, `svchost.exe [58x]`) now show summed RAM percentage (e.g. `31.6%`) instead of single child's `0.1%`; `update_formatted` computes change flags before updating tracking fields.
+- **FILETIME vs Unix Time-Base Fix**: `DeltaTracker` no longer falls back from Win32 `FILETIME` (100ns since 1601) to Unix seconds (`start_time`); `creation_time` returned as `Option<u64>` (FILETIME) with `None` when Win32 query fails.
+- **Graceful Worker Shutdown**: `TelemetryWorker` implements `Drop` — sets shutdown flag, unparks thread, joins handle; `request_process_scan()` encapsulated on worker; clean exit in <1 ms on app close.
+- **Named Constants**: Extracted `MAX_SANE_VIRTUAL_BYTES` (1 TiB), `MEMORY_HOG_THRESHOLD_PCT` (15%), `HEAT_BAR_FULL_SCALE_PCT` (20%), `CHART_ANCHOR_TOLERANCE_SECS` (1.5s) to `constants.rs`.
+- **Version bump to 0.1.21**.
 
-## [0.1.15] - 2026-11-05
+## [0.1.20] - 2026-11-05
 
-- **Zero Steady-State Syscalls**: `DeltaTracker` single-pass with cached `creation_time` (FILETIME) — eliminates ~70 `OpenProcess`/`GetProcessTimes` syscalls/s in steady state.
-- **Conditional `Arc<str>` Formatting**: `ProcessMemoryItem::update_formatted` now only re-allocates display strings when underlying numeric values change (RAM, virtual, delta, process count).
-- **Startup Chart Fix**: Single-point series renders a 1-second lead-in `[-1.0, y]..[0.0, y]` instead of stretching across the full window.
-- **Repaint Watchdog**: Fallback `request_repaint_after` reduced from 30 s to 2 s; minimized mode stays at 0 repaints.
-- **Cache Precision**: `TableCacheKey` now stores full `search_query: String` (no hash collisions); dead helper functions removed.
-- **Thread-Spam Guard**: `MemoryActionBarState::spawn` refuses new jobs while one is pending (0 deps, 2 lines).
-- **Automated Releases**: GitHub Actions `release.yml` builds on `stable` toolchain and publishes `PULSE_vX.Y.Z_windows_x64.exe` on tag push.
-
-## [0.1.14] - 2026-11-04
-
-- **Adaptive Telemetry Cadence**: Background worker scans every `3 s` while the window is visible, `5 s` in the background, and stops rendering (`0 fps`) when minimized; event-driven UI wakeup plus zero-allocation `Arc<str>` process rows.
-- **Working-Set Trim Restored**: Single post-startup frame-#3 trim and a minimize-transition trim bring physical RAM back to `27-29 MB` with `0%` idle CPU.
-- **Phase 1 Memory UX Polish**: `[ Pause / Resume ]` live-stream toggle, right-click process context menu (`Open Location`, `Terminate`, `Copy Name & PID`), double-click row action, `Ctrl+F` / `Esc` / `[X]` search ergonomics with an empty-state notice, and CLI copyright attribution.
-- **Modular Internals**: `worker.rs` split into `worker_io` / `worker_policy` / `worker_loop`; table body split into context-menu, sort, and name-cell modules; 280-line module limit enforced; 131 tests passing (127 unit + 4 `docs_guard`).
-
-## [0.1.11] - 2026-11-04
-
-- **Phase 1 Memory Subsystem Frozen**: 3-segment RAM composition bar, live Commit % chart (`1m/5m/15m`), frame-aligned time scale.
-- **Unified O(1) Table Cache & Identity Gates**: `MemoryTableState` keyed by `process_scan_id`; `verify_handle_identity` fails closed.
-- **dGPU Sleep Exports & Kernel Tiles**: Zeroed 3D buffers cut ~29 MB working set.
-- **130 Tests Passing**: 126 unit + 4 `docs_guard`; release build verified.
-
-## [0.1.2] - 2026-11-04
-
-- **Zero-Copy `Arc` Polling**: System RAM 1 Hz, process scans 0.5 Hz; minimized pauses scans, shares `Arc<Vec<RawProcessRow>>` zero-copy.
-- **O(1) UI Table & Selection Cache**: `MemoryTableState` keyed by `process_scan_id` short-circuits on unchanged scan ID.
-- **3-Point PID Identity & Frozen Kills**: `basename + creation_time + full_path` checked before `EmptyWorkingSet` / `TerminateProcess`.
-- **Single Frame-#3 Self-Trim & CLI Flags**: One `K32EmptyWorkingSet` after GPU init; `--version` / `--help` exit cleanly.
-
-## [0.1.1] - 2026-11-03
-
-- **Raw Process Actions**: `Trim Working Sets`, `Trim Selected`, `Open Location`, `End Task` target raw rows with explicit PID.
-- **`dt`-Normalized `Δ RAM/s`**: Per-process deltas divide by real sample interval.
-- **Minute-Based `1m/5m/15m` Chart**: X-axis in minutes with right-edge padding; worker `LatestSlot` keeps newest snapshot.
-- **Rust 1.85 CI Lockfile Fix**: MSRV pinned to `rust-version = "1.85"`; locked deps, fmt/clippy/test/build on `stable`.
-
-## [0.1.0] - 2026-11-03
-
-- **Phase 1 Memory Subsystem Complete**: Non-blocking Action Bar with trim, end task, open location, `ReclaimReport` audit.
-- **Three Walls Badge & Chart Selector**: Live `SYSTEM OPTIMAL` / `MEMORY WALL` badge; cached `PlotPoints` for zero-realloc switching.
-- **5-Column Aligned Process Table**: Column defs match header/row 1-to-1; selection via Process Name cell.
-- **Audit Fixes**: Removed all fmt skip attrs; 180-line limit; panic log hook; `[0u16; 1024]` identity buffer.
-
-## [0.0.16] - 2026-11-03
-
-- **TOCTOU Handle Identity Verification**: `verify_handle_identity` via `QueryFullProcessImageNameW` with `IsProcessCritical` checks.
-- **Resource P1 Optimizations**: `search_hash: u64` + `uptime_secs` cache key, cached uptime formatting, reusable delta `HashSet<u32>`.
-- **CI & Repo Hygiene**: `--locked` on all cargo commands, MSRV `1.85` CI job, recursive guard for `0` NUL/Cyrillic/line limits.
-
-## [0.0.15] - 2026-11-03
-
-- **Win32 Safety & Path Normalization**: `SafeHandle` raw field private, `OpenProcessToken` RAII, `IsProcessCritical` checks.
-- **Accurate Trim Accounting & Explorer Launch**: Fixed post-trim `K32GetProcessMemoryInfo` handling; `CommandExt::raw_arg` for paths with spaces.
-- **Documentation & Placeholder Sync**: Synced `ARCHITECTURE.md` tokens with `src/theme.rs` / `src/main.rs`.
-
+- **High-Precision Continuous Telemetry Bars**: Replaced 28-segment LED bars with smooth sub-pixel continuous bars (3 draw calls); threshold coloring (cyan <70%, amber 70-85%, red >85%); 14x fewer draw calls.
+- **Table Heat-Bar Fix**: Fixed text overlap on Physical RAM / RAM % columns — 8px left padding; deep teal/slate fills; hog rows use ice-white text.
+- **Gaming Mode Glyph**: Status bar mode badge uses `▲` for consistent geometric symbol theme.
+- **P0-1: `.without_exe()` Collector + On-Demand Win32 Path**: Background scans skip exe path queries; `query_process_exe_path(pid)` resolves on-demand for "Open Location".
+- **P0-2 & P0-3: Precomputed Windowed Chart Slices + LTTB Downsampling**: Pure-Rust `lttb_downsample` (≤45 lines, zero deps); caches windowed & anchored series per window with 900→300 point LTTB downsampling.
+- **Instant Worker Wake**: `thread::park_timeout` + `unpark()` in `request_process_scan()` — worker wakes in 0 ms when clicking RAM Processes tab.
+- **Version bump to 0.1.20**.

@@ -5,7 +5,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::core::selftest_app::SelfTestApp;
-use crate::core::{spawn_telemetry_worker, TelemetryWorker};
+use crate::core::spawn_telemetry_worker;
 use crate::i18n::{current_lang, set_lang, Lang};
 use crate::modules::memory::actions::{
     open_process_file_location, purge_system_working_sets, terminate_process_group,
@@ -20,7 +20,8 @@ use crate::modules::memory::safe_handle::{
 /// Runs a completely headless self-test without eframe/OpenGL.
 pub fn run_headless_self_test() -> Result<(), String> {
     println!("[SelfTest] Starting headless self-test...");
-    let TelemetryWorker { rx, latest, .. } = spawn_telemetry_worker();
+    let (worker, rx) = spawn_telemetry_worker();
+    let latest = worker.latest.clone();
     let mut samples = Vec::new();
     let start = std::time::Instant::now();
     while start.elapsed() < Duration::from_secs(6) && samples.len() < 2 {

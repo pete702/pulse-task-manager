@@ -16,19 +16,32 @@ use crate::modules::memory::delta_tracker::ProcessDeltaTracker;
 use crate::modules::memory::model::RawProcessRow;
 use crate::modules::memory::win32_api::own_working_set_mb;
 
-/// Spawns the background thread and returns its receiver, latest slot, minimized flag, and wakeup callback.
+/// Spawns the background thread and returns its receiver, latest slot, minimized flag, shutdown flag, wakeup callback, and thread handle.
+#[allow(clippy::type_complexity)]
 pub fn spawn_worker(
     wakeup: Option<Wakeup>,
-) -> (mpsc::Receiver<Arc<SystemSnapshot>>, LatestSlot, Arc<AtomicBool>, Option<Wakeup>) {
+    processes_tab_active: Arc<AtomicBool>,
+) -> (
+    mpsc::Receiver<Arc<SystemSnapshot>>,
+    LatestSlot,
+    Arc<AtomicBool>,
+    Arc<AtomicBool>,
+    Option<Wakeup>,
+    thread::JoinHandle<()>,
+) {
     let (tx, rx): (SnapshotTx, mpsc::Receiver<Arc<SystemSnapshot>>) = mpsc::sync_channel(2);
     let latest = LatestSlot::new();
     let is_minimized = Arc::new(AtomicBool::new(false));
+    let shutdown = Arc::new(AtomicBool::new(false));
     let wakeup = wakeup.unwrap_or_else(|| Arc::new(|| {}));
 
     let latest_worker = latest.clone();
     let minimized_worker = is_minimized.clone();
+    let shutdown_worker = shutdown.clone();
     let wakeup_worker = wakeup.clone();
-    thread::spawn(move || {
+    let tab_active_worker = processes_tab_active.clone();
+
+    let handle = thread::spawn(move || {
         let started = Instant::now();
         let mut sys = System::new();
         let mut latest_spike = None;
@@ -41,13 +54,18 @@ pub fn spawn_worker(
         let mut process_scan_id: u64 = 0;
 
         loop {
+            // Check for graceful shutdown signal
+            if shutdown_worker.load(Ordering::Acquire) {
+                break;
+            }
+
             let tick_start = Instant::now();
             let uptime = System::uptime();
             let minimized = minimized_worker.load(Ordering::Relaxed);
             let wake = was_minimized && !minimized;
             let requested = take_process_scan_request();
             was_minimized = minimized;
-            let processes_tab_active = true;
+            let processes_tab_active = tab_active_worker.load(Ordering::Relaxed);
             let refresh =
                 should_scan_processes(minimized, tick, wake, requested, processes_tab_active);
 
@@ -91,7 +109,8 @@ pub fn spawn_worker(
             if elapsed < interval {
                 let requested_sleep = interval - elapsed;
                 let before_sleep = Instant::now();
-                thread::sleep(requested_sleep);
+                // Use park_timeout for instant wakeup via unpark()
+                thread::park_timeout(requested_sleep);
                 sleep_overshoot_ms =
                     before_sleep.elapsed().as_millis().saturating_sub(requested_sleep.as_millis())
                         as u64;
@@ -105,7 +124,7 @@ pub fn spawn_worker(
                 os_scheduler_jitter_ms,
             ));
 
-            match publish(&tx, &latest_worker, snapshot, &wakeup_worker) {
+            match publish(&tx, &latest_worker, snapshot, &wakeup_worker, minimized) {
                 PublishResult::Disconnected => break,
                 PublishResult::Sent | PublishResult::Full => {}
             }
@@ -113,10 +132,11 @@ pub fn spawn_worker(
         }
     });
 
-    (rx, latest, is_minimized, Some(wakeup))
+    (rx, latest, is_minimized, shutdown, Some(wakeup), handle)
 }
 
 /// Requests an immediate process scan on the next worker tick.
+/// Also unparks the worker thread for instant wakeup (0 ms latency).
 pub fn request_process_scan() {
     PROCESS_SCAN_REQUEST.store(true, Ordering::Relaxed);
 }
@@ -128,7 +148,7 @@ pub(crate) fn take_process_scan_request() -> bool {
 static PROCESS_SCAN_REQUEST: AtomicBool = AtomicBool::new(false);
 
 /// Visible mode scans every SCAN_TICKS_VISIBLE tick when Processes tab is active,
-/// or every SCAN_TICKS_BACKGROUND when Overview is open.
+/// or every SCAN_TICKS_BACKGROUND when Overview tab is open.
 /// Wake and action requests scan immediately. Minimized mode pauses full process scans entirely.
 pub fn should_scan_processes(
     minimized: bool,

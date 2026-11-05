@@ -3,8 +3,9 @@
 
 use std::sync::Arc;
 
-use sysinfo::{ProcessRefreshKind, System, UpdateKind};
+use sysinfo::{ProcessRefreshKind, System};
 
+use crate::modules::memory::constants::MAX_SANE_VIRTUAL_BYTES;
 use crate::modules::memory::delta_tracker::{ProcessDeltaTracker, ProcessMemoryScan};
 use crate::modules::memory::model::{MemorySnapshot, ProcessSample};
 use crate::modules::memory::win32_api::{collect_windows_kernel_metrics, KernelMetrics};
@@ -60,9 +61,9 @@ pub fn collect_process_memory(
         return ((Vec::new(), None), false);
     }
 
-    sys.refresh_processes_specifics(
-        ProcessRefreshKind::new().with_memory().with_exe(UpdateKind::OnlyIfNotSet),
-    );
+    // Use without_exe() to avoid querying executable paths for all 200+ processes
+    // (exe paths are queried on-demand via query_process_exe_path when "Open Location" is clicked)
+    sys.refresh_processes_specifics(ProcessRefreshKind::new().with_memory().without_exe());
 
     let processes: Vec<ProcessSample> = sys
         .processes()
@@ -70,11 +71,12 @@ pub fn collect_process_memory(
         .map(|(pid, process)| {
             let ram = process.memory();
             let mut virt = process.virtual_memory();
-            if virt >= (1_u64 << 40) {
+            if virt >= MAX_SANE_VIRTUAL_BYTES {
                 virt = ram;
             }
-            let exe_path =
-                process.exe().and_then(|p| p.to_str()).filter(|s| !s.is_empty()).map(Arc::from);
+            // exe_path will be None since we use without_exe()
+            // It will be resolved on-demand via query_process_exe_path when needed
+            let exe_path: Option<Arc<str>> = None;
             (pid.as_u32(), Arc::from(process.name()), ram, virt, exe_path, process.start_time())
         })
         .collect();

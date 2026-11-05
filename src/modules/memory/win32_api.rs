@@ -2,12 +2,16 @@
 //! All functions require `#[allow(unsafe_code)]` and are Windows-only.
 
 #[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::System::ProcessStatus::{
-    K32EmptyWorkingSet, K32GetPerformanceInfo, K32GetProcessMemoryInfo, PERFORMANCE_INFORMATION,
-    PROCESS_MEMORY_COUNTERS,
+    K32EmptyWorkingSet, K32GetModuleFileNameExW, K32GetPerformanceInfo, K32GetProcessMemoryInfo,
+    PERFORMANCE_INFORMATION, PROCESS_MEMORY_COUNTERS,
 };
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::System::Threading::GetCurrentProcess;
+use windows_sys::Win32::System::Threading::{
+    GetCurrentProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+};
 
 /// Windows kernel metrics collected via K32GetPerformanceInfo.
 #[cfg(target_os = "windows")]
@@ -75,6 +79,45 @@ pub struct KernelMetrics {
 #[cfg(not(target_os = "windows"))]
 pub fn collect_windows_kernel_metrics() -> KernelMetrics {
     KernelMetrics::default()
+}
+
+/// Queries the executable path of a process on-demand using OpenProcess + K32GetModuleFileNameExW.
+/// Used when background collector runs with `.without_exe()` and "Open Location" is clicked.
+/// Returns None if the process cannot be opened or the path cannot be retrieved.
+#[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
+pub fn query_process_exe_path(pid: u32) -> Option<String> {
+    // Open process with minimal required access
+    let handle: HANDLE = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if handle == 0 {
+        return None;
+    }
+
+    // Buffer for the path (MAX_PATH = 260, but we use 32767 for extended paths)
+    let mut buffer: [u16; 32767] = [0; 32767];
+    let size =
+        unsafe { K32GetModuleFileNameExW(handle, 0, buffer.as_mut_ptr(), buffer.len() as u32) };
+
+    // Always close the handle
+    unsafe { CloseHandle(handle) };
+
+    if size == 0 {
+        return None;
+    }
+
+    // Convert from UTF-16 to String
+    let path = String::from_utf16_lossy(&buffer[..size as usize]);
+    if path.is_empty() {
+        None
+    } else {
+        Some(path)
+    }
+}
+
+/// Non-Windows fallback.
+#[cfg(not(target_os = "windows"))]
+pub fn query_process_exe_path(_pid: u32) -> Option<String> {
+    None
 }
 
 /// Trims the working set of the current process using K32EmptyWorkingSet.

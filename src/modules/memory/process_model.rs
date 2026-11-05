@@ -52,14 +52,15 @@ pub fn filter_group_and_sort(
     sort_asc: bool,
 ) -> Vec<ProcessMemoryItem> {
     let search_trimmed = search.trim();
+    // Create all items first, then filter using preformatted pid_text (zero-allocation search)
     let mut items: Vec<ProcessMemoryItem> = processes
         .iter()
-        .filter(|row| {
-            search_trimmed.is_empty()
-                || search_trimmed == row.pid.to_string()
-                || contains_ci(&row.name, search_trimmed)
-        })
         .map(|row| item_from_raw(row, total_ram))
+        .filter(|item| {
+            search_trimmed.is_empty()
+                || item.pid_text.contains(search_trimmed)
+                || contains_ci(&item.name, search_trimmed)
+        })
         .collect();
     if group_clones {
         let mut grouped: HashMap<Arc<str>, ProcessMemoryItem> = HashMap::new();

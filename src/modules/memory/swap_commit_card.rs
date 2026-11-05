@@ -3,6 +3,7 @@ use crate::i18n::Key;
 use crate::modules::memory::formatters::format_bytes;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::theme::{card_frame, colors};
+use crate::ui::primitives::draw_segmented_led_bar;
 use eframe::egui;
 const NA: &str = "N/A";
 pub fn render_swap_commit_card(ui: &mut egui::Ui, m: &MemorySnapshot) {
@@ -36,7 +37,7 @@ pub fn render_swap_commit_card(ui: &mut egui::Ui, m: &MemorySnapshot) {
         let spt =
             if valid && m.swap_total_bytes > 0 { format!("{:.1}%", sp) } else { NA.to_owned() };
         let cc = if valid { crate::theme::load_color(cp) } else { colors::BORDER };
-        let fc = if valid { colors::ACCENT_PURPLE } else { colors::BORDER };
+        let _fc = if valid { colors::ACCENT_PURPLE } else { colors::BORDER };
         let uc = if valid { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
         let sc = if valid { colors::TEXT_PRIMARY } else { colors::TEXT_SECONDARY };
         ui.vertical(|ui| {
@@ -54,25 +55,9 @@ pub fn render_swap_commit_card(ui: &mut egui::Ui, m: &MemorySnapshot) {
             });
             ui.add_space(8.0);
             let pv = if valid { cp / 100.0 } else { 0.0 };
-            let (r, _) = ui.allocate_exact_size(egui::vec2(w, 10.0), egui::Sense::hover());
-            ui.painter().rect_filled(
-                r,
-                egui::Rounding::same(3.0),
-                egui::Color32::from_rgb(0x1E, 0x22, 0x30),
-            );
-            let fw = (r.width() * pv).clamp(0.0, r.width());
-            if fw > 0.0 {
-                ui.painter().rect_filled(
-                    egui::Rect::from_min_max(r.min, egui::pos2(r.min.x + fw, r.max.y)),
-                    egui::Rounding::same(3.0),
-                    fc,
-                );
-            }
-            ui.painter().rect_stroke(
-                r,
-                egui::Rounding::same(3.0),
-                egui::Stroke::new(1.0_f32, colors::BORDER),
-            );
+            let (r, resp) = ui.allocate_exact_size(egui::vec2(w, 16.0), egui::Sense::hover());
+            resp.on_hover_text("Virtual Commit Charge vs system Commit Limit. >85% = OOM risk, 70-85% = monitor, <70% = healthy. Commit Limit = RAM + Pagefile");
+            draw_segmented_led_bar(ui, r, pv, 28, colors::ACCENT_PURPLE);
             ui.add_space(12.0);
             egui::Grid::new("scg").num_columns(2).spacing([16.0, 8.0]).show(ui, |ui| {
                 ui.label(

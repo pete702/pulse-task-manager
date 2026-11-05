@@ -36,7 +36,7 @@ PULSE provides a dark-mode telemetry HUD with a **Memory Spike Blackbox**, a **3
 
 - **Single Portable Executable**: Standalone `.exe` (`~4.1 MiB` binary size on disk), no installer, no background service.
 - **Live Self-Diagnostics**: PULSE displays its own real-time memory working set and UI frame time directly in the top header badge (`[ PULSE: XX.X MB | UI: X.XX ms ]`).
-- **Decoupled 1 Hz / 0.5 Hz Collector**: Main `egui` UI thread + background telemetry worker thread (`bounded std::sync::mpsc::sync_channel(2)`) with 1 Hz system RAM polling and 0.5 Hz (2 s) full process scanning in normal mode; paused process scanning with zero-copy `Arc` sharing in minimized mode (instant full scan on wake or user action); `O(1)` UI table & selection caching via `process_scan_id`.
+- **Decoupled 1 Hz / Adaptive 3 s / 5 s Collector**: Main `egui` UI thread + background telemetry worker thread (`bounded std::sync::mpsc::sync_channel(2)`) with 1 Hz system telemetry polling and adaptive process scanning (3 s when Processes tab active, 5 s on Overview); paused process scanning with zero-copy `Arc` sharing in minimized mode (instant full scan on wake, tab switch, or user action); `O(1)` UI table & selection caching via `process_scan_id`.
 - **Minimize Hibernation**: UI rendering pauses while minimized and triggers a single controlled working-set self-trim (`K32EmptyWorkingSet`) on frame #3 after GPU init; post-init frame #3 self-trim.
 - **User-Mode Only**: Uses standard Win32 APIs (`K32GetPerformanceInfo`, `sysinfo`); no kernel drivers, no DLL injection, and no hooks into other processes.
 - **PID Safety Gate**: Blocks PID 0, PID 4, self-PID, 27 critical OS processes, and 11 known anti-cheat processes before any mutating action.
@@ -61,7 +61,7 @@ cargo run --release
 ## CLI Flags
 
 ```powershell
-pulse_manager.exe --version   # Prints: PULSE v0.1.17 (pulse_manager)
+pulse_manager.exe --version   # Prints: PULSE v0.1.22 (pulse_manager)
 pulse_manager.exe --help      # Prints usage
 pulse_manager.exe --self-test # Headless CI self-test
 ```
@@ -70,4 +70,4 @@ pulse_manager.exe --self-test # Headless CI self-test
 
 For developers: [Architecture & Engineering Rules](ARCHITECTURE.md) · [Changelog](CHANGELOG.md)
 
-Open-Source under the MIT License.
+Open-Source under the MIT License. Copyright (c) 2026 Petro (pete702) - PULSE Project.
