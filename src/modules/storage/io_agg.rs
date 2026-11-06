@@ -1,5 +1,6 @@
 //! Storage I/O helpers split from collector for the 280-line guard.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use sysinfo::{DiskKind, Disks};
@@ -83,4 +84,43 @@ pub fn aggregate_io(raw: &[RawProcessCpuRow]) -> (f32, f32, Option<(u32, Arc<str
         }
     }
     (read_total, write_total, top)
+}
+
+/// Per-physical-disk process I/O fallback when IOCTL counters are missing.
+/// Unresolved drives attribute to the lowest physical disk so IO is never lost.
+#[allow(dead_code)]
+#[allow(clippy::type_complexity)]
+pub fn aggregate_io_by_disk(
+    raw: &[RawProcessCpuRow],
+    volumes: &[DiskVolumeInfo],
+) -> HashMap<u32, (f64, f64)> {
+    let mut drive_to_disk: HashMap<char, u32> = HashMap::new();
+    let mut first_disk: Option<u32> = None;
+    for vol in volumes {
+        if let Some(disk) = vol.physical_disk {
+            if first_disk.is_none_or(|f| disk < f) {
+                first_disk = Some(disk);
+            }
+            if let Some(letter) =
+                crate::modules::storage::physical_disk::drive_letter(vol.mount_point.as_ref())
+            {
+                drive_to_disk.entry(letter).or_insert(disk);
+            }
+        }
+    }
+    let default_disk = first_disk.unwrap_or(0);
+    let mut out: HashMap<u32, (f64, f64)> = HashMap::new();
+    for row in raw {
+        let r = f64::from(row.disk_read_mb_s);
+        let w = f64::from(row.disk_write_mb_s);
+        if r + w <= 0.0 {
+            continue;
+        }
+        let letter = crate::modules::storage::inspector_group::exe_drive(row.pid, row.start_time);
+        let disk = letter.and_then(|l| drive_to_disk.get(&l).copied()).unwrap_or(default_disk);
+        let entry = out.entry(disk).or_insert((0.0, 0.0));
+        entry.0 += r;
+        entry.1 += w;
+    }
+    out
 }

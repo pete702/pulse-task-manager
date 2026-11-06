@@ -7,7 +7,9 @@ use std::time::Instant;
 use sysinfo::Disks;
 
 use crate::modules::cpu::model::RawProcessCpuRow;
-use crate::modules::storage::io_agg::{aggregate_io, clamp_rate, volumes_from_disks};
+use crate::modules::storage::io_agg::{
+    aggregate_io, aggregate_io_by_disk, clamp_rate, volumes_from_disks,
+};
 use crate::modules::storage::model::{DiskVolumeInfo, IoSpikeEvent, StorageSnapshot};
 use crate::modules::storage::physical_disk;
 
@@ -59,7 +61,9 @@ impl StorageCollector {
                 (m.to_string(), disk)
             })
             .collect();
-        let (read_total, write_total, per_disk) = self.per_disk_rates(&unique, agg_read, agg_write);
+        let volumes_for_rates = Arc::clone(&self.cached_volumes);
+        let (read_total, write_total, per_disk) =
+            self.per_disk_rates(&unique, raw_processes, &volumes_for_rates, agg_read, agg_write);
         let read_total = clamp_rate(read_total);
         let write_total = clamp_rate(write_total);
         // Stamp every volume of a disk with its live per-disk rates.
@@ -121,6 +125,8 @@ impl StorageCollector {
     fn per_disk_rates(
         &mut self,
         unique: &[(String, Option<u32>)],
+        raw_processes: &[RawProcessCpuRow],
+        volumes: &[DiskVolumeInfo],
         agg_read: f32,
         agg_write: f32,
     ) -> (f32, f32, HashMap<u32, (f32, f32)>) {
@@ -144,10 +150,33 @@ impl StorageCollector {
                 }
             }
         }
+        // Process-attributed fallback for missing/zero hardware disks.
+        let fallback = aggregate_io_by_disk(raw_processes, volumes);
+        for (disk, fr_fw) in fallback {
+            let r = clamp_rate(fr_fw.0 as f32);
+            let w = clamp_rate(fr_fw.1 as f32);
+            if r + w <= 0.0 {
+                continue;
+            }
+            let need = match per_disk.get(&disk) {
+                None => true,
+                Some((hr, hw)) => *hr == 0.0 && *hw == 0.0,
+            };
+            if need {
+                per_disk.insert(disk, (r, w));
+            }
+        }
         if any_rate {
-            (clamp_rate(sum_r), clamp_rate(sum_w), per_disk)
+            let (mut sr, mut sw) = (0.0f32, 0.0f32);
+            for (r, w) in per_disk.values() {
+                let _ = (sr, sw);
+                sr += r;
+                sw += w;
+            }
+            let _ = (sum_r, sum_w);
+            (clamp_rate(sr), clamp_rate(sw), per_disk)
         } else {
-            // No valid deltas yet (first sample or no IOCTL data) - use agg.
+            // No valid hardware deltas yet: total stays aggregate, per-disk live.
             (agg_read, agg_write, per_disk)
         }
     }
@@ -183,94 +212,5 @@ impl Default for StorageCollector {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    fn raw(pid: u32, name: &str, read: f32, write: f32) -> RawProcessCpuRow {
-        RawProcessCpuRow {
-            pid,
-            name: Arc::from(name),
-            cpu_usage: 0.0,
-            ram_bytes: 0,
-            disk_read_mb_s: read,
-            disk_write_mb_s: write,
-            eco_qos: None,
-            exe_path: None,
-            creation_time: None,
-            start_time: 0,
-        }
-    }
-    #[test]
-    fn captures_io_spike_at_threshold() {
-        let mut c = StorageCollector::new();
-        let rows = [raw(7, "writer.exe", 60.0, 30.0), raw(8, "idle.exe", 0.0, 0.0)];
-        let snap = c.collect(&rows, 1);
-        assert!(snap.read_mb_s + snap.write_mb_s >= IO_SPIKE_THRESHOLD_MB_S);
-        let spike = snap.last_io_spike.clone().unwrap_or_default();
-        assert_eq!(spike.pid, 7);
-        assert!((spike.peak_mb_s - 90.0).abs() < 0.5);
-    }
-    #[test]
-    fn spike_stores_rw_breakdown() {
-        let mut c = StorageCollector::new();
-        let rows = [raw(7, "writer.exe", 60.0, 30.0)];
-        let snap = c.collect(&rows, 1);
-        let spike = snap.last_io_spike.unwrap_or_default();
-        assert!((spike.read_mb_s - 60.0).abs() < 0.5);
-        assert!((spike.write_mb_s - 30.0).abs() < 0.5);
-    }
-    #[test]
-    fn spike_ages_without_new_spike() {
-        let mut c = StorageCollector::new();
-        let hot = [raw(7, "writer.exe", 90.0, 0.0)];
-        let _ = c.collect(&hot, 1);
-        let calm = [raw(7, "writer.exe", 0.1, 0.0)];
-        let snap = c.collect(&calm, 1);
-        let spike = snap.last_io_spike.clone().unwrap_or_default();
-        assert_eq!(spike.ticks_ago, 1);
-    }
-    #[test]
-    fn top_io_ignores_quiet_processes() {
-        let mut c = StorageCollector::new();
-        let rows = [raw(1, "quiet.exe", 0.02, 0.02)];
-        let snap = c.collect(&rows, 1);
-        assert!(snap.top_io_process.is_none());
-        assert!(snap.last_io_spike.is_none());
-    }
-    #[test]
-    fn spike_expires_after_120_ticks() {
-        let mut c = StorageCollector::new();
-        let hot = [raw(7, "writer.exe", 90.0, 0.0)];
-        let _ = c.collect(&hot, 1);
-        let calm = [raw(7, "writer.exe", 0.1, 0.0)];
-        let mut snap = c.collect(&calm, 1);
-        for _ in 0..121 {
-            snap = c.collect(&calm, 1);
-        }
-        assert!(snap.last_io_spike.is_none());
-    }
-    #[test]
-    fn dedup_selects_one_per_disk() {
-        let entries = [("C:\\", Some(0)), ("D:\\", Some(0)), ("H:\\", Some(1))];
-        let unique = dedupe_disk_mounts(&entries);
-        assert_eq!(unique.len(), 2);
-        assert!(unique.contains(&"C:\\"));
-        assert!(unique.contains(&"H:\\"));
-        assert!(!unique.contains(&"D:\\"));
-        let entries2 = [("C:\\", None), ("D:\\", None), ("H:\\", Some(1))];
-        let unique2 = dedupe_disk_mounts(&entries2);
-        assert_eq!(unique2.len(), 3);
-        assert!(unique2.contains(&"C:\\"));
-        assert!(unique2.contains(&"D:\\"));
-        assert!(unique2.contains(&"H:\\"));
-    }
-    #[test]
-    fn volume_low_space_detection() {
-        use crate::modules::storage::model::{is_critical_space, used_pct_for};
-        let gb = 1024 * 1024 * 1024u64;
-        assert!(is_critical_space(used_pct_for(100 * gb, 5 * gb), 100 * gb, 5 * gb));
-        assert!(is_critical_space(95.0, 500 * gb, 25 * gb));
-        assert!(!is_critical_space(used_pct_for(500 * gb, 250 * gb), 500 * gb, 250 * gb));
-        assert_eq!(used_pct_for(0, 0), 0.0);
-        assert!(!is_critical_space(used_pct_for(8 * gb, 7 * gb), 8 * gb, 7 * gb));
-    }
-}
+#[path = "collector_tests.rs"]
+mod tests;

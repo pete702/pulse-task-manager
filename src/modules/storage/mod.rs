@@ -9,4 +9,5 @@ pub mod io_agg;
 pub mod model;
 pub mod physical_disk;
 pub mod view;
+pub mod view_helpers;
 pub mod volume_cards;

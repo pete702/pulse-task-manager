@@ -180,6 +180,10 @@ fn render_toolbar(
                     Ok(()) => "EcoQoS enabled".to_owned(),
                     Err(error) => format!("EcoQoS blocked: {error}"),
                 };
+                if msg == "EcoQoS enabled" {
+                    crate::modules::cpu::collector::set_eco_cached(item.pid, item.start_time, true);
+                    crate::core::request_process_scan();
+                }
                 state.last_action_msg = msg;
             }
             if action_button(ui, can_act, "[ Open Location ]", colors::TEXT_PRIMARY).clicked() {

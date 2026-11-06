@@ -82,6 +82,11 @@ pub fn handle_global_hotkeys(
                 cpu_table_state.selected_name = None;
                 cpu_table_state.confirm_kill = None;
                 cpu_table_state.mark_dirty();
+                if *active_tab == ActiveTab::Storage {
+                    crate::modules::storage::view::clear_selected();
+                } else if *active_tab == ActiveTab::Network {
+                    crate::modules::network::view::set_scope_all();
+                }
             }
             handled = true;
         }

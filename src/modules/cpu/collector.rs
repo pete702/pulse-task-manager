@@ -5,14 +5,17 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use sysinfo::{CpuRefreshKind, ProcessRefreshKind, System};
+use sysinfo::{ProcessRefreshKind, System};
 
-use crate::modules::cpu::model::{CpuSnapshot, RawProcessCpuRow};
+pub use crate::modules::cpu::collector_cpu::{collect_cpu, warmup_cpu};
+use crate::modules::cpu::model::RawProcessCpuRow;
 use crate::modules::cpu::qos_action::is_process_eco_qos;
-use crate::modules::cpu::win32_cpu::{read_cpu_brand, read_cpu_frequencies, warmup_cpu_refresh};
 
 /// Memo: last process scan time for disk I/O rate divisor.
 static LAST_SCAN: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
+/// Pending EcoQoS overrides from UI actions to worker cache.
+#[allow(clippy::type_complexity)]
+static PENDING_ECO: OnceLock<Mutex<HashMap<(u32, u64), Option<bool>>>> = OnceLock::new();
 
 /// Stateful collector holding `seen_pids` for first-sample disk guard.
 #[allow(dead_code)]
@@ -105,12 +108,21 @@ impl CpuCollector {
 
     fn fill_eco_qos(&mut self, rows: &mut [RawProcessCpuRow]) {
         let mut budget = 12;
+        let pending: HashMap<(u32, u64), Option<bool>> = PENDING_ECO
+            .get()
+            .map(|slot| std::mem::take(&mut *slot.lock().unwrap_or_else(|e| e.into_inner())))
+            .unwrap_or_default();
         for row in rows.iter_mut() {
             if row.pid == 0 || row.pid == 4 {
                 row.eco_qos = Some(false);
                 continue;
             }
             let key = (row.pid, row.start_time);
+            if let Some(primed) = pending.get(&key).copied() {
+                self.eco_cache.insert(key, (primed, Instant::now()));
+                row.eco_qos = primed;
+                continue;
+            }
             let fresh = self
                 .eco_cache
                 .get(&key)
@@ -133,6 +145,20 @@ impl Default for CpuCollector {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Primes worker EcoQoS cache after UI enable so filter updates next tick.
+#[allow(dead_code)]
+pub fn set_eco_cached(pid: u32, start_time: u64, on: bool) {
+    let slot = PENDING_ECO.get_or_init(|| Mutex::new(HashMap::new()));
+    slot.lock().unwrap_or_else(|e| e.into_inner()).insert((pid, start_time), Some(on));
+}
+
+/// Drops pending EcoQoS prime so next scan re-queries Win32.
+#[allow(dead_code)]
+pub fn invalidate_eco_cached(pid: u32, start_time: u64) {
+    let slot = PENDING_ECO.get_or_init(|| Mutex::new(HashMap::new()));
+    slot.lock().unwrap_or_else(|e| e.into_inner()).insert((pid, start_time), None);
 }
 
 /// First-sample guard: only zero when `is_first_seen` is true.
@@ -176,52 +202,6 @@ fn elapsed_since_last_scan() -> f32 {
     elapsed
 }
 
-/// Collects current system CPU state into a `CpuSnapshot`.
-/// Uses Win32 CallNtPowerInformation for live frequency (CurrentMhz) and base frequency (MaxMhz).
-pub fn collect_cpu(sys: &mut System) -> CpuSnapshot {
-    // Cheap refresh: live MHz and brand come from Win32 OnceLock. See worker_loop.
-    sys.refresh_cpu_specifics(CpuRefreshKind::new().with_cpu_usage());
-
-    let cpus = sys.cpus();
-    let logical_cores = cpus.len();
-    let mut per_core_pct = Vec::with_capacity(logical_cores);
-    let mut total_usage = 0.0f32;
-    let mut hottest_core_idx = 0;
-    let mut hottest_core_pct = 0.0f32;
-
-    for (idx, cpu) in cpus.iter().enumerate() {
-        let usage = cpu.cpu_usage();
-        per_core_pct.push(usage);
-        total_usage += usage;
-        if usage > hottest_core_pct {
-            hottest_core_pct = usage;
-            hottest_core_idx = idx;
-        }
-    }
-
-    let total_pct = (total_usage / logical_cores.max(1) as f32).clamp(0.0, 100.0);
-
-    // Live frequency via Win32 (CurrentMhz reflects Turbo Boost / SpeedShift)
-    // Base frequency (MaxMhz) for reference
-    let (base_mhz, current_mhz) = read_cpu_frequencies();
-
-    // Clean CPU brand string
-    let brand = read_cpu_brand(sys);
-
-    CpuSnapshot {
-        total_pct,
-        per_core_pct: per_core_pct.into(),
-        hottest_core_idx,
-        hottest_core_pct,
-        frequency_mhz: current_mhz,
-        base_mhz,
-        logical_cores,
-        brand,
-        raw_processes: Arc::new([]),
-        process_count: 0,
-    }
-}
-
 /// Back-compat free function using a static collector instance.
 #[allow(dead_code)]
 pub fn collect_process_cpu(
@@ -249,12 +229,6 @@ pub(crate) fn pid_contains(pid: u32, needle: &str) -> bool {
         }
     }
     std::str::from_utf8(&buf[pos..]).unwrap_or("").contains(needle)
-}
-
-/// Two-pass CPU warmup: primes sysinfo's internal deltas so first real read returns correct CPU%.
-/// Call once at worker startup before entering the main loop.
-pub fn warmup_cpu(sys: &mut System) {
-    warmup_cpu_refresh(sys);
 }
 
 #[cfg(test)]

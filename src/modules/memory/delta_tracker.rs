@@ -48,8 +48,21 @@ impl ProcessDeltaTracker {
     }
 
     /// Testable variant of [`Self::track`] with an explicit sample timestamp.
-    /// Single pass: resolve creation_time and track deltas together.
     pub fn track_at(&mut self, processes: &[ProcessSample], now: Instant) -> Vec<RawProcessRow> {
+        self.track_with_resolver(processes, now, query_creation_time_by_pid)
+    }
+
+    /// Deterministic variant with an injectable creation-time resolver.
+    /// Tests pass `|_| None` so results never depend on live OS processes.
+    pub fn track_with_resolver<F>(
+        &mut self,
+        processes: &[ProcessSample],
+        now: Instant,
+        resolve: F,
+    ) -> Vec<RawProcessRow>
+    where
+        F: Fn(u32) -> Option<u64>,
+    {
         let dt = self
             .last_sample
             .map(|prev| now.saturating_duration_since(prev).as_secs_f64())
@@ -74,7 +87,7 @@ impl ProcessDeltaTracker {
             });
             if state.creation_time.is_none() && budget > 0 {
                 budget -= 1;
-                let queried = query_creation_time_by_pid(seen_pid);
+                let queried = resolve(seen_pid);
                 state.creation_time = Some(queried.unwrap_or(0));
             }
 
@@ -129,14 +142,14 @@ mod tests {
     #[test]
     fn test_single_key_retains_cached_creation_time() {
         let mut tracker = ProcessDeltaTracker::new();
-        let pid = 1234;
+        let pid = u32::MAX - 1000;
         let start_time = 5678u64;
         let sample1 = vec![(pid, Arc::from("test.exe"), 1000u64, 2000u64, None, start_time)];
-        let result1 = tracker.track_at(&sample1, Instant::now());
+        let result1 = tracker.track_with_resolver(&sample1, Instant::now(), |_| None);
         assert_eq!(result1.len(), 1);
         assert_eq!(result1[0].creation_time, Some(0)); // inaccessible caches 0
         let sample2 = vec![(pid, Arc::from("test.exe"), 1500u64, 2000u64, None, start_time)];
-        let result2 = tracker.track_at(&sample2, Instant::now());
+        let result2 = tracker.track_with_resolver(&sample2, Instant::now(), |_| None);
         assert_eq!(result2.len(), 1);
         assert_eq!(tracker.states.len(), 1);
         let state = tracker.states.get(&(pid, start_time)).unwrap();
@@ -148,10 +161,10 @@ mod tests {
     fn test_new_pid_gets_new_entry() {
         let mut tracker = ProcessDeltaTracker::new();
         let sample = vec![
-            (111u32, Arc::from("a.exe"), 100u64, 200u64, None, 1000u64),
-            (222u32, Arc::from("b.exe"), 200u64, 300u64, None, 2000u64),
+            (u32::MAX - 2, Arc::from("a.exe"), 100u64, 200u64, None, 1000u64),
+            (u32::MAX - 1, Arc::from("b.exe"), 200u64, 300u64, None, 2000u64),
         ];
-        tracker.track_at(&sample, Instant::now());
+        tracker.track_with_resolver(&sample, Instant::now(), |_| None);
         assert_eq!(tracker.states.len(), 2);
     }
     #[test]
@@ -159,14 +172,21 @@ mod tests {
         let mut tracker = ProcessDeltaTracker::new();
         let sample: Vec<_> = (0..12u32)
             .map(|i| {
-                (1000 + i, Arc::from(format!("p{i}.exe")), 100u64, 200u64, None, 5000u64 + i as u64)
+                (
+                    u32::MAX - 20 + i,
+                    Arc::from(format!("p{i}.exe")),
+                    100u64,
+                    200u64,
+                    None,
+                    5000u64 + i as u64,
+                )
             })
             .collect();
-        let r1 = tracker.track_at(&sample, Instant::now());
+        let r1 = tracker.track_with_resolver(&sample, Instant::now(), |_| None);
         assert_eq!(r1.len(), 12);
         assert_eq!(r1.iter().filter(|r| r.creation_time.is_none()).count(), 4);
         assert_eq!(r1.iter().filter(|r| r.creation_time == Some(0)).count(), 8);
-        let r2 = tracker.track_at(&sample, Instant::now());
+        let r2 = tracker.track_with_resolver(&sample, Instant::now(), |_| None);
         assert_eq!(r2.iter().filter(|r| r.creation_time.is_none()).count(), 0);
         assert_eq!(r2.iter().filter(|r| r.creation_time == Some(0)).count(), 12);
     }

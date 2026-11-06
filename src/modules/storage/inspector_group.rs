@@ -37,7 +37,7 @@ pub fn filter_on() -> &'static Mutex<bool> {
     FILTER_ON.get_or_init(|| Mutex::new(true))
 }
 
-fn exe_drive(pid: u32, start_time: u64) -> Option<char> {
+pub(crate) fn exe_drive(pid: u32, start_time: u64) -> Option<char> {
     let path = cached_exe_path(pid, start_time);
     let b = path.as_bytes();
     if b.len() >= 2 && b[1] == b':' && b[0].is_ascii_alphabetic() {

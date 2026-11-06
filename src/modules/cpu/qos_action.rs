@@ -189,7 +189,10 @@ pub fn show_cpu_process_context_menu(ui: &mut eframe::egui::Ui, item: &ProcessCp
     ui.separator();
 
     if ui.add_enabled(!blocked, egui::Button::new("Enable EcoQoS (Efficiency Mode)")).clicked() {
-        let _ = enable_eco_qos(pid, &name);
+        if enable_eco_qos(pid, &name).is_ok() {
+            crate::modules::cpu::collector::set_eco_cached(pid, item.start_time, true);
+            crate::core::request_process_scan();
+        }
         ui.close_menu();
     }
 

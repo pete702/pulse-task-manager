@@ -9,6 +9,7 @@ use crate::modules::cpu::model::RawProcessCpuRow;
 use crate::modules::storage::chart_view::render_storage_chart;
 use crate::modules::storage::inspector::render_selection_split;
 use crate::modules::storage::model::{StorageHistory, StorageSnapshot};
+use crate::modules::storage::view_helpers::{col_kpi, render_blackbox, truncate};
 use crate::modules::storage::volume_cards::render_volume_cards;
 use crate::theme::{card_frame, colors};
 
@@ -52,6 +53,18 @@ pub fn window_secs() -> usize {
 pub fn clear_selected() {
     let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
     guard.selected_mount = None;
+}
+
+/// Current selected mount (None = All Disks).
+#[allow(dead_code)]
+pub fn selected_mount() -> Option<Arc<str>> {
+    state().lock().unwrap_or_else(|e| e.into_inner()).selected_mount.clone()
+}
+
+#[cfg(test)]
+pub(crate) fn set_selected_for_test(value: Option<Arc<str>>) {
+    let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
+    guard.selected_mount = value;
 }
 
 /// Background ingestion: pure 1-second time throttle (like network).
@@ -98,6 +111,7 @@ pub fn render_storage_tab(
         let guard = state().lock().unwrap_or_else(|e| e.into_inner());
         guard.selected_mount.clone()
     };
+    let sel_initial = selected.clone();
     // Clear stale selection if the mount vanished; keep None as "All".
     if selected.is_some() {
         let valid = snap.volumes.iter().any(|v| selected.as_ref() == Some(&v.mount_point));
@@ -136,6 +150,13 @@ pub fn render_storage_tab(
         render_status_and_kpis(ui, snap, kpi_read, kpi_write, scope_disk);
         ui.add_space(8.0);
         render_storage_chart(ui, &read_series, &write_series, window_secs, scope_label.as_deref());
+        // Show All may have cleared guard.selected_mount; sync before cards.
+        {
+            let g = state().lock().unwrap_or_else(|e| e.into_inner());
+            if g.selected_mount != sel_initial {
+                selected = g.selected_mount.clone();
+            }
+        }
         ui.add_space(8.0);
         render_volume_cards(ui, &snap.volumes, &mut selected);
         ui.add_space(8.0);
@@ -217,53 +238,20 @@ fn render_status_and_kpis(
     });
 }
 
-fn render_blackbox(ui: &mut egui::Ui, snap: &StorageSnapshot) {
-    ui.vertical(|ui| {
-        ui.label(
-            egui::RichText::new("I/O BLACKBOX").monospace().size(9.0).color(colors::TEXT_SECONDARY),
-        );
-        if let Some(spike) = snap.last_io_spike.as_ref() {
-            let sub = format!(
-                "{} {:.1} MB/s ({}s ago)",
-                spike.process_name, spike.peak_mb_s, spike.ticks_ago
-            );
-            let tip = format!(
-                "PID {} at {} - R {:.1} / W {:.1} MB/s - peak {:.1} MB/s",
-                spike.pid, spike.timestamp_hms, spike.read_mb_s, spike.write_mb_s, spike.peak_mb_s
-            );
-            let resp = ui.label(
-                egui::RichText::new("SPIKE ALERT").monospace().size(13.0).color(colors::ACCENT_RED),
-            );
-            resp.on_hover_text(tip);
-            ui.label(
-                egui::RichText::new(truncate(&sub, 28))
-                    .monospace()
-                    .size(9.0)
-                    .color(colors::TEXT_SECONDARY),
-            );
-        } else {
-            ui.label(
-                egui::RichText::new("ARMED")
-                    .monospace()
-                    .size(13.0)
-                    .color(crate::theme::OPTIMAL_EMERALD),
-            );
-        }
-    });
-}
-
-fn col_kpi(ui: &mut egui::Ui, label: &str, value: String, color: egui::Color32) {
-    ui.vertical(|ui| {
-        ui.label(egui::RichText::new(label).monospace().size(9.0).color(colors::TEXT_SECONDARY));
-        ui.label(egui::RichText::new(value).monospace().size(13.0).color(color));
-    });
-}
-
-fn truncate(text: &str, max_chars: usize) -> String {
-    if text.chars().count() <= max_chars {
-        return text.to_owned();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn clear_selected_persists_after_show_all() {
+        set_selected_for_test(Some(Arc::from("C:\\")));
+        assert_eq!(selected_mount(), Some(Arc::from("C:\\")));
+        clear_selected();
+        assert_eq!(selected_mount(), None);
+        let sel_initial: Option<Arc<str>> = Some(Arc::from("C:\\"));
+        let g = state().lock().unwrap_or_else(|e| e.into_inner());
+        assert!(g.selected_mount != sel_initial);
+        assert_eq!(g.selected_mount, None);
+        drop(g);
+        set_selected_for_test(None);
     }
-    let mut out: String = text.chars().take(max_chars.saturating_sub(1)).collect();
-    out.push('~');
-    out
 }

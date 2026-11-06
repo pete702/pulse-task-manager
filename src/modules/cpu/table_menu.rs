@@ -33,6 +33,10 @@ pub fn show_row_menu(ui: &mut egui::Ui, item: &ProcessCpuItem, state: &mut CpuTa
             Ok(()) => "EcoQoS enabled".to_owned(),
             Err(error) => format!("EcoQoS blocked: {error}"),
         };
+        if state.last_action_msg == "EcoQoS enabled" {
+            crate::modules::cpu::collector::set_eco_cached(item.pid, item.start_time, true);
+            crate::core::request_process_scan();
+        }
         ui.close_menu();
     }
     if ui.button("Open File Location").clicked() {

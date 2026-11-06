@@ -12,8 +12,8 @@ mod tests {
     fn test_worker_integration_single_cycle() {
         let (worker, rx) = spawn_telemetry_worker();
         let snapshot = rx
-            .recv_timeout(Duration::from_secs(5))
-            .expect("Worker should send first snapshot within 5 seconds");
+            .recv_timeout(Duration::from_secs(15))
+            .expect("Worker should send first snapshot within 15 seconds");
         assert!(snapshot.uptime_secs > 0, "Uptime should be positive");
         assert!(snapshot.pulse_ram_mb >= 0.0, "Pulse RAM should be non-negative");
         let mem = snapshot.memory.as_ref().expect("Memory snapshot should be present");

@@ -5,6 +5,7 @@ pub mod chart_axis;
 pub mod chart_hud;
 pub mod chart_view;
 pub mod collector;
+pub mod collector_cpu;
 pub mod core_grid;
 pub mod exe_cache;
 pub mod history;
