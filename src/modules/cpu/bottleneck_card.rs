@@ -10,7 +10,10 @@ use eframe::egui;
 fn cached_hottest(pct: f32) -> Arc<str> {
     let key = (pct * 10.0).round() as u16;
     static CACHE: OnceLock<Mutex<(u16, Arc<str>)>> = OnceLock::new();
-    let mut cache = CACHE.get_or_init(|| Mutex::new((0, Arc::from("")))).lock().unwrap();
+    let mut cache = CACHE
+        .get_or_init(|| Mutex::new((0, Arc::from(""))))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if cache.0 != key {
         cache.0 = key;
         cache.1 = Arc::from(format!("{pct:.1}%"));
@@ -20,7 +23,10 @@ fn cached_hottest(pct: f32) -> Arc<str> {
 
 fn cached_thread(idx: usize) -> Arc<str> {
     static CACHE: OnceLock<Mutex<(usize, Arc<str>)>> = OnceLock::new();
-    let mut cache = CACHE.get_or_init(|| Mutex::new((0, Arc::from("")))).lock().unwrap();
+    let mut cache = CACHE
+        .get_or_init(|| Mutex::new((0, Arc::from(""))))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if cache.0 != idx {
         cache.0 = idx;
         cache.1 = Arc::from(format!("Thread #{idx}"));
@@ -31,7 +37,10 @@ fn cached_thread(idx: usize) -> Arc<str> {
 fn cached_delta(delta: f32) -> Arc<str> {
     let key = (delta * 10.0).round() as u16;
     static CACHE: OnceLock<Mutex<(u16, Arc<str>)>> = OnceLock::new();
-    let mut cache = CACHE.get_or_init(|| Mutex::new((0, Arc::from("")))).lock().unwrap();
+    let mut cache = CACHE
+        .get_or_init(|| Mutex::new((0, Arc::from(""))))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if cache.0 != key {
         cache.0 = key;
         cache.1 = Arc::from(format!("+{delta:.1}% vs Total"));

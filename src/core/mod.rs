@@ -93,7 +93,8 @@ impl LatestSlot {
 
     /// Takes the newest value, marking it as read.
     pub fn take(&self) -> Option<Arc<SystemSnapshot>> {
-        self.inner.try_lock().ok().and_then(|mut slot| slot.take())
+        let mut slot = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        slot.take()
     }
 
     pub fn overflow_count(&self) -> u64 {

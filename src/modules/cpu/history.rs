@@ -91,7 +91,7 @@ impl CpuHistory {
             return c;
         }
         let points = self.build_windowed_series(&self.total_points, window);
-        let arc = Arc::new(lttb_downsample(&points, 300));
+        let arc = Arc::new(lttb_downsample(&points, 900));
         match window {
             CpuChartWindow::OneMin => self.cached_total_1m = Some(arc.clone()),
             CpuChartWindow::FiveMin => self.cached_total_5m = Some(arc.clone()),
@@ -110,7 +110,7 @@ impl CpuHistory {
             return c;
         }
         let points = self.build_windowed_series(&self.hottest_points, window);
-        let arc = Arc::new(lttb_downsample(&points, 300));
+        let arc = Arc::new(lttb_downsample(&points, 900));
         match window {
             CpuChartWindow::OneMin => self.cached_hottest_1m = Some(arc.clone()),
             CpuChartWindow::FiveMin => self.cached_hottest_5m = Some(arc.clone()),
@@ -124,6 +124,9 @@ impl CpuHistory {
         points: &VecDeque<f32>,
         window: CpuChartWindow,
     ) -> Vec<[f64; 2]> {
+        if self.timestamps.is_empty() || points.is_empty() {
+            return Vec::new();
+        }
         let now = self.latest_timestamp();
         let window_secs = window.seconds() as f64;
         let len = points.len();

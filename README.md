@@ -51,7 +51,7 @@ Future Pro extensions (24h history, automation rules) will be optional offline m
 - **Decoupled 1 Hz / Adaptive 3 s / 5 s Collector**: Main `egui` UI thread + background telemetry worker thread (`bounded std::sync::mpsc::sync_channel(2)`) with 1 Hz system telemetry polling and adaptive process scanning (3 s when Processes tab active, 5 s on Overview); paused process scanning with zero-copy `Arc` sharing in minimized mode (instant full scan on wake, tab switch, or user action); `O(1)` UI table & selection caching via `process_scan_id`.
 - **Minimize Hibernation**: 0 FPS UI when minimized (5s background worker poll + 30s safety watchdog); UI rendering pauses while minimized and triggers a single controlled working-set self-trim (`K32EmptyWorkingSet`) on frame #3 after GPU init and on minimize transition.
 - **User-Mode Only**: Uses standard Win32 APIs (`K32GetPerformanceInfo`, `sysinfo`); no kernel drivers, no DLL injection, and no hooks into other processes.
-- **PID Safety Gate**: Blocks PID 0, PID 4, self-PID, 27 critical OS processes, and 11 known anti-cheat processes before any mutating action.
+- **PID Safety Gate**: Blocks PID 0, PID 4, self-PID, 31 critical OS processes, and 11 known anti-cheat processes before any mutating action.
 - **3-Point Process Identity**: `basename + creation_time + full_path` verification before any mutating action; frozen target list on `[ End Task ]` confirmation.
 - **Three Walls Badge**: Live `SYSTEM OPTIMAL` / `RAM ELEVATED` / `MEMORY WALL` indicator driven by RAM and Commit pressure.
 - **Global Compute Alert**: `[ ▲ COMPUTE BOTTLENECK ]` appears in amber in the top chrome when a core or total load reaches 85%, unless a memory wall alert is active.
@@ -74,7 +74,7 @@ cargo run --release
 ## CLI Flags
 
 ```powershell
-pulse_manager.exe --version   # Prints: PULSE v0.2.9 (pulse_manager)
+pulse_manager.exe --version   # Prints: PULSE v0.2.10 (pulse_manager)
 pulse_manager.exe --help      # Prints usage
 pulse_manager.exe --self-test # Headless CI self-test
 ```

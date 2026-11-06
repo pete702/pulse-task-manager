@@ -38,7 +38,10 @@ impl TelemetryWorker {
             thread_handle: Some(thread_handle),
             shutdown,
         };
-        let rx = worker.rx.take().unwrap();
+        let rx = match worker.rx.take() {
+            Some(rx) => rx,
+            None => std::sync::mpsc::channel().1,
+        };
         (worker, rx)
     }
 

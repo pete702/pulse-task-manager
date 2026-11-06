@@ -1,6 +1,6 @@
 # 🏗️ PULSE Architecture & Engineering Rules
 
-PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.85"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.2.9**.
+PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.85"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.2.10**.
 
 ## 1. Core Architectural Principles
 
@@ -28,8 +28,8 @@ PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and pro
 
 ## 3. Module Boundaries (`src/`)
 
-- `src/core/`: Worker (`worker.rs`), `SystemSnapshot` channel (`mod.rs`), state persistence (`persist.rs`, `%LOCALAPPDATA%\PULSE\state.cfg` zero-crate), CLI `--self-test` (`selftest.rs`), guards (`selftest_tests.rs`).
-- `src/modules/memory/`: Implemented Phase 1 `[01] Memory (RAM)` - RAM/Swap collector, `K32GetPerformanceInfo` FFI, 3-segment bar, spike blackbox, `Delta RAM/s`, formatters, virtualized `TableBuilder`, action bar (`action_bar.rs`), PID Safety Gate (`safe_handle.rs`). Cache key: `search_hash: u64` + `uptime_secs`; 1 Hz `cached_format_uptime`; `1m/5m/15m` chart with cached `PlotPoints`.
+- `src/core/`: Worker (`worker.rs`), `SystemSnapshot` channel (`mod.rs`), state persistence (`persist.rs`, `%LOCALAPPDATA%\PULSE\state.cfg` zero-crate), CLI `--self-test` (`selftest.rs`), guards (`selftest_tests.rs`); 6 direct runtime crates + 1 MSRV pin.
+- `src/modules/memory/`: Implemented Phase 1 `[01] Memory (RAM)` - RAM/Swap collector, `K32GetPerformanceInfo` FFI, 3-segment bar, spike blackbox, `Delta RAM/s`, formatters, virtualized `TableBuilder`, action bar (`action_bar.rs`), PID Safety Gate (`safe_handle.rs`). Cache key: `(process_scan_id, ram_total_bytes, search_query, sort_col, sort_asc, group_clones)`; 1 Hz `cached_format_uptime`; `1m/5m/15m` chart with cached `PlotPoints`.
 - `src/modules/cpu/`: Implemented Phase 2 - `[00] Processes` (smart resizable `Column::initial(...).range(...).resizable(true)` via `table_menu.rs`) and `[02] Processor` cockpits.
 - `src/modules/{storage,network,system}/`: Planned Phases 3–5 (`[03]` Storage, `[04]` Network, `[05]` System) then Stage B: Total Sci-Fi Cockpit UI 2.0 Redesign after core modules are online.
 - `src/ui/`: Root panel layout (`Top`→`Bottom`→`Left`→`Central`), theme, live System Telemetry TopBar (`[ CPU | RAM | UPTIME | HEALTH ]`), sidebar, status bar, Three Walls badge (`three_walls.rs`), HUD accents (`draw_cyber_corner_brackets`, `draw_tactical_ticks`, scanline).

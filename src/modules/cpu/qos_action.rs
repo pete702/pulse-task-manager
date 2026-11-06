@@ -7,8 +7,9 @@
 use std::path::Path;
 
 use windows_sys::Win32::System::Threading::{
-    SetPriorityClass, IDLE_PRIORITY_CLASS, PROCESS_QUERY_LIMITED_INFORMATION,
-    PROCESS_SET_INFORMATION,
+    ProcessPowerThrottling, SetPriorityClass, SetProcessInformation, IDLE_PRIORITY_CLASS,
+    PROCESS_POWER_THROTTLING_CURRENT_VERSION, PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+    PROCESS_POWER_THROTTLING_STATE, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
 };
 
 use crate::modules::cpu::model::ProcessCpuItem;
@@ -87,10 +88,23 @@ pub fn enable_eco_qos(pid: u32, name: &str) -> Result<(), String> {
 
     let result = unsafe { SetPriorityClass(handle.as_raw(), IDLE_PRIORITY_CLASS) };
     if result == 0 {
-        Err("Failed to set IDLE_PRIORITY_CLASS".to_string())
-    } else {
-        Ok(())
+        return Err("Failed to set IDLE_PRIORITY_CLASS".to_string());
     }
+    // Best-effort true EcoQoS: Power Throttling execution-speed control.
+    let state = PROCESS_POWER_THROTTLING_STATE {
+        Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+        ControlMask: PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+        StateMask: 0,
+    };
+    unsafe {
+        let _ = SetProcessInformation(
+            handle.as_raw(),
+            ProcessPowerThrottling,
+            &state as *const _ as *const std::os::raw::c_void,
+            std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32,
+        );
+    }
+    Ok(())
 }
 
 /// Trims the working set of a process to release physical RAM.

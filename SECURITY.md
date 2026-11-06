@@ -4,7 +4,7 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.2.9   | Current release |
+| 0.2.10  | Current release |
 
 Only the latest minor release in the `0.2.x` series receives security updates.
 
@@ -23,7 +23,7 @@ PULSE is a **local-only** Windows telemetry HUD. It performs **zero network conn
 Before any mutating action (working-set trim, process termination), PULSE enforces a **PID Safety Gate** (`src/modules/memory/safe_handle.rs`):
 
 - **Always blocked**: PID 0 (System Idle Process), PID 4 (System), current PULSE process PID.
-- **Critical OS processes** (27): `System`, `Registry`, `Memory Compression`, `smss.exe`, `csrss.exe`, `wininit.exe`, `services.exe`, `lsass.exe`, `lsaiso.exe`, `svchost.exe`, `dwm.exe`, `winlogon.exe`, `fontdrvhost.exe`, `sihost.exe`, `taskhostw.exe`, `msmpeng.exe`, `nissrv.exe`, `securityhealthservice.exe`, `spoolsv.exe`, `audiodg.exe`, `wmiprvse.exe`, `searchindexer.exe`, `startmenuexperiencehost.exe`, `searchhost.exe`, `shellexperiencehost.exe`, `textinputhost.exe`, `conhost.exe`.
+- **Critical OS processes** (31): `System`, `Registry`, `Memory Compression`, `smss.exe`, `csrss.exe`, `wininit.exe`, `services.exe`, `lsass.exe`, `lsaiso.exe`, `svchost.exe`, `dwm.exe`, `winlogon.exe`, `fontdrvhost.exe`, `sihost.exe`, `taskhostw.exe`, `explorer.exe`, `runtimebroker.exe`, `searchprotocolhost.exe`, `searchfilterhost.exe`, `msmpeng.exe`, `nissrv.exe`, `securityhealthservice.exe`, `spoolsv.exe`, `audiodg.exe`, `wmiprvse.exe`, `searchindexer.exe`, `startmenuexperiencehost.exe`, `searchhost.exe`, `shellexperiencehost.exe`, `textinputhost.exe`, `conhost.exe`.
 - **Known anti-cheat processes** (11): `vgc.exe`, `vgtray.exe`, `easyanticheat.exe`, `easyanticheat_eos.exe`, `beservice.exe`, `bedaisy.sys`, `zksvc.exe`, `faceitclient.exe`, `eseaclient.exe`, `ricochet.exe`, `hoyokprotect.sys`.
 
 **3-Point Identity Verification**: Before `EmptyWorkingSet` or `TerminateProcess`, PULSE verifies `(basename, creation_time, full_path)` against the frozen `ProcessTarget` captured at scan time. Creation time is queried once per `(pid, sysinfo_start_time)` and cached; full path via `QueryFullProcessImageNameW`; basename derived from full path. All checks fail closed — any query failure or mismatch blocks the mutation.

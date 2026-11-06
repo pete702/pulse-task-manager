@@ -53,3 +53,10 @@ Archived entries from 0.1.x. Recent 0.2.x entries live in CHANGELOG.md.
 - **Rich Context Menu**: Trim, EcoQoS, Open Location, Terminate, Copy Name & PID.
 - **Compute Alert**: `[ ^ COMPUTE BOTTLENECK ]` amber top chrome at 85% unless memory wall active.
 - **UI Polish**: Semantic buttons, sort arrows, zero right gap, scrollbar-free Memory cockpit.
+
+## [0.2.1] - 2026-11-05
+
+- **Process Selection Persistence**: Added `selected_name` tracking to `CpuTableState`; selection now survives 3-second scan rebuilds even when clone-group representative PID shifts or rows are re-filtered/sorted.
+- **Toolbar Layout Fix**: Split toolbar into two rows (filter controls + action buttons) to eliminate text overlap with `[ Trim RAM ]`; shortened counter to `"64 / 196 rows"`; reduced search field width.
+- **10s DELTA Column Clipping Fixed**: Changed to exact-width columns (`PID=62`, `CLONES=66`, `CPU %=84`, `RAM=114`, `DELTA=98`) with `remainder()` only for `PROCESS NAME`; all 6 columns now fit 100% inside table width.
+- **Version bump to 0.2.1**.

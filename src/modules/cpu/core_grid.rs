@@ -14,8 +14,7 @@ pub fn render_core_grid(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
 
     // Dynamic cols from available width so narrowing never clips C08/C09.
     let avail_w = ui.available_width().max(120.0);
-    let cols = ((avail_w / 84.0).floor() as usize).clamp(4, 10);
-    let cols = cols.min(n);
+    let cols = ((avail_w / 88.0).floor() as usize).clamp(4, 14).min(n.max(1));
 
     card_frame().show(ui, |ui| {
         ui.vertical(|ui| {
@@ -40,24 +39,30 @@ pub fn render_core_grid(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
 
             // Grid layout — vertical ScrollArea when threads are high.
             let available_width = ui.available_width().max(120.0);
-            let cell_width = (available_width - (cols - 1) as f32 * 8.0) / cols as f32;
-            let cell_width = cell_width.clamp(48.0, 120.0);
+            let spacing = 6.0_f32;
+            let tile_w = ((available_width - spacing * (cols.saturating_sub(1) as f32))
+                / (cols as f32))
+                .max(68.0);
+            let cell_width = tile_w;
             let cell_height = 48.0;
 
             let show_scroll = per_core.len() > cols * 4;
             let grid_fn = |ui: &mut egui::Ui| {
-                egui::Grid::new("core_grid").num_columns(cols).spacing([8.0, 8.0]).show(ui, |ui| {
-                    for (idx, &usage) in per_core.iter().enumerate() {
-                        let is_hottest = idx == cpu.hottest_core_idx;
-                        render_core_cell(ui, idx, usage, is_hottest, cell_width, cell_height);
-                        if (idx + 1) % cols == 0 {
+                egui::Grid::new("core_grid").num_columns(cols).spacing([spacing, 8.0]).show(
+                    ui,
+                    |ui| {
+                        for (idx, &usage) in per_core.iter().enumerate() {
+                            let is_hottest = idx == cpu.hottest_core_idx;
+                            render_core_cell(ui, idx, usage, is_hottest, cell_width, cell_height);
+                            if (idx + 1) % cols == 0 {
+                                ui.end_row();
+                            }
+                        }
+                        if per_core.len() % cols != 0 {
                             ui.end_row();
                         }
-                    }
-                    if per_core.len() % cols != 0 {
-                        ui.end_row();
-                    }
-                });
+                    },
+                );
             };
             if show_scroll {
                 egui::ScrollArea::vertical()

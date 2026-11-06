@@ -122,7 +122,6 @@ pub fn render_cpu_chart(ui: &mut egui::Ui, h: &mut CpuHistory) {
             let plot_rect = *plot_response.transform.frame();
             draw_y_axis_hud_labels(ui, plot_rect);
             draw_x_axis_hud_labels(ui, plot_rect, selected);
-            ui.add_space(14.0);
 
             // Draw interactive horizontal legend on top of the plot
             let legend_rect_id = egui::Id::new("cpu_chart_legend_rect");

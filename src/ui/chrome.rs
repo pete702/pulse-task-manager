@@ -34,7 +34,10 @@ fn cached_self_ram_mb(fresh: Option<f32>) -> f32 {
 /// Cached uptime formatter: allocates only when uptime_secs changes (1 Hz).
 fn cached_format_uptime(uptime_secs: u64) -> String {
     static CACHE: OnceLock<Mutex<(u64, String)>> = OnceLock::new();
-    let mut cache = CACHE.get_or_init(|| Mutex::new((0, String::new()))).lock().unwrap();
+    let mut cache = CACHE
+        .get_or_init(|| Mutex::new((0, String::new())))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if cache.0 != uptime_secs {
         cache.0 = uptime_secs;
         cache.1 = format_uptime(uptime_secs);

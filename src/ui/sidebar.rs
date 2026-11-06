@@ -8,7 +8,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 fn cached_pct(pct: f32) -> Arc<str> {
     let key = (pct * 10.0).round() as u16;
     static RAM_CACHE: OnceLock<Mutex<(u16, Arc<str>)>> = OnceLock::new();
-    let mut cache = RAM_CACHE.get_or_init(|| Mutex::new((0, Arc::from("")))).lock().unwrap();
+    let mut cache = RAM_CACHE
+        .get_or_init(|| Mutex::new((0, Arc::from(""))))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if cache.0 != key {
         cache.0 = key;
         cache.1 = Arc::from(format!("{}%", (pct.round() as u32)));
@@ -19,7 +22,10 @@ fn cached_pct(pct: f32) -> Arc<str> {
 fn cached_cpu_pct(pct: f32) -> Arc<str> {
     let key = (pct * 10.0).round() as u16;
     static CPU_CACHE: OnceLock<Mutex<(u16, Arc<str>)>> = OnceLock::new();
-    let mut cache = CPU_CACHE.get_or_init(|| Mutex::new((0, Arc::from("")))).lock().unwrap();
+    let mut cache = CPU_CACHE
+        .get_or_init(|| Mutex::new((0, Arc::from(""))))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if cache.0 != key {
         cache.0 = key;
         cache.1 = Arc::from(format!("{}%", (pct.round() as u32)));
@@ -29,7 +35,10 @@ fn cached_cpu_pct(pct: f32) -> Arc<str> {
 
 fn cached_count(count: u32) -> Arc<str> {
     static COUNT_CACHE: OnceLock<Mutex<(u32, Arc<str>)>> = OnceLock::new();
-    let mut cache = COUNT_CACHE.get_or_init(|| Mutex::new((0, Arc::from("")))).lock().unwrap();
+    let mut cache = COUNT_CACHE
+        .get_or_init(|| Mutex::new((0, Arc::from(""))))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if cache.0 != count {
         cache.0 = count;
         cache.1 = Arc::from(count.to_string());

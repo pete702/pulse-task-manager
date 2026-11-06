@@ -31,8 +31,7 @@ pub fn draw_x_axis_hud_labels(ui: &egui::Ui, plot_rect: egui::Rect, window: CpuC
     let painter = ui.painter();
     let hud_label = egui::Color32::from_rgba_unmultiplied(148, 163, 184, 165);
     let ticks = x_axis_ticks(window);
-    // Draw labels in dedicated strip below plot so cyan line never collides.
-    let y = plot_rect.bottom() + 8.0;
+    let y = plot_rect.bottom() - 5.0;
     let count = ticks.len();
     for (idx, tick) in ticks.iter().enumerate() {
         let x = if count > 1 {
@@ -43,11 +42,11 @@ pub fn draw_x_axis_hud_labels(ui: &egui::Ui, plot_rect: egui::Rect, window: CpuC
         };
         let label = format_tick_label(window, *tick);
         let align = if idx == 0 {
-            egui::Align2::LEFT_TOP
+            egui::Align2::LEFT_BOTTOM
         } else if idx + 1 == count {
-            egui::Align2::RIGHT_TOP
+            egui::Align2::RIGHT_BOTTOM
         } else {
-            egui::Align2::CENTER_TOP
+            egui::Align2::CENTER_BOTTOM
         };
         let x_adjusted = if idx == 0 {
             plot_rect.left() + 8.0

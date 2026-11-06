@@ -4,6 +4,23 @@ All notable PULSE changes are in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
 Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
 
+## [0.2.10] - 2026-11-06
+
+- **15m Chart Stability**: LTTB threshold 300 to 900 so 1m/5m/15m keep exact 1-second points; empty-history guards; 120ms warmup sleep replaces synthetic 0% startup ticks; X labels unified inside.
+- **Fluid Core Grid**: Per-core grid stretches 100% width with up to 14 columns and fluid tile width.
+- **True EcoQoS & Local Time**: Power Throttling EcoQoS via SetProcessInformation; unified PID gate with user-shell processes; local HH:MM:SS timestamps.
+- **Audit Fixes**: Mutex poison-safe locks, no dropped LatestSlot frames, 5m default windows, on-exit flush, Ctrl+F/Esc route to Processes, stale i18n cleanup.
+- **Version bump to 0.2.10**.
+
+## [0.2.9] - 2026-11-06
+
+- **True Win32 Locale**: Replaced hardcoded UK/EN shortcut with `GetUserDefaultLocaleName` into a stack buffer, uppercased ASCII cache; non-Windows fallback is EN-US.
+- **System Telemetry Top Bar**: Top bar now shows `[ CPU: X% | RAM: X / XX GiB (XX%) ]` plus uptime and health pill; PULSE self-RAM/UI/locale moved to status bar and top-bar hover.
+- **Smart Resizable Columns**: Processes numeric columns use compact `initial` widths with strict ranges and `resizable` dividers; `PROCESS NAME` remainder starts at 180px so long names stay readable.
+- **App State Persistence**: `%LOCALAPPDATA%\PULSE\state.cfg` stores tab, grouping, density, sort, chart windows, grid view, and window size; change detection saves on toggle and resize.
+- **Sci-Fi HUD Accents**: Corner brackets on cards, charts, and active sidebar; 5 percent tick segments plus 2px leading cap on main bars; dual-tone top scanline.
+- **Version bump to 0.2.9**.
+
 ## [0.2.8] - 2026-11-06
 
 - **Top Bar Always Self-RAM**: `[ PULSE: XX.X MB | UI: X.XX ms ]` now cached across ticks/tabs and shown on all tabs; short locale `[ LOCALE: UK-UA ]` with full details on hover; min window `860x560`.
@@ -61,20 +78,4 @@ Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
 - **Instant Worker Unpark**: Removed unused local `CpuHistory` (UI owns history from `CpuSnapshot`); `thread::park_timeout()` already provides instant unpark wakeup.
 - **Version bump to 0.2.2**.
 
-## [0.2.1] - 2026-11-05
-
-- **Process Selection Persistence**: Added `selected_name` tracking to `CpuTableState`; selection now survives 3-second scan rebuilds even when clone-group representative PID shifts or rows are re-filtered/sorted.
-- **Toolbar Layout Fix**: Split toolbar into two rows (filter controls + action buttons) to eliminate text overlap with `[ Trim RAM ]`; shortened counter to `"64 / 196 rows"`; reduced search field width.
-- **10s DELTA Column Clipping Fixed**: Changed to exact-width columns (`PID=62`, `CLONES=66`, `CPU %=84`, `RAM=114`, `DELTA=98`) with `remainder()` only for `PROCESS NAME`; all 6 columns now fit 100% inside table width.
-- **Version bump to 0.2.1**.
-
 Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
-
-## [0.2.9] - 2026-11-06
-
-- **True Win32 Locale**: Replaced hardcoded UK/EN shortcut with `GetUserDefaultLocaleName` into a stack buffer, uppercased ASCII cache; non-Windows fallback is EN-US.
-- **System Telemetry Top Bar**: Top bar now shows `[ CPU: X% | RAM: X / XX GiB (XX%) ]` plus uptime and health pill; PULSE self-RAM/UI/locale moved to status bar and top-bar hover.
-- **Smart Resizable Columns**: Processes numeric columns use compact `initial` widths with strict ranges and `resizable` dividers; `PROCESS NAME` remainder starts at 180px so long names stay readable.
-- **App State Persistence**: `%LOCALAPPDATA%\PULSE\state.cfg` stores tab, grouping, density, sort, chart windows, grid view, and window size; change detection saves on toggle and resize.
-- **Sci-Fi HUD Accents**: Corner brackets on cards, charts, and active sidebar; 5 percent tick segments plus 2px leading cap on main bars; dual-tone top scanline.
-- **Version bump to 0.2.9**.

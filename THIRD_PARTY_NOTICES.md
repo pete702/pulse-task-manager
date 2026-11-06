@@ -1,6 +1,6 @@
 # Third-Party Notices for PULSE
 
-This file documents the licenses of all direct dependencies of PULSE (`pulse_manager` v0.2.9).
+This file documents the licenses of all direct dependencies of PULSE (`pulse_manager` v0.2.10).
 All dependencies are available under permissive open-source licenses (MIT or Apache-2.0).
 
 ## Direct Dependencies (6 crates)

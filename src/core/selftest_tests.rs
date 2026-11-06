@@ -14,8 +14,8 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    /// Ensures all .rs files in src/ are under the hard limit of 180 lines.
-    /// This enforces the architectural constraint: no file exceeds 180 lines.
+    /// Ensures all .rs files in src/ are under the hard limit of 280 lines.
+    /// This enforces the architectural constraint: no file exceeds 280 lines.
     #[test]
     fn test_all_rust_files_under_reasonable_limit() {
         let src_dir = Path::new("src");

@@ -23,6 +23,18 @@ pub fn format_uptime(secs: u64) -> String {
 }
 
 /// Formats current system time as HH:MM:SS using std::time (no chrono dependency).
+#[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
+pub fn format_timestamp_now() -> String {
+    let mut st: windows_sys::Win32::Foundation::SYSTEMTIME = unsafe { std::mem::zeroed() };
+    unsafe {
+        windows_sys::Win32::System::SystemInformation::GetLocalTime(&mut st as *mut _);
+    }
+    format!("{:02}:{:02}:{:02}", st.wHour, st.wMinute, st.wSecond)
+}
+
+/// Formats current system time as HH:MM:SS using std::time (no chrono dependency).
+#[cfg(not(target_os = "windows"))]
 pub fn format_timestamp_now() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();

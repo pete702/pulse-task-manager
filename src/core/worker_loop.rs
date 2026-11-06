@@ -50,6 +50,7 @@ pub fn spawn_worker(
 
         // Two-pass CPU warmup: first read returns 0%, second read returns real CPU%
         warmup_cpu(&mut sys);
+        std::thread::sleep(std::time::Duration::from_millis(120));
 
         // Initialize CPU brand and base MHz caches (OnceLock) - read once at startup
         init_cpu_brand_and_base_mhz(&mut sys);
@@ -138,13 +139,12 @@ pub fn spawn_worker(
             // Process count is refreshed every tick from the retained list so the
             // top card never drops to "0 Procs" between full scans.
             cpu.process_count = cpu.processes.len();
-
-            // Fix 100% yellow startup spike on the CPU chart by clamping the
-            // first two startup ticks (tick 0 and tick 1) to zero.
-            if tick < 2 {
+            // Keep only finite clamped values; first point is real telemetry.
+            if cpu.total_pct < 0.0 || !cpu.total_pct.is_finite() {
                 cpu.total_pct = 0.0;
+            }
+            if cpu.hottest_core_pct < 0.0 || !cpu.hottest_core_pct.is_finite() {
                 cpu.hottest_core_pct = 0.0;
-                cpu.hottest_core_idx = 0;
             }
 
             memory.latest_spike.clone_from(&latest_spike);

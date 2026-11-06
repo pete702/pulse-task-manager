@@ -1,6 +1,7 @@
 //! Tab definitions for PULSE application.
 
 use crate::i18n::Key;
+use crate::modules::cpu::table_state::CpuTableState;
 use crate::modules::memory::page::MemorySubView;
 use crate::modules::memory::table_state::MemoryTableState;
 use eframe::egui;
@@ -54,6 +55,7 @@ pub fn handle_global_hotkeys(
     active_tab: &mut ActiveTab,
     memory_sub_view: &mut MemorySubView,
     table_state: &mut MemoryTableState,
+    cpu_table_state: &mut CpuTableState,
 ) -> bool {
     let mut handled = false;
     ctx.input(|i| {
@@ -62,14 +64,21 @@ pub fn handle_global_hotkeys(
             *active_tab = ActiveTab::Processes;
             *memory_sub_view = MemorySubView::Overview;
             table_state.search_query.clear();
+            cpu_table_state.clear_search();
             handled = true;
         }
         // Escape: Clear search query if present, otherwise clear selection
         if i.key_pressed(egui::Key::Escape) {
             if !table_state.search_query.is_empty() {
                 table_state.search_query.clear();
+            } else if !cpu_table_state.search_query.is_empty() {
+                cpu_table_state.clear_search();
             } else {
                 table_state.clear_selection();
+                cpu_table_state.selected_pid = None;
+                cpu_table_state.selected_name = None;
+                cpu_table_state.confirm_kill = None;
+                cpu_table_state.mark_dirty();
             }
             handled = true;
         }

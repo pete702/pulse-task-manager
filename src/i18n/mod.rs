@@ -58,9 +58,9 @@ pub fn set_lang(lang: Lang) {
     TEST_LANG.with(|cell| cell.set(lang));
 }
 
-/// Initializes language from OS detection (Windows GetUserDefaultUILanguage).
+/// Initializes language from OS detection.
 /// Called once at startup. Can be overridden by `--lang=en` CLI arg for testing.
-/// Note: UI is always English; this only affects locale display in top bar.
+/// Note: UI is always English; locale display uses GetUserDefaultLocaleName.
 pub fn init_language(cli_lang_override: Option<&str>) {
     let lang = if let Some(override_str) = cli_lang_override {
         match override_str {
@@ -73,18 +73,7 @@ pub fn init_language(cli_lang_override: Option<&str>) {
     set_lang(lang);
 }
 
-/// Detects the Windows UI language via GetUserDefaultUILanguage().
-/// Returns (Lang, lang_id) where lang_id is the raw LANGID (e.g., 0x0422 for Ukrainian).
-/// UI language is always En; this is used for locale indicator in top bar.
-#[cfg(target_os = "windows")]
-#[allow(unsafe_code)]
-pub fn detect_os_language() -> (Lang, u16) {
-    use windows_sys::Win32::Globalization::GetUserDefaultUILanguage;
-    let lang_id = unsafe { GetUserDefaultUILanguage() };
-    let lang = Lang::En;
-    (lang, lang_id)
-}
-#[cfg(not(target_os = "windows"))]
+/// UI language is always En; locale name is resolved in frame via GetUserDefaultLocaleName.
 pub fn detect_os_language() -> (Lang, u16) {
     (Lang::En, 0x0409)
 }

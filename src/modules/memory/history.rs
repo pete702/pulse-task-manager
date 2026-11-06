@@ -115,7 +115,7 @@ impl MemoryHistory {
             return c;
         }
         let points = self.build_windowed_series(&self.ram_points, window);
-        let arc = Arc::new(lttb_downsample(&points, 300));
+        let arc = Arc::new(lttb_downsample(&points, 900));
         match window {
             ChartWindow::OneMin => self.cached_ram_1m = Some(arc.clone()),
             ChartWindow::FiveMin => self.cached_ram_5m = Some(arc.clone()),
@@ -134,7 +134,7 @@ impl MemoryHistory {
             return c;
         }
         let points = self.build_windowed_series(&self.swap_points, window);
-        let arc = Arc::new(lttb_downsample(&points, 300));
+        let arc = Arc::new(lttb_downsample(&points, 900));
         match window {
             ChartWindow::OneMin => self.cached_swap_1m = Some(arc.clone()),
             ChartWindow::FiveMin => self.cached_swap_5m = Some(arc.clone()),
@@ -153,7 +153,7 @@ impl MemoryHistory {
             return c;
         }
         let points = self.build_windowed_series(&self.commit_points, window);
-        let arc = Arc::new(lttb_downsample(&points, 300));
+        let arc = Arc::new(lttb_downsample(&points, 900));
         match window {
             ChartWindow::OneMin => self.cached_commit_1m = Some(arc.clone()),
             ChartWindow::FiveMin => self.cached_commit_5m = Some(arc.clone()),
@@ -165,6 +165,9 @@ impl MemoryHistory {
     /// Build raw windowed [timestamp, value] points. Anchors left edge to exact -span when history spans full window.
     #[allow(clippy::needless_range_loop)]
     fn build_windowed_series(&self, points: &VecDeque<f32>, window: ChartWindow) -> Vec<[f64; 2]> {
+        if self.timestamps.is_empty() || points.is_empty() {
+            return Vec::new();
+        }
         let now = self.latest_timestamp();
         let window_secs = window.seconds() as f64;
         let len = points.len();

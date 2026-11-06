@@ -108,9 +108,9 @@ impl PulseApp {
         }
     }
 
-    fn save_if_changed(&mut self) {
+    fn save_state_if_needed(&mut self, force: bool) {
         let cur = self.collect_persisted();
-        if cur != self.last_saved {
+        if force || cur != self.last_saved {
             let _ = persist::save_state(&cur);
             self.last_saved = cur;
         }
@@ -195,6 +195,7 @@ impl eframe::App for PulseApp {
             &mut self.active_tab,
             &mut self.memory_sub_view,
             &mut self.table_state,
+            &mut self.cpu_table_state,
         ) {
             ctx.request_repaint_after(std::time::Duration::from_millis(1000));
             return;
@@ -255,8 +256,11 @@ impl eframe::App for PulseApp {
             active_processes,
         );
         self.last_ui_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
-        self.save_if_changed();
+        self.save_state_if_needed(false);
         ctx.request_repaint_after(std::time::Duration::from_millis(2000));
+    }
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.save_state_if_needed(true);
     }
 }
 

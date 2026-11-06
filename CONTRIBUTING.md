@@ -43,7 +43,7 @@ git commit -s -m "Fix issue: description"
 - **Rust Edition**: 2021
 - **MSRV**: 1.85 (stable toolchain only)
 - **Line Limit**: Every `.rs` file ≤ 280 lines after `cargo fmt --all`
-- **Dependencies**: Maximum 6 direct dependencies (enforced by `tests/docs_guard.rs`)
+- **Dependencies**: 6 direct runtime crates + 1 MSRV pin, all pinned exactly in `Cargo.toml`
 - **No Unstable Features**: No `#![feature(...)]`, no nightly-only syntax
 - **Zero Allocations on Hot Paths**: Prefer stack allocation, `Arc<str>` for shared strings
 - **Forbidden**: `rustfmt::skip`, Cyrillic characters, NUL bytes, `unwrap()`/`expect()` on hot paths

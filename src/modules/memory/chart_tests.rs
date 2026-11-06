@@ -151,12 +151,12 @@ mod tests {
         }
         assert_eq!(history.len(), 900);
 
-        // Test that precomputed series returns LTTB-downsampled data (≤300 points)
+        // Exact 1-second points: 15m keeps 900 points without bucket shift
         history.chart_window = ChartWindow::FifteenMin;
         let ram_series = history.ram_series(ChartWindow::FifteenMin);
         assert!(
-            ram_series.len() <= 300,
-            "LTTB should downsample 900 points to ≤300, got {}",
+            ram_series.len() <= 900,
+            "exact series should hold at most 900 points, got {}",
             ram_series.len()
         );
 
@@ -171,11 +171,11 @@ mod tests {
 
         // Test 1m window
         let ram_1m = history.ram_series(ChartWindow::OneMin);
-        assert!(ram_1m.len() <= 300, "1m series should also be downsampled if >300 points");
+        assert!(ram_1m.len() <= 900, "1m series should stay within 900 points");
 
         // Test 5m window
         let ram_5m = history.ram_series(ChartWindow::FiveMin);
-        assert!(ram_5m.len() <= 300, "5m series should also be downsampled if >300 points");
+        assert!(ram_5m.len() <= 900, "5m series should stay within 900 points");
     }
 
     #[test]

@@ -29,8 +29,8 @@ impl Default for PersistedState {
             sort_col: CpuSortCol::CpuPct,
             sort_asc: false,
             cpu_show_grid: false,
-            mem_window_secs: 60,
-            cpu_window_secs: 60,
+            mem_window_secs: 300,
+            cpu_window_secs: 300,
             win_w: 1180.0,
             win_h: 760.0,
         }
