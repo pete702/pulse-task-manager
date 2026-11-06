@@ -44,7 +44,7 @@ mod tests {
         assert_eq!(history.ram_points.len(), 120);
         assert_eq!(history.swap_points.len(), 120);
         egui::__run_test_ui(|ui| {
-            render_memory_chart(ui, &mut history, &snap(16_000_000_000, 8_000_000_000))
+            render_memory_chart(ui, &mut history, &snap(16_000_000_000, 8_000_000_000), 220.0)
         });
     }
 

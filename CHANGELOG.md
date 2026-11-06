@@ -1,32 +1,80 @@
 # Changelog
 
-All notable changes to **PULSE** (`pulse_manager`) are documented in this file.
+All notable PULSE changes are in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
+Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
 
-## [0.1.22] - 2026-11-05
+## [0.2.8] - 2026-11-06
 
-- **OpenGL Driver Memory Optimization**: `eframe::NativeOptions` explicitly disables depth buffer, stencil buffer, and multisampling (`0`); enables `vsync` and `Preferred` hardware acceleration — eliminates ~30–50 MB driver Private Memory (`nvoglv64.dll`) on fullscreen windows.
-- **Viewport Resize Trim**: `PulseApp` detects significant viewport size changes (e.g., restore from maximized/fullscreen) and calls `self_trim_working_set()` to reclaim stale driver resize buffers.
-- **Unified X-Axis Grid**: Custom `x_grid_spacer` provides consistent major/minor grid lines for all windows: 1m (major 15s, minor 5s), 5m (major 1m, minor 15s), 15m (major 3m, minor 1m).
-- **Removed Minus Signs on 1m Labels**: X-axis HUD labels now show positive "time ago" values (`60s`, `45s`, `30s`, `15s`, `0s`) instead of `-60s`..`-15s`; matches 5m/15m style.
-- **Guaranteed Zero Left-Edge Chart Gap**: `build_windowed_series` anchors to exact `-span` when history spans `window_secs - 2s` OR first sample within 2s of `-span`; 1m/5m/15m touch left border with 0 px gap on fullscreen.
-- **Version bump to 0.1.22**.
+- **Top Bar Always Self-RAM**: `[ PULSE: XX.X MB | UI: X.XX ms ]` now cached across ticks/tabs and shown on all tabs; short locale `[ LOCALE: UK-UA ]` with full details on hover; min window `860x560`.
+- **Memory Responsive**: chart header hides duplicate RAM text below 960px, Y labels inset 24px, top cards stack below 880px with plain-English tooltips for Commit Charge / Kernel Pools.
+- **CPU Responsive**: time labels moved to strip below plot (no line collision), bottleneck `Balanced` shortened, per-core grid uses dynamic `cols = width/84` clamp 4..10 + vertical scroll, idle cores dimmed.
+- **Processes Hierarchy**: `PROCESS NAME` remainder `at_least 130` clip, CPU colors idle slate / white / cyan / amber thresholds, RAM heat bar alpha 62 + right cap, bars scaled to 4096 MiB cap, sidebar roadmap badges `v0.3/v0.4/v0.5`.
+- **Version bump to 0.2.8**.
 
-## [0.1.21] - 2026-11-05
+## [0.2.7] - 2026-11-06
 
-- **Chart Left-Edge Gap Fix**: 1m/5m windows now clamp left edge to exact `-span` once history spans the full window (within 1.5s tolerance); startup still grows naturally from right to left.
-- **Grouped Process RAM % Fix**: Clone groups (`chrome.exe [37x]`, `svchost.exe [58x]`) now show summed RAM percentage (e.g. `31.6%`) instead of single child's `0.1%`; `update_formatted` computes change flags before updating tracking fields.
-- **FILETIME vs Unix Time-Base Fix**: `DeltaTracker` no longer falls back from Win32 `FILETIME` (100ns since 1601) to Unix seconds (`start_time`); `creation_time` returned as `Option<u64>` (FILETIME) with `None` when Win32 query fails.
-- **Graceful Worker Shutdown**: `TelemetryWorker` implements `Drop` — sets shutdown flag, unparks thread, joins handle; `request_process_scan()` encapsulated on worker; clean exit in <1 ms on app close.
-- **Named Constants**: Extracted `MAX_SANE_VIRTUAL_BYTES` (1 TiB), `MEMORY_HOG_THRESHOLD_PCT` (15%), `HEAT_BAR_FULL_SCALE_PCT` (20%), `CHART_ANCHOR_TOLERANCE_SECS` (1.5s) to `constants.rs`.
-- **Version bump to 0.1.21**.
+- **Zero-Alloc UI**: Cached sidebar badges (RAM/CPU/count), cached version/locale, tooltip built only on hover, heat bars skipped under 0.5 pct or off-screen.
+- **Health Pill**: Top bar combines Three Walls and compute bottleneck into one pill with detailed hover breakdown.
+- **Density Toggle**: `[ Compact ]` / `[ Comfort ]` (22/28px rows) in Processes toolbar; sidebar badges 14px.
+- **Open-Core Docs**: README Open-Core & Privacy note, ARCH monetization boundaries, SECURITY offline guarantee for core and future Pro, all synced to v0.2.7.
+- **Version bump to 0.2.7**.
 
-## [0.1.20] - 2026-11-05
+## [0.2.6] - 2026-11-06
 
-- **High-Precision Continuous Telemetry Bars**: Replaced 28-segment LED bars with smooth sub-pixel continuous bars (3 draw calls); threshold coloring (cyan <70%, amber 70-85%, red >85%); 14x fewer draw calls.
-- **Table Heat-Bar Fix**: Fixed text overlap on Physical RAM / RAM % columns — 8px left padding; deep teal/slate fills; hog rows use ice-white text.
-- **Gaming Mode Glyph**: Status bar mode badge uses `▲` for consistent geometric symbol theme.
-- **P0-1: `.without_exe()` Collector + On-Demand Win32 Path**: Background scans skip exe path queries; `query_process_exe_path(pid)` resolves on-demand for "Open Location".
-- **P0-2 & P0-3: Precomputed Windowed Chart Slices + LTTB Downsampling**: Pure-Rust `lttb_downsample` (≤45 lines, zero deps); caches windowed & anchored series per window with 900→300 point LTTB downsampling.
-- **Instant Worker Wake**: `thread::park_timeout` + `unpark()` in `request_process_scan()` — worker wakes in 0 ms when clicking RAM Processes tab.
-- **Version bump to 0.1.20**.
+- **Minimized 0 FPS**: `is_minimized` check moved above hotkeys; 30s safety repaint kept, worker 5s poll kept, restore triggers wakeup.
+- **Full Linux Gating**: Removed fake `if_same_then_else` allow; gated `OnceLock` in i18n, kernel metrics import in memory collector, and Win32 CPU frequency/brand paths with non-Windows stubs.
+- **Release Checksums**: `release.yml` now generates and publishes the `.exe.sha256` file alongside the binary.
+- **Docs Sync**: Updated THIRD_PARTY_NOTICES, SECURITY, ARCHITECTURE, README; created CHANGELOG_ARCHIVE for 0.1.x and refreshed PULSE_AI_CONTEXT.
+- **Version bump to 0.2.6**.
+
+## [0.2.5] - 2026-11-06
+
+- **Perf: Single Sysinfo Process Refresh**: `collect_cpu` uses `with_cpu_usage()`; `collect_process_memory` reuses the CPU pass when `sys.processes()` is already filled, removing the second 200+ process scan per tick.
+- **Perf: Filter Before Formatting**: CPU table filters raw `RawProcessCpuRow` before `item_from_raw_cpu`, so excluded rows perform zero string allocations.
+- **Perf & UI: Cached Elevation Flag**: Toolbar uses `cached_elevated()` (`OnceLock<bool>`), 0 Win32 token syscalls per frame.
+- **Narrow-Window Fixes**: Row 2 actions render left-to-right with truncated status on the right; table scales fixed columns below 640px width to prevent clipping.
+- **Honest Purge Status**: `[ Purge All RAM ]` reports trimmed row count; single trim reports success or block reason.
+- **Version bump to 0.2.5**.
+
+## [0.2.4] - 2026-11-05
+
+- **Process Toolbar Complete**: `[00] Processes` Row 1 shows privilege badge `[ ADMIN ]` (cyan) or `[ USER ]` (dim) via `is_app_elevated()`; global `[ Purge All RAM ]` button trims working sets across all visible rows and refreshes scan.
+- **Two-Step Kill Confirmation**: Row 2 `[ End Task ]` arms a 3-second confirmation window; shows `[ Cancel ]` + `[ Confirm Kill (3s) ]` (red); auto-expires on timeout or selection change; `confirm_kill` state in `CpuTableState`.
+- **Open File Location**: New `[ Open Location ]` button (primary) in toolbar and context menu using `open_process_file_location(pid)`.
+- **Context Menu Selection Reset**: `show_row_menu()` now clears `selected_pid`, `selected_name`, and `confirm_kill` on successful termination.
+- **Clean Formatting**: Removed `rustfmt skip` from `table_state.rs::preserve_selection`; simplified `contains_ci` to single-expression sliding window; all `.rs` files format cleanly under 280 lines.
+- **Version bump to 0.2.4**.
+
+## [0.2.3] - 2026-11-05
+
+- **Memory Cockpit Wrapping Fixed**: `top_cards.rs` - all captions ("AVAILABLE COMMIT", "KERNEL POOLS", etc.) and card titles now use `.wrap(false)`; narrowed "KERNEL POOLS" value to `"{:.2} GiB ({:.0}/{:.0}M)"`; legend square uses ASCII-safe `"\u{25A0}"`. No vertical letter columns on narrow windows.
+- **Chart X-Axis Labels Restored**: `chart_view.rs` - `plot_height` now computed AFTER `render_header()` via `ui.available_height()`, so bottom time labels (5m..0s) fit 100% inside the card without clipping.
+- **Memory Spike Blackbox Restored**: `chart_chrome.rs` - `render_header` accepts `latest_spike: Option<&str>`; right side shows `[ ! SPIKE: <msg> ]` (red) when armed, or `[ BLACKBOX: ARMED ]` (emerald) when idle.
+- **Version bump to 0.2.3**.
+
+## [0.2.2] - 2026-11-05
+
+- **Processor Cockpit Overlap Fixed**: Replaced broken `ui.set_width()` horizontal layout in bottleneck card with `egui::Grid` (3 columns, 20px spacing); added "Logical thread bottleneck detector" subtitle so left/right cards have identical header height and vertical bar alignment.
+- **Narrow-Window Wrapping Eliminated**: Both CPU cards now use `.wrap(false)` / `.truncate(true)` on headers, subtitles, and all Grid metric labels; text never wraps into vertical letter columns on narrow windows.
+- **Startup 100% Chart Spike Fixed**: Worker clamps `total_pct`, `hottest_core_pct`, `hottest_core_idx` to zero for the first two ticks (`tick < 2`), removing the fake vertical wall on the CPU chart.
+- **Instant Worker Unpark**: Removed unused local `CpuHistory` (UI owns history from `CpuSnapshot`); `thread::park_timeout()` already provides instant unpark wakeup.
+- **Version bump to 0.2.2**.
+
+## [0.2.1] - 2026-11-05
+
+- **Process Selection Persistence**: Added `selected_name` tracking to `CpuTableState`; selection now survives 3-second scan rebuilds even when clone-group representative PID shifts or rows are re-filtered/sorted.
+- **Toolbar Layout Fix**: Split toolbar into two rows (filter controls + action buttons) to eliminate text overlap with `[ Trim RAM ]`; shortened counter to `"64 / 196 rows"`; reduced search field width.
+- **10s DELTA Column Clipping Fixed**: Changed to exact-width columns (`PID=62`, `CLONES=66`, `CPU %=84`, `RAM=114`, `DELTA=98`) with `remainder()` only for `PROCESS NAME`; all 6 columns now fit 100% inside table width.
+- **Version bump to 0.2.1**.
+
+Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
+
+## [0.2.9] - 2026-11-06
+
+- **True Win32 Locale**: Replaced hardcoded UK/EN shortcut with `GetUserDefaultLocaleName` into a stack buffer, uppercased ASCII cache; non-Windows fallback is EN-US.
+- **System Telemetry Top Bar**: Top bar now shows `[ CPU: X% | RAM: X / XX GiB (XX%) ]` plus uptime and health pill; PULSE self-RAM/UI/locale moved to status bar and top-bar hover.
+- **Smart Resizable Columns**: Processes numeric columns use compact `initial` widths with strict ranges and `resizable` dividers; `PROCESS NAME` remainder starts at 180px so long names stay readable.
+- **App State Persistence**: `%LOCALAPPDATA%\PULSE\state.cfg` stores tab, grouping, density, sort, chart windows, grid view, and window size; change detection saves on toggle and resize.
+- **Sci-Fi HUD Accents**: Corner brackets on cards, charts, and active sidebar; 5 percent tick segments plus 2px leading cap on main bars; dual-tone top scanline.
+- **Version bump to 0.2.9**.

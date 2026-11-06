@@ -162,9 +162,7 @@ impl MemoryHistory {
         arc
     }
 
-    /// Build raw windowed [timestamp, value] points for a given series and window.
-    /// Ensures the left edge reaches exactly -span when history spans the full window,
-    /// while allowing natural growth during startup.
+    /// Build raw windowed [timestamp, value] points. Anchors left edge to exact -span when history spans full window.
     #[allow(clippy::needless_range_loop)]
     fn build_windowed_series(&self, points: &VecDeque<f32>, window: ChartWindow) -> Vec<[f64; 2]> {
         let now = self.latest_timestamp();
@@ -182,10 +180,6 @@ impl MemoryHistory {
         for i in start_idx..len {
             out.push([timestamps[i], points[i] as f64]);
         }
-        // Anchor left edge to exact -span when:
-        // 1. History buffer spans at least window_secs - tolerance (oldest sample old enough), OR
-        // 2. First sample in windowed series is within tolerance of -span.
-        // Both conditions require at least 2 samples in the windowed series.
         let history_span = now - timestamps[0];
         let tol = CHART_ANCHOR_TOLERANCE_SECS;
         let first_x_ok = !out.is_empty() && out.len() >= 2 && out[0][0] <= now - window_secs + tol;

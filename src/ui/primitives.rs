@@ -22,25 +22,39 @@ pub fn draw_cell_heat_bar(
     let inner = rect.shrink2(egui::vec2(2.0, 2.0));
     let fill_w = (inner.width() * r).clamp(0.0, inner.width());
 
-    // Use deeper, darker teal/slate fill for better text contrast
+    // Higher alpha (62) for 150% DPI visibility.
     let fill_color = if is_alert {
-        egui::Color32::from_rgba_unmultiplied(185, 28, 28, 55) // dark crimson for alerts
+        egui::Color32::from_rgba_unmultiplied(185, 28, 28, 72)
     } else {
-        egui::Color32::from_rgba_unmultiplied(8, 145, 178, 38) // deep teal for normal
+        egui::Color32::from_rgba_unmultiplied(8, 145, 178, 62)
     };
 
     let fill_rect =
         egui::Rect::from_min_max(inner.min, egui::pos2(inner.min.x + fill_w, inner.max.y));
     ui.painter().rect_filled(fill_rect, egui::Rounding::same(2.0), fill_color);
 
+    // Crisp 2.0px bright vertical cap at right end of fill.
+    if fill_w > 2.5 {
+        let cap_rect = egui::Rect::from_min_max(
+            egui::pos2(fill_rect.max.x - 2.0, fill_rect.min.y),
+            fill_rect.max,
+        );
+        let cap_color = if is_alert {
+            egui::Color32::from_rgb(254, 205, 211)
+        } else {
+            egui::Color32::from_rgb(240, 253, 250)
+        };
+        ui.painter().rect_filled(cap_rect, egui::Rounding::ZERO, cap_color);
+    }
+
     // Accent strip on left edge for high values or alerts (2px wide)
     if r >= 0.08 || is_alert {
         let strip_rect =
             egui::Rect::from_min_max(inner.min, egui::pos2(inner.min.x + 2.0, inner.max.y));
         let accent_color = if is_alert {
-            egui::Color32::from_rgba_unmultiplied(239, 68, 68, 185) // red alert accent
+            egui::Color32::from_rgba_unmultiplied(239, 68, 68, 185)
         } else {
-            egui::Color32::from_rgba_unmultiplied(8, 145, 178, 185) // teal accent
+            egui::Color32::from_rgba_unmultiplied(8, 145, 178, 185)
         };
         ui.painter().rect_filled(strip_rect, egui::Rounding::same(2.0), accent_color);
     }
@@ -50,10 +64,7 @@ pub fn draw_cell_heat_bar(
 /// - `ratio`: 0.0..=1.0 fill ratio (clamped internally).
 /// - `active_color`: base color for the bar (overridden by threshold logic).
 ///
-/// Draws in just 3 draw calls:
-///   - track background
-///   - continuous fill
-///   - leading-edge cursor cap
+/// Draws track, continuous fill, 5% tick segments, and leading-edge cursor cap.
 pub fn draw_segmented_led_bar(
     ui: &egui::Ui,
     rect: egui::Rect,
@@ -94,7 +105,7 @@ pub fn draw_segmented_led_bar(
             215,
         );
         ui.painter().rect_filled(fill_rect, egui::Rounding::same(3.0), fill_color);
-
+        draw_tactical_ticks(ui, rect);
         // 3. Crisp leading-edge cursor cap (2px bright white at right tip of fill)
         let cap_w = 2.0_f32.min(fill_w);
         let cap_rect = egui::Rect::from_min_max(
@@ -104,6 +115,44 @@ pub fn draw_segmented_led_bar(
         let cap_color = egui::Color32::from_rgb(240, 253, 250);
         ui.painter().rect_filled(cap_rect, egui::Rounding::ZERO, cap_color);
     }
+}
+
+/// Draws 19 dark tick segments every 5% across a bar (20 segments total).
+pub fn draw_tactical_ticks(ui: &egui::Ui, rect: egui::Rect) {
+    let tick = egui::Color32::from_rgba_unmultiplied(11, 12, 16, 140);
+    for k in 1..20 {
+        let x = rect.min.x + rect.width() * (k as f32 / 20.0_f32);
+        ui.painter().line_segment(
+            [egui::pos2(x, rect.min.y + 2.0), egui::pos2(x, rect.max.y - 2.0)],
+            egui::Stroke::new(1.0_f32, tick),
+        );
+    }
+}
+
+/// Draws 7px L-shaped tactical corner brackets on the 4 corners of a card.
+pub fn cyber_accent(pct: f32) -> egui::Color32 {
+    if pct >= 85.0 {
+        egui::Color32::from_rgb(255, 42, 84)
+    } else {
+        egui::Color32::from_rgba_unmultiplied(0, 229, 255, 130)
+    }
+}
+
+/// Draws 7px L-shaped tactical corner brackets on the 4 corners of a card.
+pub fn draw_cyber_corner_brackets(ui: &egui::Ui, rect: egui::Rect, color: egui::Color32) {
+    let l = 7.0_f32;
+    let i = 2.0_f32;
+    let s = egui::Stroke::new(1.5_f32, color);
+    let p = ui.painter();
+    let (x0, x1, y0, y1) = (rect.left() + i, rect.right() - i, rect.top() + i, rect.bottom() - i);
+    p.line_segment([egui::pos2(x0, y0), egui::pos2(x0 + l, y0)], s);
+    p.line_segment([egui::pos2(x0, y0), egui::pos2(x0, y0 + l)], s);
+    p.line_segment([egui::pos2(x1 - l, y0), egui::pos2(x1, y0)], s);
+    p.line_segment([egui::pos2(x1, y0), egui::pos2(x1, y0 + l)], s);
+    p.line_segment([egui::pos2(x0, y1 - l), egui::pos2(x0, y1)], s);
+    p.line_segment([egui::pos2(x0, y1), egui::pos2(x0 + l, y1)], s);
+    p.line_segment([egui::pos2(x1, y1 - l), egui::pos2(x1, y1)], s);
+    p.line_segment([egui::pos2(x1 - l, y1), egui::pos2(x1, y1)], s);
 }
 
 /// Draws a mini sparkline (up to 24 points) using stack-only Pos2 array.
@@ -207,9 +256,9 @@ mod tests {
     #[test]
     fn test_heat_bar_colors() {
         // Test heat bar color logic (deep teal for normal, dark crimson for alert)
-        let normal_color = egui::Color32::from_rgba_unmultiplied(8, 145, 178, 38);
-        let alert_color = egui::Color32::from_rgba_unmultiplied(185, 28, 28, 55);
-        assert_eq!(normal_color.a(), 38);
-        assert_eq!(alert_color.a(), 55);
+        let normal_color = egui::Color32::from_rgba_unmultiplied(8, 145, 178, 62);
+        let alert_color = egui::Color32::from_rgba_unmultiplied(185, 28, 28, 72);
+        assert_eq!(normal_color.a(), 62);
+        assert_eq!(alert_color.a(), 72);
     }
 }

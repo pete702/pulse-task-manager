@@ -1,6 +1,10 @@
 //! Memory module for PULSE: pure math model, sysinfo collector, HUD view,
 //! multi-horizon chart, and the virtualized process table.
 
+// The legacy memory process table is retained for tests and future diagnostics;
+// the master Processes tab is now the single UI entry point.
+#![allow(dead_code)]
+
 pub mod action_bar;
 pub mod action_bar_status;
 pub mod action_bar_tests;
@@ -46,6 +50,7 @@ pub mod table_state;
 pub mod table_view;
 pub mod table_view_tests;
 mod table_widgets;
+pub mod top_cards;
 pub mod view;
 pub mod view_cards;
 pub mod win32_api;

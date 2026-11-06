@@ -8,6 +8,8 @@ use eframe::egui;
 /// Active tab in the left sidebar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActiveTab {
+    /// Master unified process table tab.
+    Processes,
     /// Memory tab.
     Memory,
     /// CPU tab.
@@ -21,7 +23,7 @@ pub enum ActiveTab {
 }
 
 impl ActiveTab {
-    /// Returns all available tabs.
+    /// Returns the hardware tabs. The master Processes tab is prepended by the sidebar.
     pub const fn all() -> &'static [ActiveTab] {
         &[
             ActiveTab::Memory,
@@ -35,6 +37,7 @@ impl ActiveTab {
     /// Button label for the tab (localized).
     pub fn label(self) -> &'static str {
         match self {
+            ActiveTab::Processes => "[00] Processes",
             ActiveTab::Memory => Key::TabMemory.t(),
             ActiveTab::Cpu => Key::TabCpu.t(),
             ActiveTab::Storage => Key::TabStorage.t(),
@@ -54,10 +57,10 @@ pub fn handle_global_hotkeys(
 ) -> bool {
     let mut handled = false;
     ctx.input(|i| {
-        // Ctrl+F: Focus search in Memory > Processes
+        // Ctrl+F: Focus search in the master Processes tab
         if i.modifiers.ctrl && i.key_pressed(egui::Key::F) {
-            *active_tab = ActiveTab::Memory;
-            *memory_sub_view = MemorySubView::Processes;
+            *active_tab = ActiveTab::Processes;
+            *memory_sub_view = MemorySubView::Overview;
             table_state.search_query.clear();
             handled = true;
         }

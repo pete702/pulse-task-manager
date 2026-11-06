@@ -1,31 +1,21 @@
-//! Memory HUD cards for PULSE.
+//! Memory HUD cards for PULSE — 2-level cockpit matching the Processor tab.
 use crate::modules::memory::chart_view;
-use crate::modules::memory::composition_bar::render_composition_bar;
 use crate::modules::memory::history::MemoryHistory;
-use crate::modules::memory::kernel_tiles::render_kernel_tiles;
 use crate::modules::memory::model::MemorySnapshot;
-use crate::modules::memory::view_cards::render_memory_cards_row;
+use crate::modules::memory::top_cards::render_memory_top_cards;
 use eframe::egui;
 
-/// Renders the memory HUD cards, mini-tiles, composition bar, and chart.
+/// Renders the memory cockpit in two levels:
+///   Row 1: two symmetric top cards (Physical RAM + Commit Charge / Kernel Pools)
+///   Row 2: full-height Memory Utilization History chart
+/// No vertical scrollbar: the chart claims the remaining window height.
 pub fn render_memory_cards(ui: &mut egui::Ui, mem: &MemorySnapshot, history: &mut MemoryHistory) {
-    // ----- Row 1: Two main cards (RAM + Swap/Commit) -----
-    render_memory_cards_row(ui, mem, history);
-
-    ui.add_space(6.0);
-
-    // ----- Row 2: 4 Mini-tiles (Kernel Metrics) -----
-    render_kernel_tiles(ui, mem);
-
-    ui.add_space(6.0);
-
-    // ----- Row 3: RAMMap 3-Segment Composition Bar -----
-    render_composition_bar(ui, mem);
-
-    ui.add_space(6.0);
-
-    // ----- Row 4: History Chart -----
-    chart_view::render_memory_chart(ui, history, mem);
+    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        render_memory_top_cards(ui, mem, history);
+        ui.add_space(10.0);
+        let chart_height = ui.available_height().max(220.0);
+        chart_view::render_memory_chart(ui, history, mem, chart_height);
+    });
 }
 
 /// True free physical memory: available memory minus the reclaimable system cache.

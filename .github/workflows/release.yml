@@ -45,11 +45,17 @@ jobs:
           $out = "PULSE_${tag}_windows_x64.exe"
           Copy-Item target/release/pulse_manager.exe $out
           echo "RELEASE_FILE=$out" >> $env:GITHUB_ENV
+      - name: Generate checksums
+        run: |
+          $out = "${{ env.RELEASE_FILE }}"
+          $hash = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower()
+          "$hash  $out" | Out-File -Encoding ascii "$out.sha256"
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           files: |
             ${{ env.RELEASE_FILE }}
+            ${{ env.RELEASE_FILE }}.sha256
             LICENSE
             THIRD_PARTY_NOTICES.md
           generate_release_notes: true

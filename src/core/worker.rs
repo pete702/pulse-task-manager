@@ -42,6 +42,11 @@ impl TelemetryWorker {
         (worker, rx)
     }
 
+    /// Enables the 3-second process cadence while the Processes tab is visible.
+    pub fn set_fast_process_cadence(&self, fast: bool) {
+        self.processes_tab_active.store(fast, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Requests an immediate process scan and unparks the worker thread for instant wakeup.
     pub fn request_process_scan(&self) {
         crate::core::worker_loop::request_process_scan();

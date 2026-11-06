@@ -23,6 +23,7 @@ fn window_button(ui: &mut egui::Ui, window: ChartWindow, active: bool) -> bool {
 
 /// Draws title, window buttons and the live readout left-to-right so the
 /// readout can never be clipped by the card's right edge.
+/// Also renders the Memory Spike Blackbox indicator on the right.
 pub(crate) fn render_header(
     ui: &mut egui::Ui,
     selected: &mut ChartWindow,
@@ -30,8 +31,10 @@ pub(crate) fn render_header(
     commit: f32,
     swap: f32,
     has_commit: bool,
+    latest_spike: Option<&str>,
 ) {
-    ui.horizontal(|ui| {
+    let narrow = ui.available_width() < 960.0;
+    ui.horizontal_wrapped(|ui| {
         ui.label(
             egui::RichText::new(Key::MemoryHistoryTitle.t())
                 .monospace()
@@ -45,13 +48,43 @@ pub(crate) fn render_header(
                 set_window(ui.ctx(), window);
             }
         }
-        ui.add_space(12.0);
-        let (label, value) = if has_commit { ("Commit", commit) } else { ("Swap", swap) };
-        ui.label(
-            egui::RichText::new(format!("RAM: {:.1}% | {}: {:.1}%", ram, label, value))
-                .monospace()
-                .size(11.0)
-                .color(colors::TEXT_SECONDARY),
-        );
+        if !narrow {
+            ui.add_space(12.0);
+            let (label, value) = if has_commit { ("Commit", commit) } else { ("Swap", swap) };
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(format!("RAM: {ram:.1}% | {label}: {value:.1}%"))
+                        .monospace()
+                        .size(11.0)
+                        .color(colors::TEXT_SECONDARY),
+                )
+                .wrap(false),
+            );
+        }
+
+        // Blackbox badge on the right - never clipped when wrapped.
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if let Some(spike) = latest_spike {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(format!("[ ! SPIKE: {spike} ]"))
+                            .monospace()
+                            .size(10.5)
+                            .color(colors::ACCENT_RED),
+                    )
+                    .wrap(false),
+                );
+            } else {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new("[ BLACKBOX: ARMED ]")
+                            .monospace()
+                            .size(10.5)
+                            .color(egui::Color32::from_rgb(0x00, 0xE0, 0x80)),
+                    )
+                    .wrap(false),
+                );
+            }
+        });
     });
 }

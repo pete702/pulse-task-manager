@@ -126,11 +126,14 @@ fn main() -> eframe::Result<()> {
     // Initialize language from OS detection (or CLI override)
     i18n::init_language(lang_override);
 
+    // Restore last window size from persisted state (clamped in persist module).
+    let saved = core::persist::load_state();
+
     // Setup fonts before creating the app
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1180.0_f32, 760.0_f32])
-            .with_min_inner_size([950.0_f32, 620.0_f32])
+            .with_inner_size([saved.win_w, saved.win_h])
+            .with_min_inner_size([860.0_f32, 560.0_f32])
             .with_title("▲ PULSE")
             .with_icon(generate_icon()),
         // 2D telemetry UI needs zero 3D depth/stencil/MSAA buffers.

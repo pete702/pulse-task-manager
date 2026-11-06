@@ -4,17 +4,18 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.1.2   | ✅ Current release |
+| 0.2.9   | Current release |
 
-Only the latest minor release in the `0.1.x` series receives security updates.
+Only the latest minor release in the `0.2.x` series receives security updates.
 
 ## Local-Only Telemetry Guarantee
 
-PULSE is a **local-only** Windows telemetry HUD. It performs **zero network connections** of any kind:
+PULSE is a **local-only** Windows telemetry HUD. It performs **zero network connections** of any kind, in both the MIT core and any future offline-licensed Pro extensions (no phoning home, no telemetry):
 
 - No telemetry, metrics, or usage data is transmitted externally.
 - No update checks, no phoning home, no crash reporting to remote endpoints.
-- All Win32 API calls target the local machine only (`K32GetPerformanceInfo`, `K32GetProcessMemoryInfo`, `K32EmptyWorkingSet`, `OpenProcess`, `TerminateProcess`, `QueryFullProcessImageNameW`, `IsProcessCritical`, `OpenProcessToken`, `GetUserDefaultUILanguage`).
+- All Win32 API calls target the local machine only (`K32GetPerformanceInfo`, `K32GetProcessMemoryInfo`, `K32EmptyWorkingSet`, `OpenProcess`, `TerminateProcess`, `QueryFullProcessImageNameW`, `IsProcessCritical`, `OpenProcessToken`, `GetUserDefaultLocaleName`).
+- State config writes only to `%LOCALAPPDATA%\PULSE\state.cfg` on localhost, zero network.
 - The binary is a single portable `.exe` with no background service, no installer, and no scheduled tasks.
 
 ## PID Safety Gate Boundaries

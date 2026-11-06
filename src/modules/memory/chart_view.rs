@@ -8,6 +8,7 @@ use crate::modules::memory::chart_hud::{
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::model::{ChartWindow, MemorySnapshot};
 use crate::theme::colors;
+use crate::ui::primitives::{cyber_accent, draw_cyber_corner_brackets};
 use eframe::egui;
 use egui_plot::{GridInput, GridMark, HLine, Line, LineStyle, Plot, PlotPoints};
 use std::sync::Arc;
@@ -92,15 +93,32 @@ fn convert_to_minutes_ago(points: &[[f64; 2]], now: f64) -> Vec<[f64; 2]> {
     points.iter().map(|p| [minutes_ago(p[0], now), p[1]]).collect()
 }
 
-pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemorySnapshot) {
+pub fn render_memory_chart(
+    ui: &mut egui::Ui,
+    h: &mut MemoryHistory,
+    s: &MemorySnapshot,
+    chart_height: f32,
+) {
     let mut selected = selected_window(ui.ctx());
-    crate::theme::card_frame().show(ui, |ui| {
+    let _ = chart_height; // Keep signature; we compute actual height after header
+    let ram_pct = h.current_ram_percent();
+    let resp = crate::theme::card_frame().show(ui, |ui| {
         ui.vertical(|ui| {
             let ram = h.current_ram_percent();
             let commit = s.commit_usage_percent();
             let swap = s.swap_usage_percent();
             let has_commit = s.kernel_metrics_valid && s.commit_limit_bytes > 0;
-            render_header(ui, &mut selected, ram, commit, swap, has_commit);
+            // Format spike for blackbox indicator in header
+            let spike_text = s.latest_spike.as_ref().map(|e| {
+                format!(
+                    "{} @ {:.0}% ({} MB)",
+                    e.culprit_name,
+                    e.peak_ram_pct,
+                    e.culprit_bytes / 1024 / 1024
+                )
+            });
+            // Pass latest_spike to header for blackbox indicator
+            render_header(ui, &mut selected, ram, commit, swap, has_commit, spike_text.as_deref());
             ui.add_space(6.0);
             h.chart_window = selected;
 
@@ -129,8 +147,8 @@ pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemoryS
                 PlotPoints::new(purple_raw)
             };
 
-            // Full-width, full-height plot inside the card — flush with MEMORY COMPOSITION bar
-            let plot_height = ui.available_height().max(90.0);
+            // Compute plot height AFTER header so bottom labels fit.
+            let plot_height = ui.available_height().max(220.0);
             let plot_width = ui.available_width().max(120.0);
 
             // Read toggle states BEFORE plot.show() for conditional series rendering
@@ -141,7 +159,7 @@ pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemoryS
             let show_commit: bool =
                 ui.ctx().data_mut(|d| *d.get_temp_mut_or_insert_with(commit_id, || true));
 
-            // Full-width, full-height plot inside the card — flush with MEMORY COMPOSITION bar
+            // Full-width, full-height plot inside the card - flush with MEMORY COMPOSITION bar
             let plot_response = Plot::new(("mpp", selected.seconds()))
                 .width(plot_width)
                 .height(plot_height)
@@ -223,4 +241,5 @@ pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemoryS
             }
         });
     });
+    draw_cyber_corner_brackets(ui, resp.response.rect, cyber_accent(ram_pct));
 }

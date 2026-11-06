@@ -1,16 +1,17 @@
 //! Status Bar for PULSE.
 
 use crate::core::SystemSnapshot;
-use crate::i18n::Key;
+use crate::i18n::{os_locale_short, Key};
 use crate::theme::colors;
 use eframe::egui;
 use std::sync::Arc;
 
-/// Renders the bottom status bar with active process count, heuristic mode, and OS jitter.
+/// Renders the bottom status bar with active process count, self-diagnostics, and OS jitter.
 pub fn render_status_bar(
     ui: &mut egui::Ui,
     active_processes: u32,
     snapshot: &Option<Arc<SystemSnapshot>>,
+    last_ui_ms: f32,
 ) {
     ui.horizontal(|ui| {
         ui.label(
@@ -30,11 +31,24 @@ pub fn render_status_bar(
             egui::RichText::new(status_text).monospace().size(11.0).color(colors::TEXT_SECONDARY),
         );
 
-        // Heuristic mode badge & OS jitter (from latest snapshot)
+        // PULSE self-diagnostics live here (moved from the old top-bar pill).
         if let Some(ref snap) = snapshot {
+            let diag = format!(
+                "PULSE: {:.1} MB | UI: {:.2} ms | OS: {}",
+                snap.pulse_ram_mb,
+                last_ui_ms,
+                os_locale_short()
+            );
             ui.separator();
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(diag).monospace().size(11.0).color(colors::ACCENT_CYAN),
+                )
+                .wrap(false),
+            )
+            .on_hover_text("PULSE working set, UI frame time, and real OS locale");
 
-            // Heuristic mode badge - uses precomputed has_heavy_process flag (O(1))
+            ui.separator();
             let (mode_badge, mode_color) = if let Some(ref mem) = snap.memory {
                 let any_heavy_process = mem.has_heavy_process;
                 let total_ram_pct = mem.ram_usage_percent();
@@ -50,7 +64,6 @@ pub fn render_status_bar(
             };
             ui.label(egui::RichText::new(mode_badge).monospace().size(11.0).color(mode_color));
 
-            // OS Scheduler Jitter
             if snap.os_scheduler_jitter_ms > 0 {
                 ui.separator();
                 ui.label(

@@ -17,6 +17,7 @@ pub enum WallState {
 }
 
 impl WallState {
+    #[allow(dead_code)]
     pub fn label(self) -> &'static str {
         match self {
             Self::Unconfirmed => "[ ⏳ INITIALIZING TELEMETRY ]",
@@ -26,6 +27,7 @@ impl WallState {
         }
     }
 
+    #[allow(dead_code)]
     pub fn color(self) -> egui::Color32 {
         match self {
             Self::Unconfirmed => theme::TEXT_MUTED,
@@ -59,6 +61,7 @@ pub fn evaluate(snap: &SystemSnapshot) -> WallState {
     }
 }
 
+#[allow(dead_code)]
 fn hover_text(snap: &SystemSnapshot) -> String {
     let Some(ref m) = snap.memory else {
         return "Awaiting memory telemetry".to_owned();
@@ -73,6 +76,7 @@ fn hover_text(snap: &SystemSnapshot) -> String {
 }
 
 /// Renders the Three Walls badge into the top bar.
+#[allow(dead_code)]
 pub fn render_badge(ui: &mut egui::Ui, snap: &SystemSnapshot) {
     let state = evaluate(snap);
     let resp =

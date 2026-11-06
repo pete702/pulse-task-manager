@@ -9,7 +9,6 @@ use eframe::egui;
 pub fn draw_y_axis_hud_labels(ui: &egui::Ui, plot_rect: egui::Rect) {
     let painter = ui.painter();
     let hud_label = egui::Color32::from_rgba_unmultiplied(148, 163, 184, 135);
-    // 100% at top
     painter.text(
         egui::pos2(plot_rect.right() - 6.0, plot_rect.top() + 3.0),
         egui::Align2::RIGHT_TOP,
@@ -17,12 +16,11 @@ pub fn draw_y_axis_hud_labels(ui: &egui::Ui, plot_rect: egui::Rect) {
         egui::FontId::monospace(10.0),
         hud_label,
     );
-    // 75%, 50%, 25% down the right edge
     for (pct, label) in [(75.0, "75%"), (50.0, "50%"), (25.0, "25%")] {
         let y = plot_rect.bottom() - (pct / 100.0) * plot_rect.height();
         painter.text(
             egui::pos2(plot_rect.right() - 6.0, y - 2.0),
-            egui::Align2::RIGHT_BOTTOM,
+            egui::Align2::RIGHT_CENTER,
             label,
             egui::FontId::monospace(10.0),
             hud_label,

@@ -60,7 +60,7 @@ git commit -s -m "Fix issue: description"
 - Unit tests in `#[cfg(test)]` modules alongside source
 - Integration tests in `tests/`
 - `docs_guard` tests enforce line limits, forbidden tokens, and README link freshness
-- All 130+ tests must pass on Windows x64 MSVC
+- All 159 automated checks (155 unit + 4 guard) must pass on Windows x64 MSVC
 
 ## Legal
 

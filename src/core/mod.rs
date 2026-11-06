@@ -1,5 +1,6 @@
 //! PULSE telemetry core: background worker, system snapshots, communication channels.
 
+pub mod persist;
 pub mod selftest;
 pub mod selftest_app;
 pub mod win32;
@@ -11,6 +12,7 @@ pub mod worker_policy;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 
+use crate::modules::cpu::model::CpuSnapshot;
 use crate::modules::memory::model::MemorySnapshot as MemSnapshot;
 
 /// System state snapshot sent from background thread to UI.
@@ -22,6 +24,8 @@ pub struct SystemSnapshot {
     pub pulse_ram_mb: f32,
     /// OS-level memory snapshot (RAM/Swap totals, usage, cached).
     pub memory: Option<MemSnapshot>,
+    /// OS-level CPU snapshot (total %, per-core %, hottest core, frequency, processes).
+    pub cpu: Option<CpuSnapshot>,
     /// OS scheduler jitter in milliseconds (how much the 1000ms sleep overshot).
     pub os_scheduler_jitter_ms: u32,
 }
@@ -30,7 +34,7 @@ impl SystemSnapshot {
     #[allow(dead_code)]
     #[inline]
     pub fn new(uptime_secs: u64, pulse_ram_mb: f32, memory: Option<MemSnapshot>) -> Self {
-        Self { uptime_secs, pulse_ram_mb, memory, os_scheduler_jitter_ms: 0 }
+        Self { uptime_secs, pulse_ram_mb, memory, cpu: None, os_scheduler_jitter_ms: 0 }
     }
 
     #[inline]
@@ -38,15 +42,16 @@ impl SystemSnapshot {
         uptime_secs: u64,
         pulse_ram_mb: f32,
         memory: Option<MemSnapshot>,
+        cpu: Option<CpuSnapshot>,
         jitter_ms: u32,
     ) -> Self {
-        Self { uptime_secs, pulse_ram_mb, memory, os_scheduler_jitter_ms: jitter_ms }
+        Self { uptime_secs, pulse_ram_mb, memory, cpu, os_scheduler_jitter_ms: jitter_ms }
     }
 
     #[allow(dead_code)]
     #[inline]
     pub fn minimal(uptime_secs: u64, pulse_ram_mb: f32) -> Self {
-        Self { uptime_secs, pulse_ram_mb, memory: None, os_scheduler_jitter_ms: 0 }
+        Self { uptime_secs, pulse_ram_mb, memory: None, cpu: None, os_scheduler_jitter_ms: 0 }
     }
 }
 

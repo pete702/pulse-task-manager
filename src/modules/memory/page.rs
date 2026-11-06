@@ -1,23 +1,21 @@
-//! Memory tab page: sub-view switcher, overview, process table, and action bar.
+//! Memory hardware cockpit: RAM, commit charge, kernel tiles, and history chart.
 
 use eframe::egui;
 
+use crate::app_tabs::ActiveTab;
+use crate::modules::cpu::table_state::{CpuSortCol, CpuTableState};
 use crate::modules::memory::action_bar::MemoryActionBarState;
-use crate::modules::memory::action_bar_view::render_action_bar;
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::modules::memory::table_state::MemoryTableState;
-use crate::modules::memory::table_view::render_memory_table;
 use crate::modules::memory::view;
 use crate::theme::{card_frame, colors, load_color};
 
-/// Sub-view selected inside the Memory tab.
+/// Legacy sub-view selector kept for API/test compatibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MemorySubView {
-    /// RAM/Swap cards, kernel tiles, and the history chart.
     #[default]
     Overview,
-    /// Searchable, sortable process memory table.
     Processes,
 }
 
@@ -31,74 +29,36 @@ impl MemorySubView {
     }
 }
 
-/// Renders the Memory tab with its sub-view switcher.
+/// Renders the Memory hardware cockpit.
 #[allow(clippy::too_many_arguments)]
 pub fn render_memory_page(
     ui: &mut egui::Ui,
     mem: &MemorySnapshot,
     history: &mut MemoryHistory,
-    sub_view: &mut MemorySubView,
-    table_state: &mut MemoryTableState,
-    action_state: &mut MemoryActionBarState,
-    uptime_secs: u64,
-    telemetry_paused: &mut bool,
+    _sub_view: &mut MemorySubView,
+    _table_state: &mut MemoryTableState,
+    _action_state: &mut MemoryActionBarState,
+    _uptime_secs: u64,
+    _telemetry_paused: &mut bool,
+    active_tab: &mut ActiveTab,
+    cpu_table_state: &mut CpuTableState,
 ) {
+    let pct = mem.ram_usage_percent();
     card_frame().show(ui, |ui| {
         ui.horizontal(|ui| {
-            for view in [MemorySubView::Overview, MemorySubView::Processes] {
-                let active = *sub_view == view;
-                let text = view.label(mem.processes.len());
-                let button = egui::Button::new(
-                    egui::RichText::new(text).monospace().size(12.0).color(if active {
-                        colors::TEXT_PRIMARY
-                    } else {
-                        colors::TEXT_SECONDARY
-                    }),
-                )
-                .fill(if active {
-                    colors::ACCENT_CYAN.gamma_multiply(0.15)
-                } else {
-                    colors::BG_CARD
-                })
-                .frame(active);
-                if ui.add(button).clicked() {
-                    *sub_view = view;
-                }
-            }
-        });
-    });
-    ui.add_space(10.0);
-
-    match *sub_view {
-        MemorySubView::Overview => {
-            view::render_memory_cards(ui, mem, history);
-        }
-        MemorySubView::Processes => {
-            render_compact_ram_bar(ui, mem);
-            ui.add_space(8.0);
-            render_action_bar(ui, mem, table_state, action_state, telemetry_paused);
-            ui.add_space(6.0);
-            render_memory_table(ui, mem, table_state, uptime_secs);
-        }
-    }
-}
-
-fn render_compact_ram_bar(ui: &mut egui::Ui, mem: &MemorySnapshot) {
-    card_frame().show(ui, |ui| {
-        ui.horizontal(|ui| {
-            let pct = mem.ram_usage_percent();
-            let color = load_color(pct);
             ui.label(
-                egui::RichText::new("RAM").monospace().size(10.0).color(colors::TEXT_SECONDARY),
+                egui::RichText::new("[01] Memory (RAM) // HARDWARE COCKPIT")
+                    .monospace()
+                    .size(12.0)
+                    .color(colors::TEXT_PRIMARY),
             );
-            ui.add(
-                egui::ProgressBar::new(pct / 100.0)
-                    .fill(color)
-                    .desired_width(220.0)
-                    .rounding(egui::Rounding::same(3.0))
-                    .animate(false),
+            ui.separator();
+            ui.label(
+                egui::RichText::new(format!("{:.1}%", pct))
+                    .monospace()
+                    .size(13.0)
+                    .color(load_color(pct)),
             );
-            ui.label(egui::RichText::new(format!("{pct:.1}%")).monospace().size(13.0).color(color));
             ui.label(
                 egui::RichText::new(format!(
                     "{:.2} / {:.2} GiB",
@@ -107,18 +67,21 @@ fn render_compact_ram_bar(ui: &mut egui::Ui, mem: &MemorySnapshot) {
                 ))
                 .monospace()
                 .size(11.0)
-                .color(colors::TEXT_PRIMARY),
+                .color(colors::TEXT_SECONDARY),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(
-                    egui::RichText::new(format!("PROCESSES: {}", mem.processes.len()))
-                        .monospace()
-                        .size(10.0)
-                        .color(colors::ACCENT_CYAN),
-                );
+                if ui.button("[ View Processes -> ]").clicked() {
+                    cpu_table_state.set_sort(CpuSortCol::RamBytes);
+                    *active_tab = ActiveTab::Processes;
+                    crate::core::request_process_scan();
+                }
             });
         });
     });
+    ui.add_space(10.0);
+
+    // Two-level cockpit (top cards + full-height chart), no vertical scrollbar.
+    view::render_memory_cards(ui, mem, history);
 }
 
 #[cfg(test)]

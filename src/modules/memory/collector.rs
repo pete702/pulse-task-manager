@@ -8,6 +8,7 @@ use sysinfo::{ProcessRefreshKind, System};
 use crate::modules::memory::constants::MAX_SANE_VIRTUAL_BYTES;
 use crate::modules::memory::delta_tracker::{ProcessDeltaTracker, ProcessMemoryScan};
 use crate::modules::memory::model::{MemorySnapshot, ProcessSample};
+#[cfg(target_os = "windows")]
 use crate::modules::memory::win32_api::{collect_windows_kernel_metrics, KernelMetrics};
 
 /// Collects current system memory state into a `MemorySnapshot`.
@@ -50,6 +51,11 @@ pub fn collect_memory(sys: &mut System) -> MemorySnapshot {
 ///
 /// When `refresh_processes` is `false`, sysinfo process iteration is skipped
 /// completely and an empty row vector is returned.
+///
+/// Reuses `sys.processes()` when called after `collect_process_cpu` on the
+/// same worker tick (the CPU pass already refreshed with
+/// `.with_memory().with_cpu().without_exe()`); falls back to refreshing
+/// memory only when the process list is empty.
 pub fn collect_process_memory(
     sys: &mut System,
     total_ram: u64,
@@ -61,9 +67,13 @@ pub fn collect_process_memory(
         return ((Vec::new(), None), false);
     }
 
-    // Use without_exe() to avoid querying executable paths for all 200+ processes
-    // (exe paths are queried on-demand via query_process_exe_path when "Open Location" is clicked)
-    sys.refresh_processes_specifics(ProcessRefreshKind::new().with_memory().without_exe());
+    // Skip second sysinfo scan when worker_loop already refreshed with
+    // .with_memory().with_cpu().without_exe() on the same tick.
+    if sys.processes().is_empty() {
+        // Use without_exe() to avoid querying executable paths for all 200+ processes
+        // (exe paths are queried on-demand via query_process_exe_path when "Open Location" is clicked)
+        sys.refresh_processes_specifics(ProcessRefreshKind::new().with_memory().without_exe());
+    }
 
     let processes: Vec<ProcessSample> = sys
         .processes()

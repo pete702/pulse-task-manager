@@ -1,18 +1,20 @@
 # Third-Party Notices for PULSE
 
-This file documents the licenses of all direct dependencies of PULSE (`pulse_manager` v0.1.19).
+This file documents the licenses of all direct dependencies of PULSE (`pulse_manager` v0.2.9).
 All dependencies are available under permissive open-source licenses (MIT or Apache-2.0).
 
 ## Direct Dependencies (6 crates)
 
 | Crate | Version | License | Repository |
 |-------|---------|---------|------------|
-| `eframe` | 0.28.x | MIT OR Apache-2.0 | https://github.com/emilk/egui |
-| `egui` | 0.28.x | MIT OR Apache-2.0 | https://github.com/emilk/egui |
-| `egui_extras` | 0.28.x | MIT OR Apache-2.0 | https://github.com/emilk/egui |
-| `egui_plot` | 0.28.x | MIT OR Apache-2.0 | https://github.com/emilk/egui |
-| `sysinfo` | 0.31.x | MIT | https://github.com/GuillaumeGomez/sysinfo |
-| `url` | 2.4.0 | MIT OR Apache-2.0 | https://github.com/servo/rust-url |
+| `eframe` | 0.27.2 | MIT OR Apache-2.0 | https://github.com/emilk/egui |
+| `egui` | 0.27.2 | MIT OR Apache-2.0 | https://github.com/emilk/egui |
+| `egui_plot` | 0.27.2 | MIT OR Apache-2.0 | https://github.com/emilk/egui |
+| `egui_extras` | 0.27.2 | MIT OR Apache-2.0 | https://github.com/emilk/egui |
+| `sysinfo` | 0.30.12 | MIT | https://github.com/GuillaumeGomez/sysinfo |
+| `windows-sys` | 0.52.0 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs |
+
+`url =2.4.0` is a transitive MSRV pin (idna 1.1+ needs edition 2024), not a direct feature.
 
 ## License Texts
 
@@ -39,7 +41,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### Apache License 2.0 (eframe, egui, egui_extras, egui_plot, url)
+### Apache License 2.0 (eframe, egui, egui_extras, egui_plot, windows-sys)
 ```
                                  Apache License
                            Version 2.0, January 2004

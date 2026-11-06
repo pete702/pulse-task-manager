@@ -45,7 +45,9 @@ pub mod colors {
 }
 
 /// Three Walls badge and muted-text tokens (v0.1.0 aliases).
+#[allow(dead_code)]
 pub const CRITICAL_CORAL: egui::Color32 = colors::ACCENT_RED;
+#[allow(dead_code)]
 pub const WARNING_AMBER: egui::Color32 = colors::ACCENT_AMBER;
 pub const OPTIMAL_EMERALD: egui::Color32 = egui::Color32::from_rgb(0x00, 0xE0, 0x80);
 pub const TEXT_MUTED: egui::Color32 = colors::TEXT_SECONDARY;

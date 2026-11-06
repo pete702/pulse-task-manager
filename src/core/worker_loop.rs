@@ -11,6 +11,9 @@ use crate::core::{
     worker_policy::*,
     LatestSlot, SnapshotTx, SystemSnapshot,
 };
+use crate::modules::cpu::collector::{collect_cpu, collect_process_cpu, warmup_cpu};
+use crate::modules::cpu::model::{ProcessCpuItem, RawProcessCpuRow};
+use crate::modules::cpu::win32_cpu::init_cpu_brand_and_base_mhz;
 use crate::modules::memory::collector::{collect_memory, collect_process_memory};
 use crate::modules::memory::delta_tracker::ProcessDeltaTracker;
 use crate::modules::memory::model::RawProcessRow;
@@ -44,9 +47,18 @@ pub fn spawn_worker(
     let handle = thread::spawn(move || {
         let started = Instant::now();
         let mut sys = System::new();
+
+        // Two-pass CPU warmup: first read returns 0%, second read returns real CPU%
+        warmup_cpu(&mut sys);
+
+        // Initialize CPU brand and base MHz caches (OnceLock) - read once at startup
+        init_cpu_brand_and_base_mhz(&mut sys);
+
         let mut latest_spike = None;
         let mut delta_tracker = ProcessDeltaTracker::new();
         let mut last_processes: Arc<Vec<RawProcessRow>> = Arc::new(Vec::new());
+        let mut last_cpu_processes: Arc<[ProcessCpuItem]> = Arc::from(Vec::new());
+        let mut last_cpu_raw_rows: Arc<[RawProcessCpuRow]> = Arc::from(Vec::new());
         let mut last_heavy = false;
         let mut was_minimized = false;
         let mut tick: u64 = 0;
@@ -69,9 +81,37 @@ pub fn spawn_worker(
             let refresh =
                 should_scan_processes(minimized, tick, wake, requested, processes_tab_active);
 
+            // IMMEDIATE STARTUP SCANS: tick 0 loads the process list, tick 1 gives
+            // sysinfo the required time delta to compute real per-process CPU%.
+            // Without the second pass, every process shows 0.0% until the first
+            // regular 3s/5s scan completes.
+            let is_startup_scan = tick <= 1;
+            let do_refresh = refresh || is_startup_scan;
+
+            // Collect CPU metrics every tick (1s interval)
+            let mut cpu = collect_cpu(&mut sys);
+            let logical_cores = cpu.logical_cores;
+            let timestamp = started.elapsed().as_secs_f64();
+
+            // Collect memory metrics every tick
             let mut memory = collect_memory(&mut sys);
-            if refresh {
+
+            // Collect process CPU when process scan runs (same pass as memory)
+            if do_refresh {
                 process_scan_id += 1;
+                let (cpu_processes, cpu_raw_rows) =
+                    collect_process_cpu(&mut sys, logical_cores, true);
+                // A transient empty sysinfo read must never erase the live list.
+                if cpu_processes.is_empty() && !last_cpu_processes.is_empty() {
+                    cpu.processes = Arc::clone(&last_cpu_processes);
+                    cpu.raw_processes = Arc::clone(&last_cpu_raw_rows);
+                } else {
+                    cpu.processes = Arc::from(cpu_processes);
+                    cpu.raw_processes = Arc::from(cpu_raw_rows);
+                    last_cpu_processes = Arc::clone(&cpu.processes);
+                    last_cpu_raw_rows = Arc::clone(&cpu.raw_processes);
+                }
+
                 let ((processes, spike), heavy) = collect_process_memory(
                     &mut sys,
                     memory.ram_total_bytes,
@@ -86,12 +126,27 @@ pub fn spawn_worker(
                 last_heavy = heavy;
                 latest_spike = spike;
             } else {
+                cpu.processes = Arc::clone(&last_cpu_processes);
+                cpu.raw_processes = Arc::clone(&last_cpu_raw_rows);
                 memory.processes = Arc::clone(&last_processes);
                 memory.has_heavy_process = last_heavy;
                 if memory.ram_usage_percent() < HIGH_RAM_PRESSURE_PCT {
                     latest_spike = None;
                 }
             }
+
+            // Process count is refreshed every tick from the retained list so the
+            // top card never drops to "0 Procs" between full scans.
+            cpu.process_count = cpu.processes.len();
+
+            // Fix 100% yellow startup spike on the CPU chart by clamping the
+            // first two startup ticks (tick 0 and tick 1) to zero.
+            if tick < 2 {
+                cpu.total_pct = 0.0;
+                cpu.hottest_core_pct = 0.0;
+                cpu.hottest_core_idx = 0;
+            }
+
             memory.latest_spike.clone_from(&latest_spike);
             memory.scan_duration_ms = tick_start.elapsed().as_secs_f32() * 1000.0;
 
@@ -99,7 +154,7 @@ pub fn spawn_worker(
             snapshot_id += 1;
             memory.snapshot_id = snapshot_id;
             memory.process_scan_id = process_scan_id;
-            memory.sample_elapsed_secs = started.elapsed().as_secs_f64();
+            memory.sample_elapsed_secs = timestamp;
             memory.channel_overflows = latest_worker.overflow_count();
 
             let elapsed = tick_start.elapsed();
@@ -121,6 +176,7 @@ pub fn spawn_worker(
                 uptime,
                 pulse_ram_mb,
                 Some(memory),
+                Some(cpu),
                 os_scheduler_jitter_ms,
             ));
 

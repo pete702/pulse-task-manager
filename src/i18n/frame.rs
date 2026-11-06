@@ -39,40 +39,73 @@ impl Lang {
 
 /// Locale badge strings for the top bar (OS locale detection).
 pub mod locale {
+    #[cfg(target_os = "windows")]
     use std::sync::OnceLock;
 
     #[cfg(target_os = "windows")]
-    static OS_LANG_ID: OnceLock<u16> = OnceLock::new();
-
-    #[cfg(target_os = "windows")]
     #[allow(unsafe_code)]
-    fn get_os_lang_id() -> u16 {
-        *OS_LANG_ID.get_or_init(|| {
-            use windows_sys::Win32::Globalization::GetUserDefaultUILanguage;
-            unsafe { GetUserDefaultUILanguage() }
-        })
+    fn real_locale_upper() -> String {
+        static CACHE: OnceLock<String> = OnceLock::new();
+        CACHE
+            .get_or_init(|| {
+                let mut buf = [0u16; 32];
+                use windows_sys::Win32::Globalization::GetUserDefaultLocaleName;
+                let len = unsafe { GetUserDefaultLocaleName(buf.as_mut_ptr(), 32) };
+                if len > 1 && (len as usize) <= buf.len() {
+                    let raw = String::from_utf16_lossy(&buf[..(len as usize - 1)]);
+                    let up = raw.to_ascii_uppercase();
+                    if !up.is_empty() {
+                        return up;
+                    }
+                }
+                "EN-US".to_owned()
+            })
+            .clone()
     }
 
-    /// Returns the OS locale badge string for the top bar (e.g., "LOCALE: UK-UA (0x0422)").
-    /// Uses OnceLock with static string references - zero allocations after initialization.
+    /// Short locale badge for top bar (e.g., "LOCALE: UK-UA" without hex LCID).
+    /// Uses OnceLock with static string references - zero allocations after init.
+    #[allow(dead_code)]
     #[cfg(target_os = "windows")]
     pub fn os_locale_badge() -> &'static str {
         static BADGE_CACHE: OnceLock<&'static str> = OnceLock::new();
-        BADGE_CACHE.get_or_init(|| {
-            let lang_id = get_os_lang_id();
-            let primary_lang = lang_id & 0x3FF;
-            if primary_lang == 0x22 {
-                "LOCALE: UK-UA (0x0422)"
-            } else {
-                "LOCALE: EN-US (0x0409)"
-            }
+        BADGE_CACHE
+            .get_or_init(|| Box::leak(format!("LOCALE: {}", real_locale_upper()).into_boxed_str()))
+    }
+
+    /// Full locale string for hover tooltip (e.g., "System Locale: UK-UA").
+    #[allow(dead_code)]
+    #[cfg(target_os = "windows")]
+    pub fn os_locale_full() -> &'static str {
+        static FULL_CACHE: OnceLock<&'static str> = OnceLock::new();
+        FULL_CACHE.get_or_init(|| {
+            Box::leak(format!("System Locale: {}", real_locale_upper()).into_boxed_str())
         })
     }
 
-    /// Fallback for non-Windows targets (should not happen for this Windows-only app).
+    /// Bare short code for top bar (e.g., "UK-UA").
+    #[cfg(target_os = "windows")]
+    pub fn os_locale_short() -> &'static str {
+        static SHORT_CACHE: OnceLock<&'static str> = OnceLock::new();
+        SHORT_CACHE.get_or_init(|| Box::leak(real_locale_upper().into_boxed_str()))
+    }
+
+    /// Short badge fallback for non-Windows targets.
     #[cfg(not(target_os = "windows"))]
     pub fn os_locale_badge() -> &'static str {
-        "LOCALE: EN-US (0x0409)"
+        "LOCALE: EN-US"
+    }
+
+    /// Full fallback for non-Windows targets.
+    #[cfg(not(target_os = "windows"))]
+    pub fn os_locale_full() -> &'static str {
+        "System Locale: EN-US"
+    }
+
+    /// Bare short fallback for non-Windows targets.
+    #[cfg(not(target_os = "windows"))]
+    pub fn os_locale_short() -> &'static str {
+        "EN-US"
     }
 }
 
