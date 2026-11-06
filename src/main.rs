@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 //! PULSE — Next-Gen System Telemetry for Windows
 //! Entry point: initializes eframe and runs the app.
 

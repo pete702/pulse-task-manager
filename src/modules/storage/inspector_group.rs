@@ -18,7 +18,7 @@ pub struct Grouped {
     pub drive: Option<char>,
 }
 
-type CacheKey = (usize, usize, u32, u32, u8);
+type CacheKey = (usize, usize, u32, u32, u64);
 type ConsumerCache = (CacheKey, Arc<Vec<Grouped>>);
 static CONSUMER_CACHE: OnceLock<Mutex<ConsumerCache>> = OnceLock::new();
 static LAST_SCAN: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
@@ -33,7 +33,8 @@ pub fn last_scan() -> &'static Mutex<Option<Instant>> {
 }
 
 pub fn filter_on() -> &'static Mutex<bool> {
-    FILTER_ON.get_or_init(|| Mutex::new(false))
+    // Default ON so the selected disk's letters auto-filter the table.
+    FILTER_ON.get_or_init(|| Mutex::new(true))
 }
 
 fn exe_drive(pid: u32, start_time: u64) -> Option<char> {
@@ -46,19 +47,37 @@ fn exe_drive(pid: u32, start_time: u64) -> Option<char> {
     }
 }
 
-fn scan_key(raw: &[RawProcessCpuRow], filter: Option<char>) -> CacheKey {
+fn drive_mask(filter: Option<&[char]>) -> u64 {
+    match filter {
+        None => 0,
+        Some(letters) => {
+            let mut mask = 0u64;
+            for c in letters {
+                let u = *c as u8;
+                if u.is_ascii_uppercase() {
+                    mask |= 1u64 << (u - b'A');
+                } else if u.is_ascii_lowercase() {
+                    mask |= 1u64 << (u.to_ascii_uppercase() - b'A');
+                }
+            }
+            mask
+        }
+    }
+}
+
+fn scan_key(raw: &[RawProcessCpuRow], filter: Option<&[char]>) -> CacheKey {
     let mut rsum = 0.0f32;
     let mut wsum = 0.0f32;
     for r in raw {
         rsum += r.disk_read_mb_s;
         wsum += r.disk_write_mb_s;
     }
-    let drive = filter.map(|c| c as u8).unwrap_or(0);
-    (raw.as_ptr() as usize, raw.len(), rsum.to_bits(), wsum.to_bits(), drive)
+    (raw.as_ptr() as usize, raw.len(), rsum.to_bits(), wsum.to_bits(), drive_mask(filter))
 }
 
 /// Returns cached top-5 grouped consumers; ABA-safe key prevents stale hits.
-pub fn cached_consumers(raw: &[RawProcessCpuRow], filter: Option<char>) -> Arc<Vec<Grouped>> {
+/// `filter` is the set of drive letters for the selected disk (None = all).
+pub fn cached_consumers(raw: &[RawProcessCpuRow], filter: Option<&[char]>) -> Arc<Vec<Grouped>> {
     let key = scan_key(raw, filter);
     {
         let guard = consumer_cache().lock().unwrap_or_else(|e| e.into_inner());
@@ -77,7 +96,7 @@ pub fn cached_consumers(raw: &[RawProcessCpuRow], filter: Option<char>) -> Arc<V
     rows
 }
 
-fn group(raw: &[RawProcessCpuRow], filter: Option<char>) -> Vec<Grouped> {
+fn group(raw: &[RawProcessCpuRow], filter: Option<&[char]>) -> Vec<Grouped> {
     let mut map: HashMap<String, Grouped> = HashMap::new();
     for row in raw {
         let drive = if row.disk_read_mb_s + row.disk_write_mb_s >= 0.05 {
@@ -85,8 +104,9 @@ fn group(raw: &[RawProcessCpuRow], filter: Option<char>) -> Vec<Grouped> {
         } else {
             None
         };
-        if let Some(want) = filter {
-            if drive != Some(want) {
+        if let Some(letters) = filter {
+            let matches = drive.is_some_and(|d| letters.contains(&d));
+            if !matches {
                 continue;
             }
         }

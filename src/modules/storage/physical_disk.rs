@@ -116,6 +116,7 @@ pub fn perf_counters_for_mount(mount: &str) -> Option<(i64, i64)> {
 }
 
 /// Sums hardware counters across mounts using IOCTL_DISK_PERFORMANCE.
+#[allow(dead_code)]
 pub fn sum_perf_counters(mounts: &[&str]) -> Option<(i64, i64)> {
     let mut read: i64 = 0;
     let mut written: i64 = 0;

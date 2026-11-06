@@ -43,6 +43,47 @@ pub struct DiskVolumeInfo {
     pub is_critical_space: bool,
     pub physical_disk: Option<u32>,
     pub partition_number: Option<u32>,
+    pub read_mb_s: f32,
+    pub write_mb_s: f32,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PhysicalDiskGroup {
+    pub disk_index: Option<u32>,
+    pub kind: DiskMediaKind,
+    pub read_mb_s: f32,
+    pub write_mb_s: f32,
+    pub volumes: Vec<DiskVolumeInfo>,
+}
+
+/// Groups volumes by physical disk (None entries stay distinct).
+#[allow(dead_code)]
+pub fn group_physical_disks(volumes: &[DiskVolumeInfo]) -> Vec<PhysicalDiskGroup> {
+    let mut groups: Vec<PhysicalDiskGroup> = Vec::new();
+    for vol in volumes {
+        let disk = vol.physical_disk;
+        let existing = disk.is_some() && groups.last().is_some_and(|g| g.disk_index == disk);
+        if existing {
+            groups.last_mut().expect("group exists").volumes.push(vol.clone());
+        } else {
+            groups.push(PhysicalDiskGroup {
+                disk_index: disk,
+                kind: vol.kind,
+                read_mb_s: vol.read_mb_s,
+                write_mb_s: vol.write_mb_s,
+                volumes: vec![vol.clone()],
+            });
+        }
+    }
+    for group in &mut groups {
+        if let Some(first) = group.volumes.first().cloned() {
+            group.kind = first.kind;
+            group.read_mb_s = first.read_mb_s;
+            group.write_mb_s = first.write_mb_s;
+        }
+    }
+    groups
 }
 
 impl DiskVolumeInfo {
@@ -68,6 +109,8 @@ impl DiskVolumeInfo {
             is_critical_space,
             physical_disk: None,
             partition_number: None,
+            read_mb_s: 0.0,
+            write_mb_s: 0.0,
         }
     }
 }
@@ -133,5 +176,47 @@ mod tests {
         assert!(!mk("E:", DiskMediaKind::Ssd, 500 * gb, 250 * gb).is_critical_space);
         assert!(!mk("F:", DiskMediaKind::Removable, 8 * gb, 7 * gb).is_critical_space);
         assert!(is_critical_space(used_pct_for(80 * gb, 9 * gb), 80 * gb, 9 * gb));
+    }
+    #[test]
+    fn group_by_disk_merges_partitions() {
+        let gb = GIB;
+        let mut c = DiskVolumeInfo::new(
+            Arc::from("C:\\"),
+            Arc::from("C"),
+            Arc::from("NTFS"),
+            DiskMediaKind::Ssd,
+            100 * gb,
+            60 * gb,
+        );
+        c.physical_disk = Some(0);
+        c.read_mb_s = 14.2;
+        c.write_mb_s = 3.1;
+        let mut d = DiskVolumeInfo::new(
+            Arc::from("D:\\"),
+            Arc::from("D"),
+            Arc::from("NTFS"),
+            DiskMediaKind::Ssd,
+            200 * gb,
+            100 * gb,
+        );
+        d.physical_disk = Some(0);
+        d.read_mb_s = 14.2;
+        d.write_mb_s = 3.1;
+        let mut h = DiskVolumeInfo::new(
+            Arc::from("H:\\"),
+            Arc::from("H"),
+            Arc::from("NTFS"),
+            DiskMediaKind::Hdd,
+            500 * gb,
+            250 * gb,
+        );
+        h.physical_disk = Some(1);
+        let groups = group_physical_disks(&[c, d, h]);
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].disk_index, Some(0));
+        assert_eq!(groups[0].volumes.len(), 2);
+        assert!((groups[0].read_mb_s - 14.2).abs() < 0.5);
+        assert!((groups[0].write_mb_s - 3.1).abs() < 0.5);
+        assert_eq!(groups[1].disk_index, Some(1));
     }
 }

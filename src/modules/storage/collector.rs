@@ -1,5 +1,6 @@
 //! Storage collector: volume metadata plus aggregated process I/O.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -14,19 +15,13 @@ use crate::modules::storage::physical_disk;
 pub const IO_SPIKE_THRESHOLD_MB_S: f32 = 80.0;
 
 #[allow(dead_code)]
-fn local_hms() -> String {
-    crate::util::format_timestamp_now()
-}
-
-#[allow(dead_code)]
 pub struct StorageCollector {
     disks: Disks,
     tick_counter: u32,
     cached_volumes: Arc<[DiskVolumeInfo]>,
     last_io_spike: Option<IoSpikeEvent>,
     last_scan_id: u64,
-    last_hw: Option<(i64, i64)>,
-    last_hw_at: Option<Instant>,
+    prev_per_disk: HashMap<u32, (i64, i64, Instant)>,
 }
 
 impl StorageCollector {
@@ -38,8 +33,7 @@ impl StorageCollector {
             cached_volumes: Arc::from(Vec::new()),
             last_io_spike: None,
             last_scan_id: 0,
-            last_hw: None,
-            last_hw_at: None,
+            prev_per_disk: HashMap::new(),
         }
     }
     #[allow(dead_code)]
@@ -49,19 +43,41 @@ impl StorageCollector {
             self.cached_volumes = Arc::from(volumes_from_disks(&self.disks));
         }
         let (agg_read, agg_write, top) = aggregate_io(raw_processes);
-        let unique_owned: Vec<String> = {
-            let entries: Vec<(&str, Option<u32>)> = self
-                .cached_volumes
-                .iter()
-                .map(|v| (v.mount_point.as_ref(), v.physical_disk))
-                .collect();
-            let unique = dedupe_disk_mounts(&entries);
-            unique.iter().map(|s| (*s).to_string()).collect()
-        };
-        let mounts: Vec<&str> = unique_owned.iter().map(|s| s.as_str()).collect();
-        let (read_total, write_total) = self.hw_rates(&mounts).unwrap_or((agg_read, agg_write));
+        // One representative mount per disk: DISK_PERFORMANCE counters are
+        // per-disk, so C: and D: on Disk 0 must not both be summed.
+        let entries: Vec<(&str, Option<u32>)> =
+            self.cached_volumes.iter().map(|v| (v.mount_point.as_ref(), v.physical_disk)).collect();
+        let unique_mounts = dedupe_disk_mounts(&entries);
+        let unique: Vec<(String, Option<u32>)> = unique_mounts
+            .iter()
+            .map(|m| {
+                let disk = self
+                    .cached_volumes
+                    .iter()
+                    .find(|v| v.mount_point.as_ref() == *m)
+                    .and_then(|v| v.physical_disk);
+                (m.to_string(), disk)
+            })
+            .collect();
+        let (read_total, write_total, per_disk) = self.per_disk_rates(&unique, agg_read, agg_write);
         let read_total = clamp_rate(read_total);
         let write_total = clamp_rate(write_total);
+        // Stamp every volume of a disk with its live per-disk rates.
+        let volumes: Arc<[DiskVolumeInfo]> = Arc::from(
+            self.cached_volumes
+                .iter()
+                .map(|v| {
+                    let mut info = v.clone();
+                    if let Some(d) = v.physical_disk {
+                        if let Some((r, w)) = per_disk.get(&d) {
+                            info.read_mb_s = *r;
+                            info.write_mb_s = *w;
+                        }
+                    }
+                    info
+                })
+                .collect::<Vec<_>>(),
+        );
         let is_fresh_scan = !raw_processes.is_empty() && scan_id != self.last_scan_id;
         self.last_scan_id = scan_id;
         let total = read_total + write_total;
@@ -76,13 +92,9 @@ impl StorageCollector {
                     peak_mb_s: peak,
                     read_mb_s: r,
                     write_mb_s: w,
-                    timestamp_hms: Arc::from(local_hms()),
+                    timestamp_hms: Arc::from(crate::util::format_timestamp_now()),
                     ticks_ago: 0,
                 });
-            } else if let Some(spike) = self.last_io_spike.as_mut() {
-                let _ = spike;
-            } else {
-                self.last_io_spike = None;
             }
         } else {
             let expired = match self.last_io_spike.as_mut() {
@@ -97,7 +109,7 @@ impl StorageCollector {
             }
         }
         let snapshot = StorageSnapshot {
-            volumes: Arc::clone(&self.cached_volumes),
+            volumes: Arc::clone(&volumes),
             read_mb_s: read_total,
             write_mb_s: write_total,
             top_io_process: top,
@@ -106,34 +118,38 @@ impl StorageCollector {
         self.tick_counter = self.tick_counter.wrapping_add(1);
         snapshot
     }
-    #[allow(dead_code)]
-    pub fn last_io_spike(&self) -> Option<&IoSpikeEvent> {
-        self.last_io_spike.as_ref()
-    }
-    #[allow(dead_code)]
-    pub fn cached_volumes(&self) -> &[DiskVolumeInfo] {
-        &self.cached_volumes
-    }
-
-    fn hw_rates(&mut self, mounts: &[&str]) -> Option<(f32, f32)> {
+    fn per_disk_rates(
+        &mut self,
+        unique: &[(String, Option<u32>)],
+        agg_read: f32,
+        agg_write: f32,
+    ) -> (f32, f32, HashMap<u32, (f32, f32)>) {
         let now = Instant::now();
-        let sums = physical_disk::sum_perf_counters(mounts);
-        let prev = self.last_hw;
-        let prev_at = self.last_hw_at;
-        self.last_hw = sums;
-        self.last_hw_at = Some(now);
-        let (old_r, old_w) = prev?;
-        let (new_r, new_w) = sums?;
-        let dt = prev_at?.elapsed().as_secs_f64();
-        if dt < 0.5 || dt > 10.0 {
-            return None;
+        let mut per_disk: HashMap<u32, (f32, f32)> = HashMap::new();
+        let (mut sum_r, mut sum_w, mut any_rate) = (0.0f32, 0.0f32, false);
+        for (mount, disk) in unique {
+            let Some(disk) = disk else { continue };
+            let Some(counters) = physical_disk::perf_counters_for_mount(mount) else { continue };
+            let (new_r, new_w) = counters;
+            let prev = self.prev_per_disk.insert(*disk, (new_r, new_w, now));
+            if let Some((old_r, old_w, at)) = prev {
+                let dt = now.duration_since(at).as_secs_f64();
+                if (0.5..=10.0).contains(&dt) && new_r >= old_r && new_w >= old_w {
+                    let r = ((new_r - old_r) as f64 / dt / 1_048_576.0) as f32;
+                    let w = ((new_w - old_w) as f64 / dt / 1_048_576.0) as f32;
+                    per_disk.insert(*disk, (r, w));
+                    sum_r += r;
+                    sum_w += w;
+                    any_rate = true;
+                }
+            }
         }
-        if new_r < old_r || new_w < old_w {
-            return None;
+        if any_rate {
+            (clamp_rate(sum_r), clamp_rate(sum_w), per_disk)
+        } else {
+            // No valid deltas yet (first sample or no IOCTL data) - use agg.
+            (agg_read, agg_write, per_disk)
         }
-        let read = (new_r - old_r) as f64 / dt / 1_048_576.0;
-        let write = (new_w - old_w) as f64 / dt / 1_048_576.0;
-        Some((read as f32, write as f32))
     }
 }
 
@@ -145,8 +161,6 @@ fn top_rw(raw: &[RawProcessCpuRow], pid: u32) -> (f32, f32) {
 }
 
 /// Keeps one mount per unique physical disk; None entries stay distinct.
-/// DISK_PERFORMANCE counters are per-disk, so C: and D: on Disk 0 must
-/// not both be queried (double-count + duplicate handles).
 pub(crate) fn dedupe_disk_mounts<'a>(entries: &[(&'a str, Option<u32>)]) -> Vec<&'a str> {
     let mut seen: Vec<u32> = Vec::new();
     let mut out: Vec<&'a str> = Vec::new();
@@ -242,15 +256,12 @@ mod tests {
         assert!(unique.contains(&"C:\\"));
         assert!(unique.contains(&"H:\\"));
         assert!(!unique.contains(&"D:\\"));
-    }
-    #[test]
-    fn dedup_keeps_none_distinct() {
-        let entries = [("C:\\", None), ("D:\\", None), ("H:\\", Some(1))];
-        let unique = dedupe_disk_mounts(&entries);
-        assert_eq!(unique.len(), 3);
-        assert!(unique.contains(&"C:\\"));
-        assert!(unique.contains(&"D:\\"));
-        assert!(unique.contains(&"H:\\"));
+        let entries2 = [("C:\\", None), ("D:\\", None), ("H:\\", Some(1))];
+        let unique2 = dedupe_disk_mounts(&entries2);
+        assert_eq!(unique2.len(), 3);
+        assert!(unique2.contains(&"C:\\"));
+        assert!(unique2.contains(&"D:\\"));
+        assert!(unique2.contains(&"H:\\"));
     }
     #[test]
     fn volume_low_space_detection() {

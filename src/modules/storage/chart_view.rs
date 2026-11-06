@@ -26,6 +26,7 @@ pub fn render_storage_chart(
     read: &Arc<Vec<[f64; 2]>>,
     write: &Arc<Vec<[f64; 2]>>,
     window_secs: usize,
+    scope: Option<&str>,
 ) {
     let total_now = latest_total(read, write);
     let resp = card_frame().show(ui, |ui| {
@@ -36,6 +37,23 @@ pub fn render_storage_chart(
                     .size(12.0)
                     .color(colors::TEXT_PRIMARY),
             );
+            if let Some(label) = scope {
+                ui.label(
+                    egui::RichText::new(format!("Scope: {label}"))
+                        .monospace()
+                        .size(11.0)
+                        .color(colors::ACCENT_CYAN),
+                );
+                let all = egui::Button::new(
+                    egui::RichText::new("[ Show All Disks ]")
+                        .monospace()
+                        .size(11.0)
+                        .color(colors::TEXT_SECONDARY),
+                );
+                if ui.add(all).clicked() {
+                    crate::modules::storage::view::clear_selected();
+                }
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 pick_window(ui, "1m", 60, window_secs);
                 pick_window(ui, "5m", 300, window_secs);

@@ -1,17 +1,20 @@
 //! Storage throughput history split from model for the 280-line guard.
 //! Minutes-ago coordinates with LTTB downsampling to 300 points.
+//! Per-disk series mirror NetworkHistory::per_adapter for chart scope.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use crate::modules::memory::downsampling::lttb_downsample;
 
-type SeriesCache = (u64, usize, Arc<Vec<[f64; 2]>>, Arc<Vec<[f64; 2]>>);
+type SeriesCache = (Option<u32>, u64, usize, Arc<Vec<[f64; 2]>>, Arc<Vec<[f64; 2]>>);
+type DiskSample = (f64, f32, f32);
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
 pub struct StorageHistory {
-    samples: VecDeque<(f64, f32, f32)>,
+    samples: VecDeque<DiskSample>,
+    per_disk: HashMap<u32, VecDeque<DiskSample>>,
     revision: u64,
     cached: Option<SeriesCache>,
 }
@@ -38,31 +41,67 @@ impl StorageHistory {
         self.revision = self.revision.wrapping_add(1);
         self.cached = None;
     }
-    #[allow(dead_code, clippy::type_complexity)]
+    #[allow(dead_code)]
+    pub fn push_disk(&mut self, disk: u32, timestamp: f64, read_mb_s: f32, write_mb_s: f32) {
+        let entry = self.per_disk.entry(disk).or_default();
+        if entry.len() == 900 {
+            entry.pop_front();
+        }
+        entry.push_back((timestamp, read_mb_s, write_mb_s));
+        self.revision = self.revision.wrapping_add(1);
+        self.cached = None;
+    }
+    #[allow(dead_code)]
+    #[allow(clippy::type_complexity)]
     pub fn series_points(
         &mut self,
         window_secs: usize,
     ) -> (Arc<Vec<[f64; 2]>>, Arc<Vec<[f64; 2]>>) {
-        if let Some((rev, win, r, w)) = self.cached.clone() {
-            if rev == self.revision && win == window_secs {
+        self.series_points_scoped(None, window_secs)
+    }
+    #[allow(dead_code)]
+    #[allow(clippy::type_complexity)]
+    pub fn series_points_scoped(
+        &mut self,
+        disk: Option<u32>,
+        window_secs: usize,
+    ) -> (Arc<Vec<[f64; 2]>>, Arc<Vec<[f64; 2]>>) {
+        if let Some((d, rev, win, r, w)) = self.cached.clone() {
+            if rev == self.revision && win == window_secs && d == disk {
                 return (r, w);
             }
         }
-        let (read, write) = self.build_series(window_secs);
+        let (read, write) = self.build_series_scoped(disk, window_secs);
         let out = (Arc::new(read), Arc::new(write));
-        self.cached = Some((self.revision, window_secs, Arc::clone(&out.0), Arc::clone(&out.1)));
+        self.cached =
+            Some((disk, self.revision, window_secs, Arc::clone(&out.0), Arc::clone(&out.1)));
         out
     }
     #[allow(dead_code)]
     fn build_series(&self, window_secs: usize) -> (Vec<[f64; 2]>, Vec<[f64; 2]>) {
-        if self.samples.is_empty() {
+        self.build_series_scoped(None, window_secs)
+    }
+    #[allow(dead_code)]
+    fn build_series_scoped(
+        &self,
+        disk: Option<u32>,
+        window_secs: usize,
+    ) -> (Vec<[f64; 2]>, Vec<[f64; 2]>) {
+        let samples = match disk {
+            Some(d) => match self.per_disk.get(&d) {
+                Some(s) => s,
+                None => return (Vec::new(), Vec::new()),
+            },
+            None => &self.samples,
+        };
+        if samples.is_empty() {
             return (Vec::new(), Vec::new());
         }
-        let latest = self.samples.back().map(|s| s.0).unwrap_or(0.0);
+        let latest = samples.back().map(|s| s.0).unwrap_or(0.0);
         let win = window_secs as f64;
         let mut read = Vec::new();
         let mut write = Vec::new();
-        for (t, r, w) in &self.samples {
+        for (t, r, w) in samples {
             if latest - t <= win {
                 let x = -(latest - t) / 60.0;
                 read.push([x, *r as f64]);
@@ -116,5 +155,24 @@ mod tests {
         let (r, _) = h.series_points(900);
         assert_eq!(r.len(), 300);
         assert_eq!(r[299][1], 904.0);
+    }
+    #[test]
+    fn per_disk_series_is_separate() {
+        let mut h = StorageHistory::new();
+        for i in 0..5u32 {
+            h.push(i as f64, 10.0, 5.0);
+            h.push_disk(0, i as f64, i as f32, (i * 2) as f32);
+            h.push_disk(1, i as f64, 100.0, 0.0);
+        }
+        let (r, w) = h.series_points_scoped(Some(0), 60);
+        assert_eq!(r.len(), 5);
+        assert_eq!(r[4][1], 4.0);
+        assert_eq!(w[4][1], 8.0);
+        let (r1, _) = h.series_points_scoped(Some(1), 60);
+        assert_eq!(r1[4][1], 100.0);
+        let (all, _) = h.series_points_scoped(None, 60);
+        assert_eq!(all[4][1], 10.0);
+        let (missing, _) = h.series_points_scoped(Some(7), 60);
+        assert!(missing.is_empty());
     }
 }

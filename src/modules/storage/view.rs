@@ -48,6 +48,12 @@ pub fn window_secs() -> usize {
     state().lock().unwrap_or_else(|e| e.into_inner()).window_secs
 }
 
+/// Clears selection back to All Disks (called from chart scope button).
+pub fn clear_selected() {
+    let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
+    guard.selected_mount = None;
+}
+
 /// Background ingestion: pure 1-second time throttle (like network).
 /// Pushes even at 0.0 MB/s so the chart scrolls smoothly when idle.
 /// Lock is held only briefly.
@@ -67,6 +73,17 @@ pub fn ingest_storage_snapshot(
     }
     let elapsed = guard.started.elapsed().as_secs_f64();
     guard.history.push(elapsed, snap.read_mb_s, snap.write_mb_s);
+    // Per-disk series: one sample per physical disk (volumes share rates).
+    let mut seen: Vec<u32> = Vec::new();
+    for vol in snap.volumes.iter() {
+        if let Some(d) = vol.physical_disk {
+            if seen.contains(&d) {
+                continue;
+            }
+            seen.push(d);
+            guard.history.push_disk(d, elapsed, vol.read_mb_s, vol.write_mb_s);
+        }
+    }
     guard.last_push = Some(now);
 }
 
@@ -76,20 +93,49 @@ pub fn render_storage_tab(
     snap: &StorageSnapshot,
     raw_processes: &[RawProcessCpuRow],
 ) {
-    let (read_series, write_series, window_secs, mut selected) = {
+    // Resolve selected volume -> Disk N scope (None = All Disks).
+    let mut selected = {
+        let guard = state().lock().unwrap_or_else(|e| e.into_inner());
+        guard.selected_mount.clone()
+    };
+    // Clear stale selection if the mount vanished; keep None as "All".
+    if selected.is_some() {
+        let valid = snap.volumes.iter().any(|v| selected.as_ref() == Some(&v.mount_point));
+        if !valid {
+            selected = None;
+        }
+    }
+    let scope_disk: Option<u32> = selected.as_ref().and_then(|sel| {
+        snap.volumes.iter().find(|v| &v.mount_point == sel).and_then(|v| v.physical_disk)
+    });
+    let (kpi_read, kpi_write) = match scope_disk {
+        Some(d) => snap
+            .volumes
+            .iter()
+            .find(|v| v.physical_disk == Some(d))
+            .map(|v| (v.read_mb_s, v.write_mb_s))
+            .unwrap_or((snap.read_mb_s, snap.write_mb_s)),
+        None => (snap.read_mb_s, snap.write_mb_s),
+    };
+    let scope_label = scope_disk.map(|d| {
+        let mounts: Vec<String> = snap
+            .volumes
+            .iter()
+            .filter(|v| v.physical_disk == Some(d))
+            .map(|v| v.mount_point.to_string())
+            .collect();
+        format!("Disk {d} ({})", mounts.join(", "))
+    });
+    let (read_series, write_series, window_secs) = {
         let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
         let window = guard.window_secs;
-        let (r, w) = guard.history.series_points(window);
-        (r, w, window, guard.selected_mount.clone())
+        let (r, w) = guard.history.series_points_scoped(scope_disk, window);
+        (r, w, window)
     };
-    let valid = snap.volumes.iter().any(|v| selected.as_ref() == Some(&v.mount_point));
-    if !valid {
-        selected = snap.volumes.first().map(|v| Arc::clone(&v.mount_point));
-    }
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        render_status_and_kpis(ui, snap);
+        render_status_and_kpis(ui, snap, kpi_read, kpi_write, scope_disk);
         ui.add_space(8.0);
-        render_storage_chart(ui, &read_series, &write_series, window_secs);
+        render_storage_chart(ui, &read_series, &write_series, window_secs, scope_label.as_deref());
         ui.add_space(8.0);
         render_volume_cards(ui, &snap.volumes, &mut selected);
         ui.add_space(8.0);
@@ -101,22 +147,31 @@ pub fn render_storage_tab(
 
 /// Fixed 5-column strip spanning 100% width (zero-jitter, no wrapping).
 /// Col 0: Blackbox state, Col 1-3: rates/count, Col 4: truncated TOP I/O.
-fn render_status_and_kpis(ui: &mut egui::Ui, snap: &StorageSnapshot) {
+fn render_status_and_kpis(
+    ui: &mut egui::Ui,
+    snap: &StorageSnapshot,
+    kpi_read: f32,
+    kpi_write: f32,
+    scope_disk: Option<u32>,
+) {
+    let read_label = match scope_disk {
+        Some(d) => format!("READ Disk {d}"),
+        None => "READ MB/s".to_owned(),
+    };
+    let write_label = match scope_disk {
+        Some(d) => format!("WRITE Disk {d}"),
+        None => "WRITE MB/s".to_owned(),
+    };
     card_frame().show(ui, |ui| {
         ui.set_width(ui.available_width());
         if ui.available_width() >= 720.0 {
             ui.columns(5, |cols| {
                 render_blackbox(&mut cols[0], snap);
-                col_kpi(
-                    &mut cols[1],
-                    "READ MB/s",
-                    format!("{:.1}", snap.read_mb_s),
-                    colors::ACCENT_CYAN,
-                );
+                col_kpi(&mut cols[1], &read_label, format!("{:.1}", kpi_read), colors::ACCENT_CYAN);
                 col_kpi(
                     &mut cols[2],
-                    "WRITE MB/s",
-                    format!("{:.1}", snap.write_mb_s),
+                    &write_label,
+                    format!("{:.1}", kpi_write),
                     colors::ACCENT_AMBER,
                 );
                 col_kpi(
@@ -135,16 +190,11 @@ fn render_status_and_kpis(ui: &mut egui::Ui, snap: &StorageSnapshot) {
         } else {
             ui.columns(3, |cols| {
                 render_blackbox(&mut cols[0], snap);
-                col_kpi(
-                    &mut cols[1],
-                    "READ MB/s",
-                    format!("{:.1}", snap.read_mb_s),
-                    colors::ACCENT_CYAN,
-                );
+                col_kpi(&mut cols[1], &read_label, format!("{:.1}", kpi_read), colors::ACCENT_CYAN);
                 col_kpi(
                     &mut cols[2],
-                    "WRITE MB/s",
-                    format!("{:.1}", snap.write_mb_s),
+                    &write_label,
+                    format!("{:.1}", kpi_write),
                     colors::ACCENT_AMBER,
                 );
             });
