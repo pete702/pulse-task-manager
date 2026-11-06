@@ -18,7 +18,12 @@ pub fn cached_exe_path(pid: u32, start_time: u64) -> String {
     {
         let mut g = slot.lock().unwrap_or_else(|e| e.into_inner());
         if g.len() >= 2048 {
-            g.clear();
+            let keep = g.len() / 2;
+            let drop_count = g.len() - keep;
+            let stale: Vec<(u32, u64)> = g.keys().take(drop_count).copied().collect();
+            for k in stale {
+                g.remove(&k);
+            }
         }
         g.insert(key, v.clone());
     }

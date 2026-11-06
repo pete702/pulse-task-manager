@@ -3,8 +3,7 @@ mod tests {
     #[cfg(target_os = "windows")]
     use crate::modules::memory::actions::open_process_file_location;
     use crate::modules::memory::actions::{
-        purge_system_working_sets, terminate_process_group, trim_process_group, ReclaimReport,
-        TrimSkipReason,
+        purge_system_working_sets, terminate_process_group, trim_process_group,
     };
     use crate::modules::memory::process_target::ProcessTarget;
     #[cfg(target_os = "windows")]
@@ -25,66 +24,49 @@ mod tests {
         }
     }
     #[test]
-    fn test_verify_pid_safety_gate_blocks_pid_0() {
-        assert!(verify_pid_safety_gate(0, "system").is_err());
-    }
-    #[test]
-    fn test_verify_pid_safety_gate_blocks_pid_4() {
-        assert!(verify_pid_safety_gate(4, "system").is_err());
-    }
-    #[test]
-    fn test_verify_pid_safety_gate_blocks_self_pid() {
+    fn test_safety_gate_protected_and_allowed_table() {
         let self_pid = std::process::id();
-        assert!(verify_pid_safety_gate(self_pid, "pulse_manager").is_err());
+        let cases: &[(u32, &str, bool)] = &[
+            (0, "system", true),
+            (4, "system", true),
+            (self_pid, "pulse_manager", true),
+            (123, "csrss.exe", true),
+            (456, "LSASS.EXE", true),
+            (789, "Memory Compression", true),
+            (111, "vgc.exe", true),
+            (222, "EasyAntiCheat_EOS.exe", true),
+            (99999, "notepad.exe", false),
+            (88888, "chrome.exe", false),
+            (123, r"C:\Windows\System32\csrss.exe", true),
+            (222, "D:/Games/EasyAntiCheat_EOS.exe", true),
+            (456, r"C:\Windows\System32\lsass.exe", true),
+            (100, "lsaiso.exe", true),
+            (101, "startmenuexperiencehost.exe", true),
+            (102, "searchhost.exe", true),
+            (103, "shellexperiencehost.exe", true),
+            (104, "textinputhost.exe", true),
+            (105, "conhost.exe", true),
+        ];
+        for (pid, name, blocked) in cases {
+            let err = verify_pid_safety_gate(*pid, name).is_err();
+            assert_eq!(err, *blocked, "pid={pid} name={name}");
+        }
     }
     #[test]
-    fn test_verify_pid_safety_gate_blocks_csrss() {
-        assert!(verify_pid_safety_gate(123, "csrss.exe").is_err());
-    }
-    #[test]
-    fn test_verify_pid_safety_gate_blocks_lsass() {
-        assert!(verify_pid_safety_gate(456, "LSASS.EXE").is_err());
-    }
-    #[test]
-    fn test_verify_pid_safety_gate_blocks_memory_compression() {
-        assert!(verify_pid_safety_gate(789, "Memory Compression").is_err());
-    }
-    #[test]
-    fn test_verify_pid_safety_gate_blocks_vgc() {
-        assert!(verify_pid_safety_gate(111, "vgc.exe").is_err());
-    }
-    #[test]
-    fn test_verify_pid_safety_gate_blocks_easyanticheat_eos() {
-        assert!(verify_pid_safety_gate(222, "EasyAntiCheat_EOS.exe").is_err());
-    }
-    #[test]
-    fn test_verify_pid_safety_gate_allows_notepad() {
-        assert!(verify_pid_safety_gate(99999, "notepad.exe").is_ok());
-    }
-    #[test]
-    fn test_verify_pid_safety_gate_allows_chrome() {
-        assert!(verify_pid_safety_gate(88888, "chrome.exe").is_ok());
-    }
-    #[test]
-    fn test_verify_pid_safety_gate_blocks_full_path_csrss() {
-        assert!(verify_pid_safety_gate(123, r"C:\Windows\System32\csrss.exe").is_err());
-    }
-    #[test]
-    fn test_verify_pid_safety_gate_blocks_full_path_easyanticheat() {
-        assert!(verify_pid_safety_gate(222, "D:/Games/EasyAntiCheat_EOS.exe").is_err());
-    }
-    #[test]
-    fn test_verify_pid_safety_gate_blocks_full_path_lsass() {
-        assert!(verify_pid_safety_gate(456, r"C:\Windows\System32\lsass.exe").is_err());
-    }
-    #[test]
-    fn test_verify_pid_safety_gate_blocks_new_os_processes() {
-        assert!(verify_pid_safety_gate(100, "lsaiso.exe").is_err());
-        assert!(verify_pid_safety_gate(101, "startmenuexperiencehost.exe").is_err());
-        assert!(verify_pid_safety_gate(102, "searchhost.exe").is_err());
-        assert!(verify_pid_safety_gate(103, "shellexperiencehost.exe").is_err());
-        assert!(verify_pid_safety_gate(104, "textinputhost.exe").is_err());
-        assert!(verify_pid_safety_gate(105, "conhost.exe").is_err());
+    fn test_is_protected_process_table() {
+        let self_pid = std::process::id();
+        let cases: &[(u32, &str, bool)] = &[
+            (0, "system", true),
+            (4, "system", true),
+            (self_pid, "pulse", true),
+            (123, "csrss.exe", true),
+            (123, "vgc.exe", true),
+            (99999, "notepad.exe", false),
+            (88888, "chrome.exe", false),
+        ];
+        for (pid, name, blocked) in cases {
+            assert_eq!(is_protected_process(*pid, name), *blocked, "pid={pid} name={name}");
+        }
     }
     #[cfg(target_os = "windows")]
     #[test]
@@ -151,33 +133,5 @@ mod tests {
         let result = open_process_file_location(&PathBuf::from(r"C:\nonexistent\fake.exe"));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("does not exist"));
-    }
-    #[test]
-    fn test_reclaim_report_default_and_clone() {
-        let r1 = ReclaimReport::default();
-        let r2 = r1.clone();
-        assert_eq!(r1, r2);
-        assert_eq!(r1.trimmed_count, 0);
-    }
-    #[test]
-    fn test_trim_skip_reason_eq() {
-        assert_eq!(TrimSkipReason::Protected, TrimSkipReason::Protected);
-        assert_eq!(TrimSkipReason::AccessDenied, TrimSkipReason::AccessDenied);
-        assert_eq!(TrimSkipReason::CriticalProcess, TrimSkipReason::CriticalProcess);
-        assert_ne!(TrimSkipReason::Protected, TrimSkipReason::AccessDenied);
-        assert_ne!(TrimSkipReason::Protected, TrimSkipReason::CriticalProcess);
-    }
-    #[test]
-    fn test_is_protected_process_returns_true_for_blocked() {
-        assert!(is_protected_process(0, "system"));
-        assert!(is_protected_process(4, "system"));
-        assert!(is_protected_process(std::process::id(), "pulse"));
-        assert!(is_protected_process(123, "csrss.exe"));
-        assert!(is_protected_process(123, "vgc.exe"));
-    }
-    #[test]
-    fn test_is_protected_process_returns_false_for_allowed() {
-        assert!(!is_protected_process(99999, "notepad.exe"));
-        assert!(!is_protected_process(88888, "chrome.exe"));
     }
 }

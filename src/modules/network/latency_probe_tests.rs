@@ -8,9 +8,20 @@ fn probe_defaults_and_dns_guard() {
     set_probe_enabled(true);
     assert!(probe_enabled());
     let _ = probe_state();
-    trigger_dns_flush();
-    let _ = dns_flush_state();
-    let _ = dns_flushed_recently();
+    {
+        let mut g = dns_slot().lock().unwrap_or_else(|e| e.into_inner());
+        g.0 = DnsFlushState::Success;
+        g.1 = Some(std::time::Instant::now());
+    }
+    assert_eq!(dns_flush_state(), DnsFlushState::Success);
+    assert!(dns_flushed_recently());
+    {
+        let mut g = dns_slot().lock().unwrap_or_else(|e| e.into_inner());
+        g.0 = DnsFlushState::Idle;
+        g.1 = None;
+    }
+    assert_eq!(dns_flush_state(), DnsFlushState::Idle);
+    assert!(!dns_flushed_recently());
 }
 #[test]
 fn timeout_clears_ping_and_jitter() {

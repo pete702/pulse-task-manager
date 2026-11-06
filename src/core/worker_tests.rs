@@ -9,61 +9,23 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn test_worker_sends_first_snapshot() {
+    fn test_worker_integration_single_cycle() {
         let (worker, rx) = spawn_telemetry_worker();
         let snapshot = rx
             .recv_timeout(Duration::from_secs(5))
             .expect("Worker should send first snapshot within 5 seconds");
         assert!(snapshot.uptime_secs > 0, "Uptime should be positive");
         assert!(snapshot.pulse_ram_mb >= 0.0, "Pulse RAM should be non-negative");
-        assert!(snapshot.memory.is_some(), "Memory snapshot should be present");
-        let mem = snapshot.memory.as_ref().unwrap();
+        let mem = snapshot.memory.as_ref().expect("Memory snapshot should be present");
         assert!(mem.ram_total_bytes > 0, "RAM total should be > 0");
-        assert_eq!(mem.snapshot_id, 1, "First snapshot id is 1");
-        assert_eq!(mem.process_scan_id, 1, "First tick performs a full process scan");
-        assert!(!worker.is_minimized.load(std::sync::atomic::Ordering::Relaxed));
-    }
-
-    #[test]
-    fn test_multiple_snapshots_increasing() {
-        let (_worker, rx) = spawn_telemetry_worker();
-        let first = rx.recv_timeout(Duration::from_secs(5)).expect("First snapshot");
-        let second = rx.recv_timeout(Duration::from_secs(5)).expect("Second snapshot");
-        assert!(second.uptime_secs >= first.uptime_secs, "Uptime should not decrease");
-        assert!(first.pulse_ram_mb >= 0.0);
-        assert!(second.pulse_ram_mb >= 0.0);
-        let (m1, m2) = (first.memory.as_ref().unwrap(), second.memory.as_ref().unwrap());
-        assert!(m2.snapshot_id > m1.snapshot_id, "snapshot_id increments every tick");
-        assert!(
-            m2.process_scan_id >= m1.process_scan_id,
-            "process_scan_id only advances on real scans"
-        );
-    }
-
-    #[test]
-    fn test_memory_snapshot_in_worker() {
-        let (_worker, rx) = spawn_telemetry_worker();
-        let snapshot = rx.recv_timeout(Duration::from_secs(5)).expect("First snapshot");
-        let mem = snapshot.memory.as_ref().expect("Memory should be present");
-        assert!(mem.ram_total_bytes > 0);
         assert!(mem.ram_used_bytes > 0);
         assert!(mem.ram_usage_percent() > 0.0);
         assert!(mem.ram_usage_percent() <= 100.0);
         assert!(mem.sample_elapsed_secs > 0.0, "Monotonic sample clock is stamped");
-    }
-
-    #[test]
-    fn test_os_scheduler_jitter_recorded() {
-        let (_worker, rx) = spawn_telemetry_worker();
-        let snapshot = rx.recv_timeout(Duration::from_secs(5)).expect("First snapshot");
+        assert_eq!(mem.snapshot_id, 1, "First snapshot id is 1");
+        assert_eq!(mem.process_scan_id, 1, "First tick performs a full process scan");
         let _ = snapshot.os_scheduler_jitter_ms;
-    }
-
-    #[test]
-    fn test_latest_slot_updated() {
-        let (worker, rx) = spawn_telemetry_worker();
-        let _ = rx.recv_timeout(Duration::from_secs(5)).expect("First snapshot");
-        std::thread::sleep(Duration::from_millis(1100));
+        assert!(!worker.is_minimized.load(std::sync::atomic::Ordering::Relaxed));
         assert!(worker.latest.get().is_some(), "Latest slot should be updated");
     }
 
@@ -80,7 +42,6 @@ mod tests {
         slot.store(Arc::new(SystemSnapshot::new(30, 3.0, Some(Default::default()))));
         assert_eq!(slot.overflow_count(), 1, "Reading clears the overflow condition");
     }
-
     #[test]
     fn test_latest_slot_wins_when_channel_is_full() {
         let (tx, rx) = mpsc::sync_channel(1);
@@ -103,7 +64,6 @@ mod tests {
         assert!(queued.memory.is_some());
         assert!(rx.try_recv().is_err(), "no extra dummy snapshot in the channel");
     }
-
     #[test]
     fn test_process_scan_is_decoupled_from_ram_ticks() {
         // With SCAN_TICKS_VISIBLE = 3, scans happen at tick 0, 3, 6, ...

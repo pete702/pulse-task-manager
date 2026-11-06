@@ -49,9 +49,16 @@ impl StorageCollector {
             self.cached_volumes = Arc::from(volumes_from_disks(&self.disks));
         }
         let (agg_read, agg_write, top) = aggregate_io(raw_processes);
-        let mounts_owned: Vec<String> =
-            self.cached_volumes.iter().map(|v| v.mount_point.to_string()).collect();
-        let mounts: Vec<&str> = mounts_owned.iter().map(|s| s.as_str()).collect();
+        let unique_owned: Vec<String> = {
+            let entries: Vec<(&str, Option<u32>)> = self
+                .cached_volumes
+                .iter()
+                .map(|v| (v.mount_point.as_ref(), v.physical_disk))
+                .collect();
+            let unique = dedupe_disk_mounts(&entries);
+            unique.iter().map(|s| (*s).to_string()).collect()
+        };
+        let mounts: Vec<&str> = unique_owned.iter().map(|s| s.as_str()).collect();
         let (read_total, write_total) = self.hw_rates(&mounts).unwrap_or((agg_read, agg_write));
         let read_total = clamp_rate(read_total);
         let write_total = clamp_rate(write_total);
@@ -137,6 +144,24 @@ fn top_rw(raw: &[RawProcessCpuRow], pid: u32) -> (f32, f32) {
         .unwrap_or((0.0, 0.0))
 }
 
+/// Keeps one mount per unique physical disk; None entries stay distinct.
+/// DISK_PERFORMANCE counters are per-disk, so C: and D: on Disk 0 must
+/// not both be queried (double-count + duplicate handles).
+pub(crate) fn dedupe_disk_mounts<'a>(entries: &[(&'a str, Option<u32>)]) -> Vec<&'a str> {
+    let mut seen: Vec<u32> = Vec::new();
+    let mut out: Vec<&'a str> = Vec::new();
+    for (mount, disk) in entries {
+        if let Some(d) = disk {
+            if seen.contains(d) {
+                continue;
+            }
+            seen.push(*d);
+        }
+        out.push(mount);
+    }
+    out
+}
+
 impl Default for StorageCollector {
     fn default() -> Self {
         Self::new()
@@ -208,6 +233,24 @@ mod tests {
             snap = c.collect(&calm, 1);
         }
         assert!(snap.last_io_spike.is_none());
+    }
+    #[test]
+    fn dedup_selects_one_per_disk() {
+        let entries = [("C:\\", Some(0)), ("D:\\", Some(0)), ("H:\\", Some(1))];
+        let unique = dedupe_disk_mounts(&entries);
+        assert_eq!(unique.len(), 2);
+        assert!(unique.contains(&"C:\\"));
+        assert!(unique.contains(&"H:\\"));
+        assert!(!unique.contains(&"D:\\"));
+    }
+    #[test]
+    fn dedup_keeps_none_distinct() {
+        let entries = [("C:\\", None), ("D:\\", None), ("H:\\", Some(1))];
+        let unique = dedupe_disk_mounts(&entries);
+        assert_eq!(unique.len(), 3);
+        assert!(unique.contains(&"C:\\"));
+        assert!(unique.contains(&"D:\\"));
+        assert!(unique.contains(&"H:\\"));
     }
     #[test]
     fn volume_low_space_detection() {

@@ -2,6 +2,12 @@
 
 Archived entries from 0.1.x. Recent 0.2.x entries live in CHANGELOG.md.
 
+## [0.3.0] - 2026-11-06
+
+- **Storage Backend**: `[03] Storage` model with volume badges, critical-space flags, I/O spike events, and 900-sample history.
+- **Single-Pass Disk I/O**: per-process read/write MB/s from `disk_usage()` in the existing scan; no second process scan.
+- **Spike Capture**: aggregated I/O at or above 80 MB/s records the top process with HH:MM:SS stamp; version bump to 0.3.0.
+
 ## [0.2.10] - 2026-11-06
 
 - **15m Chart Stability**: LTTB threshold 300 to 900 so 1m/5m/15m keep exact 1-second points; empty-history guards; 120ms warmup sleep replaces synthetic 0% startup ticks; X labels unified inside.

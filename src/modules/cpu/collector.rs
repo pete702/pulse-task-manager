@@ -106,6 +106,10 @@ impl CpuCollector {
     fn fill_eco_qos(&mut self, rows: &mut [RawProcessCpuRow]) {
         let mut budget = 12;
         for row in rows.iter_mut() {
+            if row.pid == 0 || row.pid == 4 {
+                row.eco_qos = Some(false);
+                continue;
+            }
             let key = (row.pid, row.start_time);
             let fresh = self
                 .eco_cache
