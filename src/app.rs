@@ -41,6 +41,7 @@ pub struct PulseApp {
     worker: crate::core::TelemetryWorker,
     last_viewport_size: Option<egui::Vec2>,
     last_saved: persist::PersistedState,
+    pointer_down: bool,
 }
 
 impl PulseApp {
@@ -72,6 +73,7 @@ impl PulseApp {
             worker,
             last_viewport_size: None,
             last_saved: persist::PersistedState::default(),
+            pointer_down: false,
         };
         let saved = persist::load_state();
         app.apply_persisted(&saved);
@@ -109,6 +111,9 @@ impl PulseApp {
     }
 
     fn save_state_if_needed(&mut self, force: bool) {
+        if !force && self.pointer_down {
+            return;
+        }
         let cur = self.collect_persisted();
         if force || cur != self.last_saved {
             let _ = persist::save_state(&cur);
@@ -197,6 +202,7 @@ impl eframe::App for PulseApp {
             &mut self.table_state,
             &mut self.cpu_table_state,
         ) {
+            ctx.request_repaint();
             ctx.request_repaint_after(std::time::Duration::from_millis(1000));
             return;
         }
@@ -256,6 +262,7 @@ impl eframe::App for PulseApp {
             active_processes,
         );
         self.last_ui_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
+        self.pointer_down = ctx.input(|i| i.pointer.any_down());
         self.save_state_if_needed(false);
         ctx.request_repaint_after(std::time::Duration::from_millis(2000));
     }

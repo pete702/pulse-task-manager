@@ -1,16 +1,16 @@
 # PULSE AI Context
 
-## Current Milestone: v0.2.10 (Stage A Finale Golden Baseline)
+## Current Milestone: v0.2.11 (Stage A Finale Golden Baseline)
 
 **Status**: `[00] Processes`, `[01] Memory (RAM)`, `[02] Processor (CPU)`.
-Tests: 159 automated checks (155 unit + 4 guard).
+Tests: 171 automated checks (167 unit + 4 guard).
 
-**Key Deliverables in v0.2.10**:
+**Key Deliverables in v0.2.11**:
 - 15m chart stability: LTTB threshold 900 with exact 1-second points, empty-history guards, 120ms warmup sleep, unified X labels.
 - Fluid core grid: up to 14 columns with tile width filling 100% of window width.
 - True EcoQoS: Power Throttling via SetProcessInformation, unified PID gate (31 critical OS), local clock timestamps.
 - Audit fixes: poison-safe mutex locks, blocking LatestSlot take, 5m default windows, on-exit flush, Ctrl+F/Esc route to Processes.
-- 159 automated checks passing; 0 FPS minimized, 6 direct runtime crates + 1 MSRV pin, single MIT `LICENSE`.
+- 171 automated checks passing; 0 FPS minimized, 6 direct dependencies, single MIT `LICENSE`.
 
 **Next Phases**: `[03] Storage`, `[04] Network`, `[05] System and GPU`, then Stage B: Total Sci-Fi Cockpit UI 2.0 Redesign after core modules are online.
 
@@ -30,8 +30,8 @@ Safety invariants:
 
 ## Development Constraints
 
-- `rust-version = "1.85"`, `edition = "2021"` - no newer MSRV features
-- 6 direct runtime crates + 1 MSRV pin exact (`=`): `eframe` `egui` `egui_plot` `egui_extras` `sysinfo` `windows-sys` + `url` pin
+- `rust-version = "1.88"`, `edition = "2021"` - no newer MSRV features
+- 6 direct dependencies exact (`=`): `eframe` `egui` `egui_plot` `egui_extras` `sysinfo` `windows-sys`
 - All `.rs` files <= 280 lines after `cargo fmt --all`
 - Documentation files <= 120 lines / 8192 bytes (`README.md`, `ARCHITECTURE.md`, `CHANGELOG.md`)
 - Zero Cyrillic (U+0400..=U+052F), zero NUL bytes, zero `rustfmt::skip`

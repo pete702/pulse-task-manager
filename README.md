@@ -63,7 +63,7 @@ Future Pro extensions (24h history, automation rules) will be optional offline m
 
 ## Build from Source
 
-Requires Rust `1.85+` on Windows 10/11 (x64 MSVC toolchain):
+Requires Rust `1.88+` on Windows 10/11 (x64 MSVC toolchain):
 
 ```powershell
 git clone https://github.com/pete702/pulse-task-manager.git
@@ -74,7 +74,7 @@ cargo run --release
 ## CLI Flags
 
 ```powershell
-pulse_manager.exe --version   # Prints: PULSE v0.2.10 (pulse_manager)
+pulse_manager.exe --version   # Prints: PULSE v0.2.11 (pulse_manager)
 pulse_manager.exe --help      # Prints usage
 pulse_manager.exe --self-test # Headless CI self-test
 ```

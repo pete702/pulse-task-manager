@@ -91,9 +91,7 @@ pub fn filter_group_and_sort(
             MemorySortCol::Pid => a.pid.cmp(&b.pid),
             MemorySortCol::RamBytes => a.ram_bytes.cmp(&b.ram_bytes),
             MemorySortCol::VirtualBytes => a.virtual_bytes.cmp(&b.virtual_bytes),
-            MemorySortCol::RamPct => {
-                a.ram_pct.partial_cmp(&b.ram_pct).unwrap_or(std::cmp::Ordering::Equal)
-            }
+            MemorySortCol::RamPct => a.ram_pct.total_cmp(&b.ram_pct),
         };
         if sort_asc {
             ord

@@ -1,12 +1,12 @@
 # 🏗️ PULSE Architecture & Engineering Rules
 
-PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.85"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.2.10**.
+PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.88"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.2.11**.
 
 ## 1. Core Architectural Principles
 
 1. **Decoupled Two-Thread Telemetry Model**:
    - **UI Thread** (`src/app.rs`, `src/ui/`): Renders `egui` widgets, handles input, never calls blocking Win32/`sysinfo`. Holds `Arc<SystemSnapshot>` for zero-copy per-frame access. Minimized: 0 FPS UI when minimized (5s background worker poll + 30s safety watchdog).
-   - **Worker Thread** (`src/core/worker.rs`): **RAM at 1 Hz** (`snapshot_id`), **process scans at 0.5 Hz** (`process_scan_id` every 2 s). Minimized: scans pause, 5s watchdog poll, 30s UI safety repaint, `Arc<Vec<RawProcessRow>>` shared zero-copy; restore triggers wakeup; wake/user action triggers immediate full scan. `LatestSlot` with `AtomicU64` overflow tracking; `sync_channel(2)` full → UI reads newer slot.
+   - **Worker Thread** (`src/core/worker.rs`): **RAM at 1 Hz** (`snapshot_id`), **process scans every 3 s visible / 5 s minimized** (`process_scan_id`). Minimized: scans pause, 5s watchdog poll, 30s UI safety repaint, `Arc<Vec<RawProcessRow>>` shared zero-copy; restore triggers wakeup; wake/user action triggers immediate full scan. `LatestSlot` with `AtomicU64` overflow tracking; `sync_channel(2)` full → UI reads newer slot.
 
 2. **O(1) Process Table & Selection Cache**:
    - Filtered/grouped/sorted rows cached in `MemoryTableState` keyed by `process_scan_id` (monotonic u64). Scan ID + filter/sort/group unchanged → rebuild in `O(1)`. Rows stored as `Arc<[ProcessMemoryItem]>` → 60 FPS frames zero clones. `SelectedGroupSummary` with `Vec<ProcessTarget>` also cached per `scan_id`.
@@ -28,7 +28,7 @@ PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and pro
 
 ## 3. Module Boundaries (`src/`)
 
-- `src/core/`: Worker (`worker.rs`), `SystemSnapshot` channel (`mod.rs`), state persistence (`persist.rs`, `%LOCALAPPDATA%\PULSE\state.cfg` zero-crate), CLI `--self-test` (`selftest.rs`), guards (`selftest_tests.rs`); 6 direct runtime crates + 1 MSRV pin.
+- `src/core/`: Worker (`worker.rs`), `SystemSnapshot` channel (`mod.rs`), state persistence (`persist.rs`, `%LOCALAPPDATA%\PULSE\state.cfg` zero-crate), CLI `--self-test` (`selftest.rs`), guards (`selftest_tests.rs`); 6 direct dependencies.
 - `src/modules/memory/`: Implemented Phase 1 `[01] Memory (RAM)` - RAM/Swap collector, `K32GetPerformanceInfo` FFI, 3-segment bar, spike blackbox, `Delta RAM/s`, formatters, virtualized `TableBuilder`, action bar (`action_bar.rs`), PID Safety Gate (`safe_handle.rs`). Cache key: `(process_scan_id, ram_total_bytes, search_query, sort_col, sort_asc, group_clones)`; 1 Hz `cached_format_uptime`; `1m/5m/15m` chart with cached `PlotPoints`.
 - `src/modules/cpu/`: Implemented Phase 2 - `[00] Processes` (smart resizable `Column::initial(...).range(...).resizable(true)` via `table_menu.rs`) and `[02] Processor` cockpits.
 - `src/modules/{storage,network,system}/`: Planned Phases 3–5 (`[03]` Storage, `[04]` Network, `[05]` System) then Stage B: Total Sci-Fi Cockpit UI 2.0 Redesign after core modules are online.
@@ -63,7 +63,7 @@ PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and pro
 - Working-set trim on frame #3 and minimize transition; physical RAM 27–29 MB, 0% idle CPU.
 - Memory UX polish: `[ Pause / Resume ]` toggle, context menu (Open Location / Terminate / Copy), double-click action, `Ctrl+F` / `Esc` / `[X]` search ergonomics, empty-state notice.
 - Modular internals: worker split into `worker_io` / `worker_policy` / `worker_loop`; table body split into context-menu, sort, name-cell modules; 280-line module limit enforced.
-- 159 automated checks passing (155 unit + 4 docs-guard); Stage A finale golden baseline (persist, topbar, resizable table, HUD).
+- 171 automated checks passing (167 unit + 4 docs-guard); Stage A finale golden baseline (persist, topbar, resizable table, HUD).
 
 ## 6. Monetization & Safety Boundaries
 

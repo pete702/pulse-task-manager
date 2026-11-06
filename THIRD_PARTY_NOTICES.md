@@ -1,6 +1,6 @@
 # Third-Party Notices for PULSE
 
-This file documents the licenses of all direct dependencies of PULSE (`pulse_manager` v0.2.10).
+This file documents the licenses of all direct dependencies of PULSE (`pulse_manager` v0.2.11).
 All dependencies are available under permissive open-source licenses (MIT or Apache-2.0).
 
 ## Direct Dependencies (6 crates)
@@ -13,8 +13,6 @@ All dependencies are available under permissive open-source licenses (MIT or Apa
 | `egui_extras` | 0.27.2 | MIT OR Apache-2.0 | https://github.com/emilk/egui |
 | `sysinfo` | 0.30.12 | MIT | https://github.com/GuillaumeGomez/sysinfo |
 | `windows-sys` | 0.52.0 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs |
-
-`url =2.4.0` is a transitive MSRV pin (idna 1.1+ needs edition 2024), not a direct feature.
 
 ## License Texts
 

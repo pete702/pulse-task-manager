@@ -41,9 +41,9 @@ git commit -s -m "Fix issue: description"
 ## Coding Standards
 
 - **Rust Edition**: 2021
-- **MSRV**: 1.85 (stable toolchain only)
+- **MSRV**: 1.88 (stable toolchain only)
 - **Line Limit**: Every `.rs` file ≤ 280 lines after `cargo fmt --all`
-- **Dependencies**: 6 direct runtime crates + 1 MSRV pin, all pinned exactly in `Cargo.toml`
+- **Dependencies**: 6 direct dependencies, all pinned exactly in `Cargo.toml`
 - **No Unstable Features**: No `#![feature(...)]`, no nightly-only syntax
 - **Zero Allocations on Hot Paths**: Prefer stack allocation, `Arc<str>` for shared strings
 - **Forbidden**: `rustfmt::skip`, Cyrillic characters, NUL bytes, `unwrap()`/`expect()` on hot paths
@@ -60,7 +60,7 @@ git commit -s -m "Fix issue: description"
 - Unit tests in `#[cfg(test)]` modules alongside source
 - Integration tests in `tests/`
 - `docs_guard` tests enforce line limits, forbidden tokens, and README link freshness
-- All 159 automated checks (155 unit + 4 guard) must pass on Windows x64 MSVC
+- All 171 automated checks (167 unit + 4 guard) must pass on Windows x64 MSVC
 
 ## Legal
 

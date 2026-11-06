@@ -203,7 +203,7 @@ mod tests {
             .per_core_pct
             .iter()
             .enumerate()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .max_by(|a, b| a.1.total_cmp(b.1))
             .unwrap_or((0, &0.0));
         assert_eq!(idx, 1);
         assert_eq!(*val, 95.0);

@@ -1,7 +1,7 @@
 //! Background telemetry worker loop logic.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Instant;
 use sysinfo::System;
@@ -12,7 +12,7 @@ use crate::core::{
     LatestSlot, SnapshotTx, SystemSnapshot,
 };
 use crate::modules::cpu::collector::{collect_cpu, collect_process_cpu, warmup_cpu};
-use crate::modules::cpu::model::{ProcessCpuItem, RawProcessCpuRow};
+use crate::modules::cpu::model::RawProcessCpuRow;
 use crate::modules::cpu::win32_cpu::init_cpu_brand_and_base_mhz;
 use crate::modules::memory::collector::{collect_memory, collect_process_memory};
 use crate::modules::memory::delta_tracker::ProcessDeltaTracker;
@@ -45,6 +45,11 @@ pub fn spawn_worker(
     let tab_active_worker = processes_tab_active.clone();
 
     let handle = thread::spawn(move || {
+        {
+            let slot = WORKER_THREAD.get_or_init(|| Mutex::new(None));
+            let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+            *guard = Some(thread::current());
+        }
         let started = Instant::now();
         let mut sys = System::new();
 
@@ -58,7 +63,6 @@ pub fn spawn_worker(
         let mut latest_spike = None;
         let mut delta_tracker = ProcessDeltaTracker::new();
         let mut last_processes: Arc<Vec<RawProcessRow>> = Arc::new(Vec::new());
-        let mut last_cpu_processes: Arc<[ProcessCpuItem]> = Arc::from(Vec::new());
         let mut last_cpu_raw_rows: Arc<[RawProcessCpuRow]> = Arc::from(Vec::new());
         let mut last_heavy = false;
         let mut was_minimized = false;
@@ -100,16 +104,14 @@ pub fn spawn_worker(
             // Collect process CPU when process scan runs (same pass as memory)
             if do_refresh {
                 process_scan_id += 1;
-                let (cpu_processes, cpu_raw_rows) =
-                    collect_process_cpu(&mut sys, logical_cores, true);
+                let cpu_raw_rows = collect_process_cpu(&mut sys, logical_cores, true);
                 // A transient empty sysinfo read must never erase the live list.
-                if cpu_processes.is_empty() && !last_cpu_processes.is_empty() {
-                    cpu.processes = Arc::clone(&last_cpu_processes);
+                if cpu_raw_rows.is_empty() && !last_cpu_raw_rows.is_empty() {
+                    cpu.processes = Arc::from(Vec::new());
                     cpu.raw_processes = Arc::clone(&last_cpu_raw_rows);
                 } else {
-                    cpu.processes = Arc::from(cpu_processes);
+                    cpu.processes = Arc::from(Vec::new());
                     cpu.raw_processes = Arc::from(cpu_raw_rows);
-                    last_cpu_processes = Arc::clone(&cpu.processes);
                     last_cpu_raw_rows = Arc::clone(&cpu.raw_processes);
                 }
 
@@ -127,7 +129,7 @@ pub fn spawn_worker(
                 last_heavy = heavy;
                 latest_spike = spike;
             } else {
-                cpu.processes = Arc::clone(&last_cpu_processes);
+                cpu.processes = Arc::from(Vec::new());
                 cpu.raw_processes = Arc::clone(&last_cpu_raw_rows);
                 memory.processes = Arc::clone(&last_processes);
                 memory.has_heavy_process = last_heavy;
@@ -138,7 +140,7 @@ pub fn spawn_worker(
 
             // Process count is refreshed every tick from the retained list so the
             // top card never drops to "0 Procs" between full scans.
-            cpu.process_count = cpu.processes.len();
+            cpu.process_count = cpu.raw_processes.len();
             // Keep only finite clamped values; first point is real telemetry.
             if cpu.total_pct < 0.0 || !cpu.total_pct.is_finite() {
                 cpu.total_pct = 0.0;
@@ -195,6 +197,12 @@ pub fn spawn_worker(
 /// Also unparks the worker thread for instant wakeup (0 ms latency).
 pub fn request_process_scan() {
     PROCESS_SCAN_REQUEST.store(true, Ordering::Relaxed);
+    if let Some(slot) = WORKER_THREAD.get() {
+        let guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(thread) = guard.as_ref() {
+            thread.unpark();
+        }
+    }
 }
 
 pub(crate) fn take_process_scan_request() -> bool {
@@ -202,6 +210,7 @@ pub(crate) fn take_process_scan_request() -> bool {
 }
 
 static PROCESS_SCAN_REQUEST: AtomicBool = AtomicBool::new(false);
+static WORKER_THREAD: OnceLock<Mutex<Option<thread::Thread>>> = OnceLock::new();
 
 /// Visible mode scans every SCAN_TICKS_VISIBLE tick when Processes tab is active,
 /// or every SCAN_TICKS_BACKGROUND when Overview tab is open.
@@ -216,6 +225,9 @@ pub fn should_scan_processes(
     !minimized
         && (wake
             || requested
-            || tick % if processes_tab_active { SCAN_TICKS_VISIBLE } else { SCAN_TICKS_BACKGROUND }
-                == 0)
+            || tick.is_multiple_of(if processes_tab_active {
+                SCAN_TICKS_VISIBLE
+            } else {
+                SCAN_TICKS_BACKGROUND
+            }))
 }

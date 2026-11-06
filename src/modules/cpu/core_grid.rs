@@ -58,7 +58,7 @@ pub fn render_core_grid(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
                                 ui.end_row();
                             }
                         }
-                        if per_core.len() % cols != 0 {
+                        if !per_core.len().is_multiple_of(cols) {
                             ui.end_row();
                         }
                     },

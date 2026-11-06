@@ -22,6 +22,9 @@ pub fn render_virtualized_table(
     let max_body = (ui.available_height() - 48.0).max(60.0);
     let max_ram = rows.iter().map(|row| row.ram_bytes).max().unwrap_or(1).max(1);
     ui.set_width(ui.available_width());
+    let avail_w = ui.available_width();
+    let s = (avail_w / 820.0).clamp(0.72, 1.25);
+    let r = |min: f32, max: f32, base: f32| Column::initial(base).range(min..=(max * s).max(min));
     TableBuilder::new(ui)
         .striped(true)
         .resizable(true)
@@ -30,12 +33,12 @@ pub fn render_virtualized_table(
         .min_scrolled_height(height.min(max_body))
         .max_scroll_height(max_body)
         .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-        .column(Column::initial(58.0).range(48.0..=110.0).resizable(true).clip(true))
-        .column(Column::remainder().at_least(180.0).resizable(true).clip(true))
-        .column(Column::initial(64.0).range(52.0..=110.0).resizable(true).clip(true))
-        .column(Column::initial(76.0).range(62.0..=140.0).resizable(true).clip(true))
-        .column(Column::initial(136.0).range(108.0..=260.0).resizable(true).clip(true))
-        .column(Column::initial(98.0).range(80.0..=160.0).resizable(true).clip(true))
+        .column(r(48.0, 110.0, 58.0).resizable(true).clip(true))
+        .column(Column::remainder().at_least(96.0).clip(true))
+        .column(r(52.0, 110.0, 64.0).resizable(true).clip(true))
+        .column(r(62.0, 140.0, 76.0).resizable(true).clip(true))
+        .column(r(108.0, 260.0, 136.0).resizable(true).clip(true))
+        .column(r(80.0, 160.0, 98.0).resizable(true).clip(true))
         .header(24.0, |mut header| {
             for (label, col) in [
                 ("PID", CpuSortCol::Pid),

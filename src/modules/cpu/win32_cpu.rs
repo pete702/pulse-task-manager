@@ -9,6 +9,7 @@ use sysinfo::System;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Power::{CallNtPowerInformation, ProcessorInformation};
 
+#[cfg(target_os = "windows")]
 const MAX_CORES: usize = 128;
 
 /// Cached CPU brand string (read once at startup).
@@ -103,6 +104,7 @@ pub fn get_base_mhz() -> u64 {
 }
 
 /// Per-processor power information returned by CallNtPowerInformation.
+#[cfg(target_os = "windows")]
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct ProcessorPowerInfo {

@@ -2391,14 +2391,13 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "pulse_manager"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "eframe",
  "egui",
  "egui_extras",
  "egui_plot",
  "sysinfo",
- "url",
  "windows-sys 0.52.0",
 ]
 

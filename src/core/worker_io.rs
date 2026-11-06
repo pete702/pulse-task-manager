@@ -27,14 +27,11 @@ pub fn publish(
     wakeup: &Wakeup,
     minimized: bool,
 ) -> PublishResult {
-    let was_minimized = WAS_MINIMIZED.swap(minimized, Ordering::Relaxed);
+    WAS_MINIMIZED.swap(minimized, Ordering::Relaxed);
     latest.store(snapshot.clone());
     match tx.try_send(snapshot) {
         Ok(()) => {
-            // Wake on every visible publish; restored windows included.
             if !minimized {
-                let _restored = was_minimized && !minimized;
-                let _ = _restored;
                 wakeup();
             }
             PublishResult::Sent

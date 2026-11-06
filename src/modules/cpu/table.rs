@@ -126,14 +126,14 @@ fn render_toolbar(
             if action_button(ui, !rows.is_empty(), "[ Purge All RAM ]", colors::ACCENT_CYAN)
                 .clicked()
             {
-                let mut trimmed = 0;
-                for item in rows {
-                    if trim_process_working_set(item).is_ok() {
-                        trimmed += 1;
+                let owned: Vec<_> = rows.to_vec();
+                state.last_action_msg = "Purging All RAM...".to_owned();
+                std::thread::spawn(move || {
+                    for item in &owned {
+                        let _ = trim_process_working_set(item);
                     }
-                }
-                state.last_action_msg = format!("Purged RAM ({trimmed} rows trimmed)");
-                crate::core::request_process_scan();
+                    crate::core::request_process_scan();
+                });
             }
             ui.add_space(8.0);
             let pause_label = if state.paused { "> Resume" } else { "|| Pause" };

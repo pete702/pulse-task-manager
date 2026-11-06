@@ -1,15 +1,20 @@
 //! Unit tests for the Memory Actions Engine (actions.rs) and Safety Gate (safe_handle.rs).
 mod tests {
+    #[cfg(target_os = "windows")]
+    use crate::modules::memory::actions::open_process_file_location;
     use crate::modules::memory::actions::{
-        open_process_file_location, purge_system_working_sets, terminate_process_group,
-        trim_process_group, ReclaimReport, TrimSkipReason,
+        purge_system_working_sets, terminate_process_group, trim_process_group, ReclaimReport,
+        TrimSkipReason,
     };
     use crate::modules::memory::process_target::ProcessTarget;
+    #[cfg(target_os = "windows")]
     use crate::modules::memory::safe_handle::{
-        is_app_elevated, is_protected_process, query_creation_time_by_pid, verify_pid_safety_gate,
-        SafeHandle,
+        is_app_elevated, query_creation_time_by_pid, SafeHandle,
     };
+    use crate::modules::memory::safe_handle::{is_protected_process, verify_pid_safety_gate};
+    #[cfg(target_os = "windows")]
     use std::path::PathBuf;
+    #[cfg(target_os = "windows")]
     use windows_sys::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION;
     fn make_test_target(pid: u32, name: &str) -> ProcessTarget {
         ProcessTarget {
@@ -81,14 +86,17 @@ mod tests {
         assert!(verify_pid_safety_gate(104, "textinputhost.exe").is_err());
         assert!(verify_pid_safety_gate(105, "conhost.exe").is_err());
     }
+    #[cfg(target_os = "windows")]
     #[test]
     fn test_safe_handle_open_returns_none_on_pid_0() {
         assert!(SafeHandle::open(PROCESS_QUERY_LIMITED_INFORMATION, 0).is_none());
     }
+    #[cfg(target_os = "windows")]
     #[test]
     fn test_safe_handle_open_returns_none_on_pid_4() {
         assert!(SafeHandle::open(PROCESS_QUERY_LIMITED_INFORMATION, 4).is_none());
     }
+    #[cfg(target_os = "windows")]
     #[test]
     fn test_safe_handle_as_raw() {
         let handle = SafeHandle::from_raw(42 as _).expect("valid handle");
@@ -96,6 +104,7 @@ mod tests {
         std::mem::forget(handle);
         assert!(SafeHandle::from_raw(0).is_none());
     }
+    #[cfg(target_os = "windows")]
     #[test]
     fn test_is_app_elevated_executes_cleanly() {
         let _ = is_app_elevated();
@@ -128,6 +137,7 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("OS kernel process is protected"));
     }
+    #[cfg(target_os = "windows")]
     #[test]
     fn test_creation_time_is_stable_for_own_process() {
         let pid = std::process::id();
@@ -135,6 +145,7 @@ mod tests {
         assert_ne!(first, 0);
         assert_eq!(query_creation_time_by_pid(pid), Some(first));
     }
+    #[cfg(target_os = "windows")]
     #[test]
     fn test_open_process_file_location_missing() {
         let result = open_process_file_location(&PathBuf::from(r"C:\nonexistent\fake.exe"));

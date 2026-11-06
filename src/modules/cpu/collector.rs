@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use sysinfo::{CpuRefreshKind, ProcessRefreshKind, System};
 
-use crate::modules::cpu::model::{CpuSnapshot, ProcessCpuItem, RawProcessCpuRow};
+use crate::modules::cpu::model::{CpuSnapshot, RawProcessCpuRow};
 use crate::modules::cpu::win32_cpu::{read_cpu_brand, read_cpu_frequencies, warmup_cpu_refresh};
 
 /// Collects current system CPU state into a `CpuSnapshot`.
@@ -62,14 +62,15 @@ pub fn collect_cpu(sys: &mut System) -> CpuSnapshot {
 ///
 /// This function uses the SAME sysinfo refresh pass as memory collection
 /// by including `.with_cpu()` in the ProcessRefreshKind.
-/// Returns (processed_items, raw_rows) for table grouping and display.
+/// Returns raw rows only; CpuTableState formats from raw rows so unused
+/// display items are never pre-built in the worker.
 pub fn collect_process_cpu(
     sys: &mut System,
     logical_cores: usize,
     refresh_processes: bool,
-) -> (Vec<ProcessCpuItem>, Vec<RawProcessCpuRow>) {
+) -> Vec<RawProcessCpuRow> {
     if !refresh_processes {
-        return (Vec::new(), Vec::new());
+        return Vec::new();
     }
 
     // Use without_exe() to avoid querying executable paths for all 200+ processes
@@ -98,28 +99,25 @@ pub fn collect_process_cpu(
         .collect();
 
     // Sort raw rows by CPU descending (same as processed items)
+    raw_rows.sort_by(|a, b| b.cpu_usage.total_cmp(&a.cpu_usage));
+
     raw_rows
-        .sort_by(|a, b| b.cpu_usage.partial_cmp(&a.cpu_usage).unwrap_or(std::cmp::Ordering::Equal));
-
-    // Convert to display items
-    let items: Vec<ProcessCpuItem> = raw_rows.iter().map(item_from_raw_cpu).collect();
-
-    (items, raw_rows)
 }
 
-/// Builds a display item from one raw process CPU row, keeping its executable path.
-fn item_from_raw_cpu(row: &RawProcessCpuRow) -> ProcessCpuItem {
-    let mut item = ProcessCpuItem::new(
-        row.pid,
-        Arc::clone(&row.name),
-        row.cpu_usage,
-        row.ram_bytes,
-        row.creation_time,
-    );
-    item.start_time = row.start_time;
-    item.exe_path = row.exe_path.clone().unwrap_or_default();
-    item.update_formatted();
-    item
+/// Zero-alloc PID substring check using a stack buffer.
+pub(crate) fn pid_contains(pid: u32, needle: &str) -> bool {
+    let mut buf = [0u8; 10];
+    let mut pos = 10;
+    let mut n = pid;
+    loop {
+        pos -= 1;
+        buf[pos] = b'0' + (n % 10) as u8;
+        n /= 10;
+        if n == 0 {
+            break;
+        }
+    }
+    std::str::from_utf8(&buf[pos..]).unwrap_or("").contains(needle)
 }
 
 /// Two-pass CPU warmup: primes sysinfo's internal deltas so first real read returns correct CPU%.

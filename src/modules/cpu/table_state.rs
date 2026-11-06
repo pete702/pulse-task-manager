@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
+use crate::modules::cpu::collector::pid_contains;
 use crate::modules::cpu::model::{ProcessCpuItem, RawProcessCpuRow};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CpuSortCol {
@@ -206,7 +207,7 @@ impl CpuTableState {
             .filter(|row| {
                 search_trimmed.is_empty()
                     || Self::contains_ci(&row.name, search_trimmed)
-                    || row.pid.to_string().contains(search_trimmed)
+                    || pid_contains(row.pid, search_trimmed)
             })
             .map(|row| {
                 let delta = deltas.get(&(row.pid, row.start_time)).copied().unwrap_or(0);
@@ -242,9 +243,7 @@ impl CpuTableState {
                 CpuSortCol::RamBytes => a.ram_bytes.cmp(&b.ram_bytes),
                 CpuSortCol::CloneCount => a.clone_count.cmp(&b.clone_count),
                 CpuSortCol::Delta => a.ram_delta_10s.cmp(&b.ram_delta_10s),
-                CpuSortCol::CpuPct => {
-                    a.cpu_pct.partial_cmp(&b.cpu_pct).unwrap_or(std::cmp::Ordering::Equal)
-                }
+                CpuSortCol::CpuPct => a.cpu_pct.total_cmp(&b.cpu_pct),
             };
             if asc {
                 ord

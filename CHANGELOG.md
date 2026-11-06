@@ -4,6 +4,14 @@ All notable PULSE changes are in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
 Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
 
+## [0.2.11] - 2026-11-06
+
+- **Fluid Processes Table**: `PROCESS NAME` is pure `Column::remainder()` (96px); numeric ranges scale with width, table always fills window.
+- **Linux CI & MSRV 1.88**: Added `lint-linux` job; removed unused `url` pin (6 direct dependencies); MSRV 1.88.
+- **Instant Unpark & Debounce**: `WORKER_THREAD` unpark on `request_process_scan()`; `state.cfg` writes deferred while pointer down; `total_cmp` sorts.
+- **Identity & Perf**: On-demand 3-point path query; async Purge All RAM; true process count; zero-alloc PID search; 12 new CPU tests.
+- **Version bump to 0.2.11**.
+
 ## [0.2.10] - 2026-11-06
 
 - **15m Chart Stability**: LTTB threshold 300 to 900 so 1m/5m/15m keep exact 1-second points; empty-history guards; 120ms warmup sleep replaces synthetic 0% startup ticks; X labels unified inside.
@@ -77,5 +85,3 @@ Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
 - **Startup 100% Chart Spike Fixed**: Worker clamps `total_pct`, `hottest_core_pct`, `hottest_core_idx` to zero for the first two ticks (`tick < 2`), removing the fake vertical wall on the CPU chart.
 - **Instant Worker Unpark**: Removed unused local `CpuHistory` (UI owns history from `CpuSnapshot`); `thread::park_timeout()` already provides instant unpark wakeup.
 - **Version bump to 0.2.2**.
-
-Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
