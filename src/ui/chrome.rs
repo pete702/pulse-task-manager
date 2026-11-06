@@ -11,12 +11,10 @@ pub use crate::ui::placeholder_tab::render_placeholder_tab;
 pub use crate::ui::status_bar::render_status_bar;
 
 fn cached_version() -> &'static str {
-    static CACHE: OnceLock<&'static str> = OnceLock::new();
-    CACHE.get_or_init(|| {
-        Box::leak(
-            format!("{}{}", Key::VersionPrefix.t(), env!("CARGO_PKG_VERSION")).into_boxed_str(),
-        )
-    })
+    static VERSION: OnceLock<String> = OnceLock::new();
+    VERSION
+        .get_or_init(|| format!("{}{}", Key::VersionPrefix.t(), env!("CARGO_PKG_VERSION")))
+        .as_str()
 }
 
 /// Persisted self-RAM cache (x10 for atomic): keeps last value across ticks/tabs.
@@ -32,17 +30,18 @@ fn cached_self_ram_mb(fresh: Option<f32>) -> f32 {
 }
 
 /// Cached uptime formatter: allocates only when uptime_secs changes (1 Hz).
-fn cached_format_uptime(uptime_secs: u64) -> String {
-    static CACHE: OnceLock<Mutex<(u64, String)>> = OnceLock::new();
+/// Stores Arc<str> so idle frames clone the pointer, not the string bytes.
+fn cached_format_uptime(uptime_secs: u64) -> Arc<str> {
+    static CACHE: OnceLock<Mutex<(u64, Arc<str>)>> = OnceLock::new();
     let mut cache = CACHE
-        .get_or_init(|| Mutex::new((0, String::new())))
+        .get_or_init(|| Mutex::new((0, Arc::from(""))))
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     if cache.0 != uptime_secs {
         cache.0 = uptime_secs;
-        cache.1 = format_uptime(uptime_secs);
+        cache.1 = Arc::from(format_uptime(uptime_secs));
     }
-    cache.1.clone()
+    Arc::clone(&cache.1)
 }
 
 /// Renders the top panel with title, version, live system telemetry, and health pill.
@@ -69,7 +68,7 @@ pub fn render_top_panel(
         let uptime_str = latest_snapshot
             .as_ref()
             .map(|s| cached_format_uptime(s.uptime_secs))
-            .unwrap_or_else(|| "--".to_owned());
+            .unwrap_or_else(|| Arc::from("--"));
         if bar_w >= 1040.0 {
             ui.label(
                 egui::RichText::new(format!("UPTIME: {}", uptime_str))
@@ -110,10 +109,18 @@ pub fn render_top_panel(
                     .cpu
                     .as_ref()
                     .is_some_and(|cpu| cpu.single_thread_bottleneck());
+                let storage_low = snapshot.storage.volumes.iter().any(|v| v.used_pct >= 95.0);
+                let net_bad = matches!(
+                    snapshot.network.grade,
+                    crate::modules::network::model::ConnectionGrade::Offline
+                        | crate::modules::network::model::ConnectionGrade::PacketLoss
+                );
                 let (pill_text, pill_color) = match wall {
                     crate::ui::three_walls::WallState::MemoryWall => {
                         ("[ ! MEMORY WALL ]", colors::ACCENT_RED)
                     }
+                    _ if storage_low => ("[ ! STORAGE LOW ]", colors::ACCENT_RED),
+                    _ if net_bad => ("[ ! NO NETWORK ]", colors::ACCENT_RED),
                     crate::ui::three_walls::WallState::Elevated => {
                         ("[ HEALTH: ELEVATED ]", colors::ACCENT_AMBER)
                     }

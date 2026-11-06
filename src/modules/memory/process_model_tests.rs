@@ -130,4 +130,30 @@ mod tests {
         let spike = detect_memory_spike(&processes, total_ram, 62.5);
         assert!(spike.is_none());
     }
+
+    #[test]
+    fn test_zero_alloc_search_by_name_and_pid() {
+        let processes = vec![
+            raw(12345, "Chrome.exe", 1_000_000_000, 2_000_000_000, 0, None),
+            raw(1, "notepad.exe", 1_000_000_000, 2_000_000_000, 0, None),
+        ];
+        let by_name = filter_group_and_sort(
+            &processes,
+            16_000_000_000,
+            "chrome",
+            false,
+            MemorySortCol::Name,
+            true,
+        );
+        assert_eq!(by_name.len(), 1);
+        let by_pid = filter_group_and_sort(
+            &processes,
+            16_000_000_000,
+            "234",
+            false,
+            MemorySortCol::Name,
+            true,
+        );
+        assert_eq!(by_pid.len(), 1);
+    }
 }

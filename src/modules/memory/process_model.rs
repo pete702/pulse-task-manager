@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::modules::cpu::collector::pid_contains;
 use crate::modules::memory::model::RawProcessRow;
 use crate::modules::memory::process_item::ProcessMemoryItem;
 
@@ -23,7 +24,7 @@ pub enum MemorySortCol {
 /// For ASCII needle: zero-allocation byte-wise comparison.
 /// For non-ASCII needle: falls back to lowercase comparison (allocates).
 #[inline]
-fn contains_ci(haystack: &str, needle: &str) -> bool {
+pub(crate) fn contains_ci(haystack: &str, needle: &str) -> bool {
     if needle.is_empty() {
         return true;
     }
@@ -42,6 +43,7 @@ fn contains_ci(haystack: &str, needle: &str) -> bool {
 }
 
 /// Filters, groups (by name), and sorts process memory items.
+/// Filter runs on raw rows before `item_from_raw` formatting.
 #[allow(dead_code)]
 pub fn filter_group_and_sort(
     processes: &[RawProcessRow],
@@ -51,16 +53,15 @@ pub fn filter_group_and_sort(
     sort_col: MemorySortCol,
     sort_asc: bool,
 ) -> Vec<ProcessMemoryItem> {
-    let search_trimmed = search.trim();
-    // Create all items first, then filter using preformatted pid_text (zero-allocation search)
+    let query_lower = search.trim().to_ascii_lowercase();
     let mut items: Vec<ProcessMemoryItem> = processes
         .iter()
-        .map(|row| item_from_raw(row, total_ram))
-        .filter(|item| {
-            search_trimmed.is_empty()
-                || item.pid_text.contains(search_trimmed)
-                || contains_ci(&item.name, search_trimmed)
+        .filter(|row| {
+            query_lower.is_empty()
+                || pid_contains(row.pid, &query_lower)
+                || contains_ci(&row.name, &query_lower)
         })
+        .map(|row| item_from_raw(row, total_ram))
         .collect();
     if group_clones {
         let mut grouped: HashMap<Arc<str>, ProcessMemoryItem> = HashMap::new();

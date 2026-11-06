@@ -63,16 +63,19 @@ pub fn handle_global_hotkeys(
         if i.modifiers.ctrl && i.key_pressed(egui::Key::F) {
             *active_tab = ActiveTab::Processes;
             *memory_sub_view = MemorySubView::Overview;
-            table_state.search_query.clear();
-            cpu_table_state.clear_search();
+            cpu_table_state.focus_search_next_frame = true;
+            table_state.focus_search_next_frame = true;
+            ctx.request_repaint();
             handled = true;
         }
         // Escape: Clear search query if present, otherwise clear selection
         if i.key_pressed(egui::Key::Escape) {
             if !table_state.search_query.is_empty() {
-                table_state.search_query.clear();
+                table_state.clear_search();
+                ctx.request_repaint();
             } else if !cpu_table_state.search_query.is_empty() {
                 cpu_table_state.clear_search();
+                ctx.request_repaint();
             } else {
                 table_state.clear_selection();
                 cpu_table_state.selected_pid = None;
@@ -81,6 +84,33 @@ pub fn handle_global_hotkeys(
                 cpu_table_state.mark_dirty();
             }
             handled = true;
+        }
+        // Ctrl+1..Ctrl+6: switch tabs quickly
+        if i.modifiers.ctrl {
+            let tabs = [
+                ActiveTab::Processes,
+                ActiveTab::Memory,
+                ActiveTab::Cpu,
+                ActiveTab::Storage,
+                ActiveTab::Network,
+                ActiveTab::System,
+            ];
+            let keys = [
+                egui::Key::Num1,
+                egui::Key::Num2,
+                egui::Key::Num3,
+                egui::Key::Num4,
+                egui::Key::Num5,
+                egui::Key::Num6,
+            ];
+            for (idx, key) in keys.iter().enumerate() {
+                if i.key_pressed(*key) {
+                    *active_tab = tabs[idx];
+                    ctx.request_repaint();
+                    handled = true;
+                    break;
+                }
+            }
         }
     });
     handled

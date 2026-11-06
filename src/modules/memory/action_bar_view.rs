@@ -6,8 +6,11 @@ use crate::modules::memory::{
 };
 use crate::theme::colors;
 use eframe::egui;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
+
+static TRIM_RUNNING: AtomicBool = AtomicBool::new(false);
 pub fn render_action_bar(
     ui: &mut egui::Ui,
     mem: &MemorySnapshot,
@@ -51,9 +54,18 @@ fn trim_all_button(
         btn.on_disabled_hover_text("No processes in the live snapshot yet")
     };
     if btn.clicked() {
-        let items = mem.processes.iter().map(ProcessTarget::from_raw).collect::<Vec<_>>();
-        crate::core::request_process_scan();
-        st.spawn(move || format_trim_status(&actions::purge_system_working_sets(&items)));
+        if TRIM_RUNNING.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err()
+        {
+            return;
+        }
+        let raw = Arc::clone(&mem.processes);
+        st.spawn(move || {
+            let items = raw.iter().map(ProcessTarget::from_raw).collect::<Vec<_>>();
+            let msg = format_trim_status(&actions::purge_system_working_sets(&items));
+            TRIM_RUNNING.store(false, Ordering::Release);
+            crate::core::request_process_scan();
+            msg
+        });
     }
 }
 fn selection_actions(

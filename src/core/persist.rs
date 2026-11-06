@@ -16,6 +16,11 @@ pub struct PersistedState {
     pub cpu_show_grid: bool,
     pub mem_window_secs: u32,
     pub cpu_window_secs: u32,
+    pub storage_window_secs: u64,
+    pub network_window_secs: u64,
+    pub network_chart_mode: u8,
+    pub network_probe_enabled: bool,
+    pub process_quick_filter: u8,
     pub win_w: f32,
     pub win_h: f32,
 }
@@ -31,6 +36,11 @@ impl Default for PersistedState {
             cpu_show_grid: false,
             mem_window_secs: 300,
             cpu_window_secs: 300,
+            storage_window_secs: 300,
+            network_window_secs: 300,
+            network_chart_mode: 0,
+            network_probe_enabled: true,
+            process_quick_filter: 0,
             win_w: 1180.0,
             win_h: 760.0,
         }
@@ -64,7 +74,7 @@ pub fn save_state(s: &PersistedState) -> std::io::Result<()> {
 /// Serializes state to key=value text (fixed key order).
 pub fn serialize(s: &PersistedState) -> String {
     format!(
-        "active_tab={}\ngroup_clones={}\ncompact_rows={}\nsort_col={}\nsort_asc={}\ncpu_show_grid={}\nmem_window_secs={}\ncpu_window_secs={}\nwin_w={:.1}\nwin_h={:.1}\n",
+        "active_tab={}\ngroup_clones={}\ncompact_rows={}\nsort_col={}\nsort_asc={}\ncpu_show_grid={}\nmem_window_secs={}\ncpu_window_secs={}\nstorage_window_secs={}\nnetwork_window_secs={}\nnetwork_chart_mode={}\nnetwork_probe_enabled={}\nprocess_quick_filter={}\nwin_w={:.1}\nwin_h={:.1}\n",
         s.active_tab,
         bool_str(s.group_clones),
         bool_str(s.compact_rows),
@@ -73,6 +83,11 @@ pub fn serialize(s: &PersistedState) -> String {
         bool_str(s.cpu_show_grid),
         s.mem_window_secs,
         s.cpu_window_secs,
+        s.storage_window_secs,
+        s.network_window_secs,
+        s.network_chart_mode,
+        bool_str(s.network_probe_enabled),
+        s.process_quick_filter,
         s.win_w.clamp(860.0, 3840.0),
         s.win_h.clamp(560.0, 2160.0),
     )
@@ -93,6 +108,15 @@ pub fn parse(text: &str) -> PersistedState {
             "cpu_show_grid" => s.cpu_show_grid = parse_bool(v),
             "mem_window_secs" => s.mem_window_secs = valid_window(v.parse().unwrap_or(60)),
             "cpu_window_secs" => s.cpu_window_secs = valid_window(v.parse().unwrap_or(60)),
+            "storage_window_secs" => {
+                s.storage_window_secs = valid_window(v.parse().unwrap_or(300)) as u64
+            }
+            "network_window_secs" => {
+                s.network_window_secs = valid_window(v.parse().unwrap_or(300)) as u64
+            }
+            "network_chart_mode" => s.network_chart_mode = v.parse::<u8>().unwrap_or(0).min(2),
+            "network_probe_enabled" => s.network_probe_enabled = parse_bool(v),
+            "process_quick_filter" => s.process_quick_filter = v.parse::<u8>().unwrap_or(0).min(3),
             "win_w" => s.win_w = v.parse::<f32>().unwrap_or(1180.0).clamp(860.0, 3840.0),
             "win_h" => s.win_h = v.parse::<f32>().unwrap_or(760.0).clamp(560.0, 2160.0),
             _ => {}
@@ -167,6 +191,7 @@ fn sort_col_str(col: CpuSortCol) -> &'static str {
         CpuSortCol::RamBytes => "ram",
         CpuSortCol::Delta => "delta",
         CpuSortCol::CloneCount => "clones",
+        CpuSortCol::DiskIo => "disk_io",
     }
 }
 
@@ -177,55 +202,11 @@ fn sort_col_from_str(v: &str) -> CpuSortCol {
         "ram" => CpuSortCol::RamBytes,
         "delta" => CpuSortCol::Delta,
         "clones" => CpuSortCol::CloneCount,
+        "disk_io" => CpuSortCol::DiskIo,
         _ => CpuSortCol::CpuPct,
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn roundtrip_default() {
-        let s = PersistedState::default();
-        assert_eq!(parse(&serialize(&s)), s);
-    }
-    #[test]
-    fn roundtrip_custom() {
-        let s = PersistedState {
-            active_tab: 2,
-            group_clones: false,
-            compact_rows: false,
-            sort_col: CpuSortCol::RamBytes,
-            sort_asc: true,
-            cpu_show_grid: true,
-            mem_window_secs: 900,
-            cpu_window_secs: 300,
-            win_w: 1920.0,
-            win_h: 1080.0,
-        };
-        assert_eq!(parse(&serialize(&s)), s);
-    }
-    #[test]
-    fn parse_clamps_invalid() {
-        let s = parse("active_tab=99\nmem_window_secs=42\nwin_w=1.0\nwin_h=9999.0\n");
-        assert_eq!(s.active_tab, 5);
-        assert_eq!(s.mem_window_secs, 60);
-        assert_eq!(s.win_w, 860.0);
-        assert_eq!(s.win_h, 2160.0);
-    }
-    #[test]
-    fn parse_ignores_garbage() {
-        let s = parse("");
-        assert_eq!(s, PersistedState::default());
-        let s2 = parse("unknown=1\nbadline\nsort_col=delta\nsort_asc=1\n");
-        assert_eq!(s2.sort_col, CpuSortCol::Delta);
-        assert!(s2.sort_asc);
-    }
-    #[test]
-    fn tab_and_window_maps() {
-        assert_eq!(active_tab_index(ActiveTab::Processes), 0);
-        assert_eq!(active_tab_from_index(4), ActiveTab::Network);
-        assert_eq!(chart_window_from_secs(300), ChartWindow::FiveMin);
-        assert_eq!(secs_from_chart_window(ChartWindow::FifteenMin), 900);
-    }
-}
+#[path = "persist_tests.rs"]
+mod tests;

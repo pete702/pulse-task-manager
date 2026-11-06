@@ -2,8 +2,58 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::modules::cpu::collector::pid_contains;
 use crate::modules::cpu::model::{ProcessCpuItem, RawProcessCpuRow};
+use crate::modules::cpu::table_sort::{filter_group_and_sort, sort_slice};
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProcessQuickFilter {
+    #[default]
+    All,
+    ActiveLoad,
+    HighRam,
+    EcoQos,
+}
+
+impl ProcessQuickFilter {
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            1 => ProcessQuickFilter::ActiveLoad,
+            2 => ProcessQuickFilter::HighRam,
+            3 => ProcessQuickFilter::EcoQos,
+            _ => ProcessQuickFilter::All,
+        }
+    }
+    pub fn to_u8(self) -> u8 {
+        match self {
+            ProcessQuickFilter::All => 0,
+            ProcessQuickFilter::ActiveLoad => 1,
+            ProcessQuickFilter::HighRam => 2,
+            ProcessQuickFilter::EcoQos => 3,
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            ProcessQuickFilter::All => "[ All ]",
+            ProcessQuickFilter::ActiveLoad => "[ Active CPU/Disk ]",
+            ProcessQuickFilter::HighRam => "[ RAM > 200 MB ]",
+            ProcessQuickFilter::EcoQos => "[ EcoQoS ]",
+        }
+    }
+    pub fn matches(
+        self,
+        cpu_pct: f32,
+        ram_bytes: u64,
+        io_mbps: f32,
+        eco_qos: Option<bool>,
+    ) -> bool {
+        match self {
+            ProcessQuickFilter::All => true,
+            ProcessQuickFilter::ActiveLoad => cpu_pct >= 1.0 || io_mbps > 0.0,
+            ProcessQuickFilter::HighRam => ram_bytes >= 200 * 1024 * 1024,
+            ProcessQuickFilter::EcoQos => eco_qos == Some(true),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CpuSortCol {
     #[default]
@@ -13,13 +63,16 @@ pub enum CpuSortCol {
     RamBytes,
     CloneCount,
     Delta,
+    DiskIo,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct CpuTableCacheKey(u64, String, CpuSortCol, bool, bool);
+struct CpuTableCacheKey(u64, String, CpuSortCol, bool, bool, u8);
 #[derive(Debug, Clone)]
 pub struct CpuTableState {
     pub comfort_density: bool,
     pub search_query: String,
+    pub focus_search_next_frame: bool,
+    pub quick_filter: ProcessQuickFilter,
     pub group_clones: bool,
     pub sort_col: CpuSortCol,
     pub sort_asc: bool,
@@ -40,6 +93,8 @@ impl Default for CpuTableState {
         Self {
             comfort_density: false,
             search_query: String::new(),
+            focus_search_next_frame: false,
+            quick_filter: ProcessQuickFilter::All,
             group_clones: true,
             sort_col: CpuSortCol::CpuPct,
             sort_asc: false,
@@ -85,16 +140,19 @@ impl CpuTableState {
             self.sort_col,
             self.sort_asc,
             self.group_clones,
+            self.quick_filter.to_u8(),
         );
         if !first_build && !needs_data && self.cache_key.as_ref() == Some(&new_key) {
             self.cached_scan_generation = scan_generation;
             self.dirty = false;
             return false;
         }
+        let query_lower = self.search_query.trim().to_ascii_lowercase();
         let deltas = self.compute_ram_deltas(raw_rows);
-        let rows: Arc<[ProcessCpuItem]> = Self::filter_group_and_sort(
+        let rows: Arc<[ProcessCpuItem]> = filter_group_and_sort(
             raw_rows,
-            &self.search_query,
+            &query_lower,
+            self.quick_filter,
             self.group_clones,
             self.sort_col,
             self.sort_asc,
@@ -138,7 +196,7 @@ impl CpuTableState {
     }
     pub fn apply_sort_in_place(&mut self) {
         if let Some(rows) = &mut self.cached_rows {
-            Self::sort_slice(Arc::make_mut(rows), self.sort_col, self.sort_asc);
+            sort_slice(Arc::make_mut(rows), self.sort_col, self.sort_asc);
         }
         if let Some(key) = &mut self.cache_key {
             key.2 = self.sort_col;
@@ -164,6 +222,12 @@ impl CpuTableState {
             self.dirty = true;
         }
     }
+    pub fn set_quick_filter(&mut self, f: ProcessQuickFilter) {
+        if self.quick_filter != f {
+            self.quick_filter = f;
+            self.dirty = true;
+        }
+    }
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
     }
@@ -182,90 +246,6 @@ impl CpuTableState {
         self.ram_baseline =
             rows.iter().map(|row| ((row.pid, row.start_time), (row.ram_bytes, now))).collect();
         deltas
-    }
-
-    #[inline]
-    fn contains_ci(haystack: &str, needle: &str) -> bool {
-        needle.is_empty()
-            || haystack
-                .as_bytes()
-                .windows(needle.len())
-                .any(|w| w.eq_ignore_ascii_case(needle.as_bytes()))
-    }
-
-    fn filter_group_and_sort(
-        processes: &[RawProcessCpuRow],
-        search: &str,
-        group_clones: bool,
-        sort_col: CpuSortCol,
-        sort_asc: bool,
-        deltas: &HashMap<(u32, u64), i64>,
-    ) -> Vec<ProcessCpuItem> {
-        let search_trimmed = search.trim();
-        let mut items: Vec<ProcessCpuItem> = processes
-            .iter()
-            .filter(|row| {
-                search_trimmed.is_empty()
-                    || Self::contains_ci(&row.name, search_trimmed)
-                    || pid_contains(row.pid, search_trimmed)
-            })
-            .map(|row| {
-                let delta = deltas.get(&(row.pid, row.start_time)).copied().unwrap_or(0);
-                Self::item_from_raw_cpu(row, delta)
-            })
-            .collect();
-        if group_clones {
-            let mut grouped: HashMap<Arc<str>, ProcessCpuItem> = HashMap::new();
-            for item in items {
-                let key: Arc<str> = Arc::clone(&item.name).to_ascii_lowercase().into();
-                grouped
-                    .entry(key)
-                    .and_modify(|ex| {
-                        ex.cpu_pct += item.cpu_pct;
-                        ex.ram_bytes = ex.ram_bytes.saturating_add(item.ram_bytes);
-                        ex.ram_delta_10s = ex.ram_delta_10s.saturating_add(item.ram_delta_10s);
-                        ex.clone_count += 1;
-                        ex.update_formatted();
-                    })
-                    .or_insert(item);
-            }
-            items = grouped.into_values().collect();
-        }
-        Self::sort_slice(&mut items, sort_col, sort_asc);
-        items
-    }
-
-    fn sort_slice(items: &mut [ProcessCpuItem], col: CpuSortCol, asc: bool) {
-        items.sort_by(|a, b| {
-            let ord = match col {
-                CpuSortCol::Name => a.name.cmp(&b.name),
-                CpuSortCol::Pid => a.pid.cmp(&b.pid),
-                CpuSortCol::RamBytes => a.ram_bytes.cmp(&b.ram_bytes),
-                CpuSortCol::CloneCount => a.clone_count.cmp(&b.clone_count),
-                CpuSortCol::Delta => a.ram_delta_10s.cmp(&b.ram_delta_10s),
-                CpuSortCol::CpuPct => a.cpu_pct.total_cmp(&b.cpu_pct),
-            };
-            if asc {
-                ord
-            } else {
-                ord.reverse()
-            }
-        });
-    }
-
-    fn item_from_raw_cpu(row: &RawProcessCpuRow, delta: i64) -> ProcessCpuItem {
-        let mut item = ProcessCpuItem::new(
-            row.pid,
-            Arc::clone(&row.name),
-            row.cpu_usage.clamp(0.0, 100.0),
-            row.ram_bytes,
-            row.creation_time,
-        );
-        item.start_time = row.start_time;
-        item.exe_path = row.exe_path.clone().unwrap_or_default();
-        item.ram_delta_10s = delta;
-        item.update_formatted();
-        item
     }
 }
 

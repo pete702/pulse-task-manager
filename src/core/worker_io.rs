@@ -1,12 +1,8 @@
 //! Snapshot publication plumbing for the telemetry worker.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 
 use crate::core::{LatestSlot, SnapshotTx, SystemSnapshot};
-
-/// Tracks the previous minimized state for restore wakeup detection.
-static WAS_MINIMIZED: AtomicBool = AtomicBool::new(false);
 
 /// Wakeup callback type: invoked after each snapshot publish to trigger UI repaint.
 pub type Wakeup = Arc<dyn Fn() + Send + Sync + 'static>;
@@ -27,7 +23,6 @@ pub fn publish(
     wakeup: &Wakeup,
     minimized: bool,
 ) -> PublishResult {
-    WAS_MINIMIZED.swap(minimized, Ordering::Relaxed);
     latest.store(snapshot.clone());
     match tx.try_send(snapshot) {
         Ok(()) => {

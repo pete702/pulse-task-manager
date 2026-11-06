@@ -16,6 +16,7 @@ type SelectionCacheEntry = (u64, String, Option<u32>, bool, Arc<SelectedGroupSum
 #[derive(Debug, Clone)]
 pub struct MemoryTableState {
     pub search_query: String,
+    pub focus_search_next_frame: bool,
     pub group_clones: bool,
     pub sort_col: MemorySortCol,
     pub sort_asc: bool,
@@ -40,6 +41,7 @@ impl Default for MemoryTableState {
     fn default() -> Self {
         Self {
             search_query: String::new(),
+            focus_search_next_frame: false,
             group_clones: true,
             sort_col: MemorySortCol::RamBytes,
             sort_asc: false,
@@ -106,6 +108,14 @@ impl MemoryTableState {
         self.cache_key = None;
         self.cached_scan_id = 0;
         self.cached_selection = None;
+    }
+
+    /// Clears the search query and invalidates the cache for instant rebuild.
+    pub fn clear_search(&mut self) {
+        if !self.search_query.is_empty() {
+            self.search_query.clear();
+            self.invalidate_cache();
+        }
     }
 
     /// Clears all selection state including single-PID identity verification fields.

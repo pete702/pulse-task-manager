@@ -50,8 +50,8 @@ fn test_active_tab_label_en() {
     set_lang(Lang::En);
     assert_eq!(ActiveTab::Memory.label(), "[01] Memory (RAM)");
     assert_eq!(ActiveTab::Cpu.label(), "[02] Processor (CPU)");
-    assert_eq!(ActiveTab::Storage.label(), "[03] Storage (Disks)");
-    assert_eq!(ActiveTab::Network.label(), "[04] Network & Ping");
+    assert_eq!(ActiveTab::Storage.label(), "[03] Storage");
+    assert_eq!(ActiveTab::Network.label(), "[04] Network");
     assert_eq!(ActiveTab::System.label(), "[05] System & GPU");
 }
 

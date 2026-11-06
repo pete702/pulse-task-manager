@@ -19,29 +19,31 @@ use crate::modules::memory::page::MemorySubView;
 use crate::modules::memory::table_state::MemoryTableState;
 
 pub struct PulseApp {
-    snapshot_rx: mpsc::Receiver<Arc<SystemSnapshot>>,
-    latest_slot: LatestSlot,
-    latest_snapshot: Option<Arc<SystemSnapshot>>,
-    active_tab: crate::app_tabs::ActiveTab,
-    prev_active_tab: crate::app_tabs::ActiveTab,
-    memory_sub_view: MemorySubView,
-    prev_memory_sub_view: MemorySubView,
-    cpu_sub_view: CpuSubView,
-    prev_cpu_sub_view: CpuSubView,
-    table_state: MemoryTableState,
-    cpu_table_state: CpuTableState,
-    action_state: MemoryActionBarState,
-    frame_count: u64,
-    last_ui_ms: f32,
-    memory_history: MemoryHistory,
-    cpu_history: CpuHistory,
-    was_minimized: bool,
-    startup_frames: u8,
-    telemetry_paused: bool,
-    worker: crate::core::TelemetryWorker,
-    last_viewport_size: Option<egui::Vec2>,
-    last_saved: persist::PersistedState,
-    pointer_down: bool,
+    pub(crate) snapshot_rx: mpsc::Receiver<Arc<SystemSnapshot>>,
+    pub(crate) latest_slot: LatestSlot,
+    pub(crate) latest_snapshot: Option<Arc<SystemSnapshot>>,
+    pub(crate) active_tab: crate::app_tabs::ActiveTab,
+    pub(crate) prev_active_tab: crate::app_tabs::ActiveTab,
+    pub(crate) memory_sub_view: MemorySubView,
+    pub(crate) prev_memory_sub_view: MemorySubView,
+    pub(crate) cpu_sub_view: CpuSubView,
+    pub(crate) prev_cpu_sub_view: CpuSubView,
+    pub(crate) table_state: MemoryTableState,
+    pub(crate) cpu_table_state: CpuTableState,
+    pub(crate) action_state: MemoryActionBarState,
+    pub(crate) frame_count: u64,
+    pub(crate) last_ui_ms: f32,
+    pub(crate) memory_history: MemoryHistory,
+    pub(crate) cpu_history: CpuHistory,
+    pub(crate) was_minimized: bool,
+    pub(crate) startup_frames: u8,
+    pub(crate) telemetry_paused: bool,
+    pub(crate) worker: crate::core::TelemetryWorker,
+    pub(crate) last_viewport_size: Option<egui::Vec2>,
+    pub(crate) last_saved: persist::PersistedState,
+    pub(crate) dirty_since: Option<Instant>,
+    pub(crate) pointer_down: bool,
+    pub(crate) last_trim: Instant,
 }
 
 impl PulseApp {
@@ -73,52 +75,13 @@ impl PulseApp {
             worker,
             last_viewport_size: None,
             last_saved: persist::PersistedState::default(),
+            dirty_since: None,
             pointer_down: false,
+            last_trim: Instant::now(),
         };
         let saved = persist::load_state();
         app.apply_persisted(&saved);
         app
-    }
-
-    fn apply_persisted(&mut self, s: &persist::PersistedState) {
-        self.active_tab = persist::active_tab_from_index(s.active_tab);
-        self.prev_active_tab = self.active_tab;
-        self.cpu_table_state.group_clones = s.group_clones;
-        self.cpu_table_state.comfort_density = !s.compact_rows;
-        self.cpu_table_state.sort_col = s.sort_col;
-        self.cpu_table_state.sort_asc = s.sort_asc;
-        self.memory_history.chart_window = persist::chart_window_from_secs(s.mem_window_secs);
-        self.cpu_history.chart_window = persist::chart_window_from_secs(s.cpu_window_secs);
-        self.cpu_history.show_core_grid = s.cpu_show_grid;
-        self.last_viewport_size = Some(egui::Vec2::new(s.win_w, s.win_h));
-        self.last_saved = s.clone();
-    }
-
-    fn collect_persisted(&self) -> persist::PersistedState {
-        let win = self.last_viewport_size.unwrap_or(egui::Vec2::new(1180.0, 760.0));
-        persist::PersistedState {
-            active_tab: persist::active_tab_index(self.active_tab),
-            group_clones: self.cpu_table_state.group_clones,
-            compact_rows: !self.cpu_table_state.comfort_density,
-            sort_col: self.cpu_table_state.sort_col,
-            sort_asc: self.cpu_table_state.sort_asc,
-            cpu_show_grid: self.cpu_history.show_core_grid,
-            mem_window_secs: persist::secs_from_chart_window(self.memory_history.chart_window),
-            cpu_window_secs: persist::secs_from_chart_window(self.cpu_history.chart_window),
-            win_w: (win.x.clamp(860.0, 3840.0) * 10.0).round() / 10.0,
-            win_h: (win.y.clamp(560.0, 2160.0) * 10.0).round() / 10.0,
-        }
-    }
-
-    fn save_state_if_needed(&mut self, force: bool) {
-        if !force && self.pointer_down {
-            return;
-        }
-        let cur = self.collect_persisted();
-        if force || cur != self.last_saved {
-            let _ = persist::save_state(&cur);
-            self.last_saved = cur;
-        }
     }
 }
 
@@ -139,39 +102,6 @@ impl PulseApp {
         crate::modules::cpu::chart_axis::set_window(ctx, app.cpu_history.chart_window);
         app
     }
-
-    fn ingest_snapshot(&mut self, snap: Arc<SystemSnapshot>) {
-        let is_new = self.latest_snapshot.as_ref().is_none_or(|prev| !Arc::ptr_eq(prev, &snap));
-        if !is_new {
-            return;
-        }
-        if let Some(ref mem) = snap.memory {
-            self.memory_history.push(mem);
-        }
-        if let Some(ref cpu) = snap.cpu {
-            let timestamp = snap
-                .memory
-                .as_ref()
-                .map(|m| m.sample_elapsed_secs)
-                .unwrap_or(snap.uptime_secs as f64);
-            self.cpu_history.push(cpu.total_pct, cpu.hottest_core_pct, timestamp);
-        }
-        self.latest_snapshot = Some(snap);
-    }
-
-    fn collect_snapshots(&mut self) {
-        if self.telemetry_paused {
-            while self.snapshot_rx.try_recv().is_ok() {}
-            let _ = self.latest_slot.take();
-            return;
-        }
-        while let Ok(snap) = self.snapshot_rx.try_recv() {
-            self.ingest_snapshot(snap);
-        }
-        if let Some(snap) = self.latest_slot.take() {
-            self.ingest_snapshot(snap);
-        }
-    }
 }
 
 impl eframe::App for PulseApp {
@@ -181,14 +111,12 @@ impl eframe::App for PulseApp {
         if self.startup_frames <= 3 {
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
-        if self.startup_frames == 3 {
-            let _ = crate::core::win32::self_trim_working_set();
-        }
         // Minimized: honest 0 FPS. No hotkeys or repaints while minimized.
         let is_minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         self.worker.is_minimized.store(is_minimized, Ordering::Relaxed);
-        if is_minimized && !self.was_minimized {
-            let _ = crate::core::win32::self_trim_working_set();
+        let minimize_edge = is_minimized && !self.was_minimized;
+        if minimize_edge || crate::app_trim::periodic_due(&self.last_trim) {
+            crate::app_trim::run_trim(&mut self.last_trim);
         }
         self.was_minimized = is_minimized;
         if is_minimized {
@@ -207,8 +135,8 @@ impl eframe::App for PulseApp {
             return;
         }
         let processes_active = self.active_tab == crate::app_tabs::ActiveTab::Processes
-            || (self.active_tab == crate::app_tabs::ActiveTab::Memory
-                && self.memory_sub_view == MemorySubView::Processes)
+            || self.active_tab == crate::app_tabs::ActiveTab::Storage
+            || self.active_tab == crate::app_tabs::ActiveTab::Memory
             || (self.active_tab == crate::app_tabs::ActiveTab::Cpu
                 && self.cpu_sub_view == CpuSubView::Processes);
         self.worker.set_fast_process_cadence(processes_active);
@@ -234,9 +162,7 @@ impl eframe::App for PulseApp {
         self.collect_snapshots();
         let vp = ctx.input(|i| i.viewport().inner_rect.or(i.viewport().outer_rect));
         let current_size = vp.map(|r| r.size()).unwrap_or(egui::Vec2::ZERO);
-        if self.last_viewport_size.is_some_and(|p| (p - current_size).length() > 100.0) {
-            let _ = crate::core::win32::self_trim_working_set();
-        }
+        // Resize never trims; viewport size is tracked for persistence only.
         self.last_viewport_size = Some(current_size);
         let latest_snapshot = self.latest_snapshot.clone();
         let active_processes = latest_snapshot

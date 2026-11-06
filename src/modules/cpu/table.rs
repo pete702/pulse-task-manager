@@ -1,4 +1,4 @@
-﻿//! Virtualized CPU process table with search, clone grouping, sorting, and actions.
+//! Virtualized CPU process table with search, clone grouping, sorting, and actions.
 
 use crate::modules::cpu::model::{CpuSnapshot, ProcessCpuItem};
 use crate::modules::cpu::qos_action::{
@@ -9,10 +9,12 @@ use crate::modules::cpu::table_state::CpuTableState;
 use crate::modules::memory::safe_handle::is_app_elevated;
 use crate::theme::{card_frame, colors, OPTIMAL_EMERALD};
 use eframe::egui;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use std::time::Instant;
 
 static ELEVATED: OnceLock<bool> = OnceLock::new();
+static PURGE_RUNNING: AtomicBool = AtomicBool::new(false);
 
 fn cached_elevated() -> bool {
     *ELEVATED.get_or_init(is_app_elevated)
@@ -34,7 +36,7 @@ pub fn render_cpu_table(
         state.selected_pid = Some(rows[0].pid);
         state.selected_name = Some(rows[0].name.to_string());
     }
-    let total_processes = cpu_snapshot.process_count.max(cpu_snapshot.processes.len());
+    let total_processes = cpu_snapshot.process_count;
     let shown_rows = rows.len();
     let clone_groups = rows.iter().filter(|row| row.clone_count > 1).count();
 
@@ -91,9 +93,14 @@ fn render_toolbar(
                 .hint_text("Filter process...")
                 .desired_width(145.0),
         );
+        if state.focus_search_next_frame {
+            filter.request_focus();
+            state.focus_search_next_frame = false;
+        }
         if filter.changed() {
             state.mark_dirty();
         }
+        crate::modules::cpu::quick_filter::render_quick_filters(ui, state);
         if ui
             .add_enabled(
                 !state.search_query.is_empty(),
@@ -125,6 +132,9 @@ fn render_toolbar(
             // Purge All RAM button
             if action_button(ui, !rows.is_empty(), "[ Purge All RAM ]", colors::ACCENT_CYAN)
                 .clicked()
+                && PURGE_RUNNING
+                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok()
             {
                 let owned: Vec<_> = rows.to_vec();
                 state.last_action_msg = "Purging All RAM...".to_owned();
@@ -132,6 +142,7 @@ fn render_toolbar(
                     for item in &owned {
                         let _ = trim_process_working_set(item);
                     }
+                    PURGE_RUNNING.store(false, Ordering::Release);
                     crate::core::request_process_scan();
                 });
             }

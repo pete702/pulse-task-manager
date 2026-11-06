@@ -12,6 +12,9 @@ pub struct RawProcessCpuRow {
     pub name: Arc<str>,
     pub cpu_usage: f32, // Normalized 0.0..=100.0 of total system capacity
     pub ram_bytes: u64,
+    pub disk_read_mb_s: f32,
+    pub disk_write_mb_s: f32,
+    pub eco_qos: Option<bool>,
     pub exe_path: Option<Arc<str>>,
     pub creation_time: Option<u64>,
     pub start_time: u64, // sysinfo start_time (Unix seconds)
@@ -29,6 +32,9 @@ pub struct ProcessCpuItem {
     pub exe_path: Arc<str>,
     pub cpu_pct: f32, // Normalized 0.0..=100.0 of total system capacity
     pub ram_bytes: u64,
+    pub disk_read_mb_s: f32,
+    pub disk_write_mb_s: f32,
+    pub eco_qos: Option<bool>,
     /// Projected working-set change over a 10-second window.
     pub ram_delta_10s: i64,
     pub clone_count: usize,
@@ -40,12 +46,14 @@ pub struct ProcessCpuItem {
     pub ram_text: Arc<str>,
     pub delta_text: Arc<str>,
     pub clone_text: Arc<str>,
+    pub disk_io_text: Arc<str>,
 
     // Internal tracking for conditional formatting (avoids re-allocation when values unchanged)
     last_fmt_cpu_pct: f32,
     last_fmt_ram_bytes: u64,
     last_fmt_delta: i64,
     last_fmt_process_count: usize,
+    last_fmt_io_total: f32,
 }
 
 impl ProcessCpuItem {
@@ -62,6 +70,7 @@ impl ProcessCpuItem {
         let pid_text = Arc::from(pid.to_string());
         let delta_text = Arc::from("Stable");
         let clone_text = Arc::from("1x");
+        let disk_io_text = Arc::from("0.0 MB/s");
         Self {
             pid,
             start_time: 0,
@@ -70,6 +79,9 @@ impl ProcessCpuItem {
             exe_path: Arc::from(""),
             cpu_pct,
             ram_bytes,
+            disk_read_mb_s: 0.0,
+            disk_write_mb_s: 0.0,
+            eco_qos: None,
             ram_delta_10s: 0,
             clone_count: 1,
             is_cpu_hog: cpu_pct >= CPU_HOG_THRESHOLD_PCT,
@@ -78,11 +90,13 @@ impl ProcessCpuItem {
             ram_text,
             delta_text,
             clone_text,
+            disk_io_text,
             // Initialize tracking fields to force first formatting
             last_fmt_cpu_pct: f32::MAX,
             last_fmt_ram_bytes: u64::MAX,
             last_fmt_delta: i64::MAX,
             last_fmt_process_count: usize::MAX,
+            last_fmt_io_total: f32::MAX,
         }
     }
 
@@ -131,6 +145,12 @@ impl ProcessCpuItem {
             };
             self.last_fmt_process_count = self.clone_count;
         }
+        // disk_io_text: only if total I/O rate changed
+        let io_total = self.disk_read_mb_s + self.disk_write_mb_s;
+        if (io_total - self.last_fmt_io_total).abs() > f32::EPSILON {
+            self.disk_io_text = Arc::from(format!("{:.1} MB/s", io_total));
+            self.last_fmt_io_total = io_total;
+        }
 
         self.is_cpu_hog = new_is_hog;
     }
@@ -147,6 +167,9 @@ pub fn item_from_raw_cpu(row: &RawProcessCpuRow) -> ProcessCpuItem {
         row.creation_time,
     );
     item.start_time = row.start_time;
+    item.disk_read_mb_s = row.disk_read_mb_s;
+    item.disk_write_mb_s = row.disk_write_mb_s;
+    item.eco_qos = row.eco_qos;
     item.exe_path = row.exe_path.clone().unwrap_or_default();
     item.update_formatted();
     item
@@ -163,7 +186,6 @@ pub struct CpuSnapshot {
     pub base_mhz: u64,      // Nominal base clock speed in MHz
     pub logical_cores: usize, // Number of logical processors
     pub brand: Arc<str>,    // CPU model name cached once
-    pub processes: Arc<[ProcessCpuItem]>, // Sorted descending by cpu_pct (for UI display)
     pub raw_processes: Arc<[RawProcessCpuRow]>, // Raw rows for table grouping/sorting
     pub process_count: usize, // Total processes in the latest scan (stable between scans)
 }
@@ -189,63 +211,5 @@ impl CpuSnapshot {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_hottest_core_detection() {
-        let mut snap = CpuSnapshot {
-            per_core_pct: Arc::from(vec![10.0, 95.0, 45.0, 30.0].into_boxed_slice()),
-            ..Default::default()
-        };
-        // Find hottest core
-        let (idx, val) = snap
-            .per_core_pct
-            .iter()
-            .enumerate()
-            .max_by(|a, b| a.1.total_cmp(b.1))
-            .unwrap_or((0, &0.0));
-        assert_eq!(idx, 1);
-        assert_eq!(*val, 95.0);
-        snap.hottest_core_idx = idx;
-        snap.hottest_core_pct = *val;
-        assert_eq!(snap.hottest_core_idx, 1);
-        assert_eq!(snap.hottest_core_pct, 95.0);
-    }
-
-    #[test]
-    fn test_process_cpu_item_formatting() {
-        let mut item = ProcessCpuItem::new(
-            1234,
-            Arc::from("test.exe"),
-            15.0,              // Below CPU_HOG_THRESHOLD_PCT (20.0%)
-            1024 * 1024 * 100, // 100 MB
-            None,
-        );
-        assert_eq!(item.cpu_text.as_ref(), "15.0%");
-        assert_eq!(item.ram_text.as_ref(), "100.00 MiB");
-        assert_eq!(item.pid_text.as_ref(), "1234");
-        assert_eq!(item.clone_text.as_ref(), "1x");
-        assert!(!item.is_cpu_hog);
-
-        // Update with same values - should not reallocate
-        item.update_formatted();
-        assert_eq!(item.cpu_text.as_ref(), "15.0%");
-
-        // Change CPU - should reallocate cpu_text
-        item.cpu_pct = 50.0;
-        item.update_formatted();
-        assert_eq!(item.cpu_text.as_ref(), "50.0%");
-        assert!(item.is_cpu_hog);
-
-        // Change RAM - should reallocate ram_text
-        item.ram_bytes = 1024 * 1024 * 200; // 200 MB
-        item.update_formatted();
-        assert_eq!(item.ram_text.as_ref(), "200.00 MiB");
-
-        // Change clone count - should reallocate clone_text
-        item.clone_count = 5;
-        item.update_formatted();
-        assert_eq!(item.clone_text.as_ref(), "[5]x");
-    }
-}
+#[path = "model_tests.rs"]
+mod tests;

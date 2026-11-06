@@ -7,7 +7,12 @@ pub const WORKER_INTERVAL_VISIBLE: std::time::Duration = std::time::Duration::fr
 pub const WORKER_INTERVAL_MINIMIZED: std::time::Duration = std::time::Duration::from_millis(5000);
 
 /// Full process scans run every 3rd visible tick (3 seconds when Processes sub-tab is open).
+/// Storage tab also uses this fast cadence so the 1s chart stays live.
 pub const SCAN_TICKS_VISIBLE: u64 = 3;
+
+/// Full process scans run every 2nd tick on Storage tab for live disk chart.
+#[allow(dead_code)]
+pub const SCAN_TICKS_STORAGE: u64 = 2;
 
 /// Full process scans run every 5th tick when Overview tab is open (5 seconds).
 pub const SCAN_TICKS_BACKGROUND: u64 = 5;

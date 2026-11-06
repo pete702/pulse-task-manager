@@ -2,7 +2,7 @@
 //! Provides verified working set trim, batch operations, termination, and file location opening.
 
 use std::path::Path;
-use windows_sys::Win32::Foundation::HANDLE;
+use windows_sys::Win32::Foundation::{GetLastError, HANDLE};
 use windows_sys::Win32::System::ProcessStatus::{
     K32EmptyWorkingSet, K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
 };
@@ -70,7 +70,12 @@ pub fn trim_single_pid(target: &ProcessTarget) -> Result<u64, TrimSkipReason> {
         unsafe { query_working_set(handle.as_raw()) }.ok_or(TrimSkipReason::AccessDenied)?;
     let trim_ok = unsafe { K32EmptyWorkingSet(handle.as_raw()) };
     if trim_ok == 0 {
-        return Err(TrimSkipReason::AccessDenied);
+        let err = unsafe { GetLastError() };
+        return Err(match err {
+            6 => TrimSkipReason::AccessDenied,
+            87 => TrimSkipReason::Protected,
+            _ => TrimSkipReason::AccessDenied,
+        });
     }
     let ws_after =
         unsafe { query_working_set(handle.as_raw()) }.ok_or(TrimSkipReason::AccessDenied)?;

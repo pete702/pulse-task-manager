@@ -12,8 +12,9 @@ use crate::modules::memory::model::{MemorySnapshot, ProcessSample};
 use crate::modules::memory::win32_api::{collect_windows_kernel_metrics, KernelMetrics};
 
 /// Collects current system memory state into a `MemorySnapshot`.
+/// `scan_duration_ms` is left at the default here; the worker loop stamps it
+/// once with the full telemetry tick duration so the metric stays honest.
 pub fn collect_memory(sys: &mut System) -> MemorySnapshot {
-    let started = std::time::Instant::now();
     sys.refresh_memory();
 
     let mut snap = MemorySnapshot {
@@ -43,7 +44,6 @@ pub fn collect_memory(sys: &mut System) -> MemorySnapshot {
         snap.kernel_metrics_valid = kernel_metrics.is_valid;
     }
 
-    snap.scan_duration_ms = started.elapsed().as_secs_f32() * 1000.0;
     snap
 }
 

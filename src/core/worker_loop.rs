@@ -11,13 +11,15 @@ use crate::core::{
     worker_policy::*,
     LatestSlot, SnapshotTx, SystemSnapshot,
 };
-use crate::modules::cpu::collector::{collect_cpu, collect_process_cpu, warmup_cpu};
+use crate::modules::cpu::collector::{collect_cpu, warmup_cpu, CpuCollector};
 use crate::modules::cpu::model::RawProcessCpuRow;
 use crate::modules::cpu::win32_cpu::init_cpu_brand_and_base_mhz;
 use crate::modules::memory::collector::{collect_memory, collect_process_memory};
 use crate::modules::memory::delta_tracker::ProcessDeltaTracker;
 use crate::modules::memory::model::RawProcessRow;
 use crate::modules::memory::win32_api::own_working_set_mb;
+use crate::modules::network::collector::NetworkCollector;
+use crate::modules::storage::collector::StorageCollector;
 
 /// Spawns the background thread and returns its receiver, latest slot, minimized flag, shutdown flag, wakeup callback, and thread handle.
 #[allow(clippy::type_complexity)]
@@ -45,6 +47,7 @@ pub fn spawn_worker(
     let tab_active_worker = processes_tab_active.clone();
 
     let handle = thread::spawn(move || {
+        WORKER_ALIVE.store(true, Ordering::Relaxed);
         {
             let slot = WORKER_THREAD.get_or_init(|| Mutex::new(None));
             let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
@@ -62,6 +65,9 @@ pub fn spawn_worker(
 
         let mut latest_spike = None;
         let mut delta_tracker = ProcessDeltaTracker::new();
+        let mut cpu_collector = CpuCollector::new();
+        let mut storage_collector = StorageCollector::new();
+        let mut network_collector = NetworkCollector::new();
         let mut last_processes: Arc<Vec<RawProcessRow>> = Arc::new(Vec::new());
         let mut last_cpu_raw_rows: Arc<[RawProcessCpuRow]> = Arc::from(Vec::new());
         let mut last_heavy = false;
@@ -73,6 +79,7 @@ pub fn spawn_worker(
         loop {
             // Check for graceful shutdown signal
             if shutdown_worker.load(Ordering::Acquire) {
+                WORKER_ALIVE.store(false, Ordering::Relaxed);
                 break;
             }
 
@@ -103,33 +110,38 @@ pub fn spawn_worker(
 
             // Collect process CPU when process scan runs (same pass as memory)
             if do_refresh {
-                process_scan_id += 1;
-                let cpu_raw_rows = collect_process_cpu(&mut sys, logical_cores, true);
-                // A transient empty sysinfo read must never erase the live list.
-                if cpu_raw_rows.is_empty() && !last_cpu_raw_rows.is_empty() {
-                    cpu.processes = Arc::from(Vec::new());
+                let cpu_raw_rows = cpu_collector.collect_process_cpu(&mut sys, logical_cores, true);
+                // Synchronized fallback: a transient empty read reuses BOTH
+                // retained lists so Storage and Memory never desync by a tick.
+                // Lasts move together only on a genuine non-empty scan.
+                let scan_ok = !cpu_raw_rows.is_empty()
+                    || (last_cpu_raw_rows.is_empty() && last_processes.is_empty());
+                if !scan_ok {
                     cpu.raw_processes = Arc::clone(&last_cpu_raw_rows);
+                    memory.processes = Arc::clone(&last_processes);
+                    memory.has_heavy_process = last_heavy;
+                    if memory.ram_usage_percent() < HIGH_RAM_PRESSURE_PCT {
+                        latest_spike = None;
+                    }
                 } else {
-                    cpu.processes = Arc::from(Vec::new());
+                    process_scan_id += 1;
                     cpu.raw_processes = Arc::from(cpu_raw_rows);
                     last_cpu_raw_rows = Arc::clone(&cpu.raw_processes);
+                    let ((processes, spike), heavy) = collect_process_memory(
+                        &mut sys,
+                        memory.ram_total_bytes,
+                        memory.ram_usage_percent(),
+                        &mut delta_tracker,
+                        true,
+                    );
+                    let shared = Arc::new(processes);
+                    last_processes = Arc::clone(&shared);
+                    memory.processes = shared;
+                    memory.has_heavy_process = heavy;
+                    last_heavy = heavy;
+                    latest_spike = spike;
                 }
-
-                let ((processes, spike), heavy) = collect_process_memory(
-                    &mut sys,
-                    memory.ram_total_bytes,
-                    memory.ram_usage_percent(),
-                    &mut delta_tracker,
-                    true,
-                );
-                let shared = Arc::new(processes);
-                last_processes = Arc::clone(&shared);
-                memory.processes = shared;
-                memory.has_heavy_process = heavy;
-                last_heavy = heavy;
-                latest_spike = spike;
             } else {
-                cpu.processes = Arc::from(Vec::new());
                 cpu.raw_processes = Arc::clone(&last_cpu_raw_rows);
                 memory.processes = Arc::clone(&last_processes);
                 memory.has_heavy_process = last_heavy;
@@ -174,16 +186,24 @@ pub fn spawn_worker(
             }
             let os_scheduler_jitter_ms = sleep_overshoot_ms.min(u32::MAX as u64) as u32;
 
-            let snapshot = Arc::new(SystemSnapshot::new_with_jitter(
+            let storage = storage_collector.collect(&cpu.raw_processes, process_scan_id);
+            let network = network_collector.collect();
+            let mut snapshot_obj = SystemSnapshot::new_with_jitter(
                 uptime,
                 pulse_ram_mb,
                 Some(memory),
                 Some(cpu),
                 os_scheduler_jitter_ms,
-            ));
+            );
+            snapshot_obj.storage = storage;
+            snapshot_obj.network = network;
+            let snapshot = Arc::new(snapshot_obj);
 
             match publish(&tx, &latest_worker, snapshot, &wakeup_worker, minimized) {
-                PublishResult::Disconnected => break,
+                PublishResult::Disconnected => {
+                    WORKER_ALIVE.store(false, Ordering::Relaxed);
+                    break;
+                }
                 PublishResult::Sent | PublishResult::Full => {}
             }
             tick = tick.wrapping_add(1);
@@ -196,6 +216,9 @@ pub fn spawn_worker(
 /// Requests an immediate process scan on the next worker tick.
 /// Also unparks the worker thread for instant wakeup (0 ms latency).
 pub fn request_process_scan() {
+    if !WORKER_ALIVE.load(Ordering::Relaxed) {
+        return;
+    }
     PROCESS_SCAN_REQUEST.store(true, Ordering::Relaxed);
     if let Some(slot) = WORKER_THREAD.get() {
         let guard = slot.lock().unwrap_or_else(|e| e.into_inner());
@@ -211,6 +234,7 @@ pub(crate) fn take_process_scan_request() -> bool {
 
 static PROCESS_SCAN_REQUEST: AtomicBool = AtomicBool::new(false);
 static WORKER_THREAD: OnceLock<Mutex<Option<thread::Thread>>> = OnceLock::new();
+static WORKER_ALIVE: AtomicBool = AtomicBool::new(false);
 
 /// Visible mode scans every SCAN_TICKS_VISIBLE tick when Processes tab is active,
 /// or every SCAN_TICKS_BACKGROUND when Overview tab is open.

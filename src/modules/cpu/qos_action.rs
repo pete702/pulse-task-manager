@@ -2,14 +2,13 @@
 //! Provides EcoQoS, working-set trim, file location, and verified termination.
 //! All mutating actions reuse the hardened Memory module identity checks.
 
-#![allow(unsafe_code)]
-
 use std::path::Path;
 
 use windows_sys::Win32::System::Threading::{
-    ProcessPowerThrottling, SetPriorityClass, SetProcessInformation, IDLE_PRIORITY_CLASS,
-    PROCESS_POWER_THROTTLING_CURRENT_VERSION, PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
-    PROCESS_POWER_THROTTLING_STATE, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
+    GetPriorityClass, GetProcessInformation, ProcessPowerThrottling, SetPriorityClass,
+    SetProcessInformation, IDLE_PRIORITY_CLASS, PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+    PROCESS_POWER_THROTTLING_EXECUTION_SPEED, PROCESS_POWER_THROTTLING_STATE,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
 };
 
 use crate::modules::cpu::model::ProcessCpuItem;
@@ -69,6 +68,7 @@ fn target_for(item: &ProcessCpuItem) -> Result<ProcessTarget, String> {
 }
 
 /// Enables EcoQoS (Efficiency Mode) by setting IDLE_PRIORITY_CLASS.
+#[allow(unsafe_code)]
 pub fn enable_eco_qos(pid: u32, name: &str) -> Result<(), String> {
     if is_system_process(name) {
         return Err("System process is protected".to_string());
@@ -105,6 +105,33 @@ pub fn enable_eco_qos(pid: u32, name: &str) -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+/// Returns Some(true) when PID runs in EcoQoS (idle priority or power throttling).
+/// Returns None when the process cannot be opened or queried.
+#[allow(unsafe_code)]
+pub fn is_process_eco_qos(pid: u32) -> Option<bool> {
+    if pid == 0 || pid == 4 {
+        return Some(false);
+    }
+    let handle = SafeHandle::open(PROCESS_QUERY_LIMITED_INFORMATION, pid)?;
+    let priority = unsafe { GetPriorityClass(handle.as_raw()) };
+    if priority == IDLE_PRIORITY_CLASS {
+        return Some(true);
+    }
+    let mut state: PROCESS_POWER_THROTTLING_STATE = unsafe { std::mem::zeroed() };
+    let ok = unsafe {
+        GetProcessInformation(
+            handle.as_raw(),
+            ProcessPowerThrottling,
+            &mut state as *mut _ as *mut _,
+            std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32,
+        )
+    };
+    if ok != 0 {
+        return Some(state.StateMask & PROCESS_POWER_THROTTLING_EXECUTION_SPEED != 0);
+    }
+    Some(false)
 }
 
 /// Trims the working set of a process to release physical RAM.

@@ -57,21 +57,26 @@ impl ProcessDeltaTracker {
             .max(MIN_DT_SECS);
         self.current_gen = self.current_gen.wrapping_add(1);
         let mut result = Vec::with_capacity(processes.len());
+        // Syscall budget shared by new PIDs and deferred retries.
+        let mut budget: u32 = 8;
 
         for (pid, name, ram, virt, exe_path, start_time) in processes {
             let key = (*pid, *start_time);
+            let seen_pid = *pid;
 
-            // Single lookup: get or create the DeltaState, caching creation_time only on Vacant entry.
-            let state = self.states.entry(key).or_insert_with(|| {
-                let ct = query_creation_time_by_pid(*pid);
-                DeltaState {
-                    prev_ram: *ram,
-                    name: Arc::clone(name),
-                    exe_path: exe_path.clone(),
-                    creation_time: ct,
-                    last_gen: 0,
-                }
+            // Deferred marker is None; inaccessible caches Some(0) forever.
+            let state = self.states.entry(key).or_insert_with(|| DeltaState {
+                prev_ram: *ram,
+                name: Arc::clone(name),
+                exe_path: exe_path.clone(),
+                creation_time: None,
+                last_gen: 0,
             });
+            if state.creation_time.is_none() && budget > 0 {
+                budget -= 1;
+                let queried = query_creation_time_by_pid(seen_pid);
+                state.creation_time = Some(queried.unwrap_or(0));
+            }
 
             // Use the cached creation_time (FILETIME) for PID-reuse safety in actions (Open Location / Terminate).
             // No fallback to Unix start_time — they are incompatible time bases.
@@ -126,37 +131,43 @@ mod tests {
         let mut tracker = ProcessDeltaTracker::new();
         let pid = 1234;
         let start_time = 5678u64;
-
-        // First sample - Vacant entry, creation_time queried once
-        // ProcessSample = (u32, Arc<str>, u64, u64, Option<Arc<str>>, u64)
         let sample1 = vec![(pid, Arc::from("test.exe"), 1000u64, 2000u64, None, start_time)];
         let result1 = tracker.track_at(&sample1, Instant::now());
         assert_eq!(result1.len(), 1);
-        assert_eq!(result1[0].creation_time, None); // mock returns None, no fallback
-
-        // Second sample - same (pid, start_time), Occupied entry, no new syscall
+        assert_eq!(result1[0].creation_time, Some(0)); // inaccessible caches 0
         let sample2 = vec![(pid, Arc::from("test.exe"), 1500u64, 2000u64, None, start_time)];
         let result2 = tracker.track_at(&sample2, Instant::now());
         assert_eq!(result2.len(), 1);
-
-        // Verify map has exactly 1 entry
         assert_eq!(tracker.states.len(), 1);
         let state = tracker.states.get(&(pid, start_time)).unwrap();
         assert_eq!(state.last_gen, tracker.current_gen);
-        assert_eq!(state.creation_time, None); // mock returns None, but cached
+        assert_eq!(state.creation_time, Some(0));
     }
 
     #[test]
     fn test_new_pid_gets_new_entry() {
         let mut tracker = ProcessDeltaTracker::new();
-
-        // Both processes in the same tick (same call) - both should be in the map
         let sample = vec![
             (111u32, Arc::from("a.exe"), 100u64, 200u64, None, 1000u64),
             (222u32, Arc::from("b.exe"), 200u64, 300u64, None, 2000u64),
         ];
         tracker.track_at(&sample, Instant::now());
-
         assert_eq!(tracker.states.len(), 2);
+    }
+    #[test]
+    fn twelve_new_pids_defer_then_resolve() {
+        let mut tracker = ProcessDeltaTracker::new();
+        let sample: Vec<_> = (0..12u32)
+            .map(|i| {
+                (1000 + i, Arc::from(format!("p{i}.exe")), 100u64, 200u64, None, 5000u64 + i as u64)
+            })
+            .collect();
+        let r1 = tracker.track_at(&sample, Instant::now());
+        assert_eq!(r1.len(), 12);
+        assert_eq!(r1.iter().filter(|r| r.creation_time.is_none()).count(), 4);
+        assert_eq!(r1.iter().filter(|r| r.creation_time == Some(0)).count(), 8);
+        let r2 = tracker.track_at(&sample, Instant::now());
+        assert_eq!(r2.iter().filter(|r| r.creation_time.is_none()).count(), 0);
+        assert_eq!(r2.iter().filter(|r| r.creation_time == Some(0)).count(), 12);
     }
 }

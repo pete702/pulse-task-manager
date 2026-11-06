@@ -15,8 +15,8 @@ impl Lang {
             // Sidebar tabs (geometric Unicode symbols, no emoji)
             (Lang::En, Key::TabMemory) => Some("[01] Memory (RAM)"),
             (Lang::En, Key::TabCpu) => Some("[02] Processor (CPU)"),
-            (Lang::En, Key::TabStorage) => Some("[03] Storage (Disks)"),
-            (Lang::En, Key::TabNetwork) => Some("[04] Network & Ping"),
+            (Lang::En, Key::TabStorage) => Some("[03] Storage"),
+            (Lang::En, Key::TabNetwork) => Some("[04] Network"),
             (Lang::En, Key::TabSystem) => Some("[05] System & GPU"),
 
             // Central panel
@@ -64,30 +64,27 @@ pub mod locale {
     }
 
     /// Short locale badge for top bar (e.g., "LOCALE: UK-UA" without hex LCID).
-    /// Uses OnceLock with static string references - zero allocations after init.
+    /// Uses OnceLock<String> - zero allocations after init, no leak.
     #[allow(dead_code)]
     #[cfg(target_os = "windows")]
     pub fn os_locale_badge() -> &'static str {
-        static BADGE_CACHE: OnceLock<&'static str> = OnceLock::new();
-        BADGE_CACHE
-            .get_or_init(|| Box::leak(format!("LOCALE: {}", real_locale_upper()).into_boxed_str()))
+        static BADGE_CACHE: OnceLock<String> = OnceLock::new();
+        BADGE_CACHE.get_or_init(|| format!("LOCALE: {}", real_locale_upper())).as_str()
     }
 
     /// Full locale string for hover tooltip (e.g., "System Locale: UK-UA").
     #[allow(dead_code)]
     #[cfg(target_os = "windows")]
     pub fn os_locale_full() -> &'static str {
-        static FULL_CACHE: OnceLock<&'static str> = OnceLock::new();
-        FULL_CACHE.get_or_init(|| {
-            Box::leak(format!("System Locale: {}", real_locale_upper()).into_boxed_str())
-        })
+        static FULL_CACHE: OnceLock<String> = OnceLock::new();
+        FULL_CACHE.get_or_init(|| format!("System Locale: {}", real_locale_upper())).as_str()
     }
 
     /// Bare short code for top bar (e.g., "UK-UA").
     #[cfg(target_os = "windows")]
     pub fn os_locale_short() -> &'static str {
-        static SHORT_CACHE: OnceLock<&'static str> = OnceLock::new();
-        SHORT_CACHE.get_or_init(|| Box::leak(real_locale_upper().into_boxed_str()))
+        static SHORT_CACHE: OnceLock<String> = OnceLock::new();
+        SHORT_CACHE.get_or_init(real_locale_upper).as_str()
     }
 
     /// Short badge fallback for non-Windows targets.

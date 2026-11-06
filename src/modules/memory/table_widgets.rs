@@ -63,11 +63,15 @@ pub(super) fn render_toolbar(
 ) {
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Search:").monospace().size(12.0));
-        ui.add(
+        let resp = ui.add(
             egui::TextEdit::singleline(&mut state.search_query)
                 .desired_width(220.0)
                 .hint_text("Search: name or PID"),
         );
+        if state.focus_search_next_frame {
+            resp.request_focus();
+            state.focus_search_next_frame = false;
+        }
         if !state.search_query.is_empty() && ui.button("×").clicked() {
             state.search_query.clear();
         }

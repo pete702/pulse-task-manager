@@ -10,8 +10,11 @@ use std::sync::Arc;
 use eframe::egui;
 
 mod app;
+mod app_ingest;
+mod app_persist;
 mod app_render;
 mod app_tabs;
+mod app_trim;
 mod core;
 mod i18n;
 mod modules;

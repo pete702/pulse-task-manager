@@ -2,8 +2,6 @@
 //! Primary: CallNtPowerInformation(ProcessorInformation) for CurrentMhz per core.
 //! Fallback: sysinfo Cpu::frequency() (base clock only).
 
-#![allow(unsafe_code)]
-
 use std::sync::{Arc, OnceLock};
 use sysinfo::System;
 #[cfg(target_os = "windows")]
@@ -20,6 +18,7 @@ static BASE_MHZ: OnceLock<u64> = OnceLock::new();
 
 /// Initializes the CPU brand and base MHz caches. Call once at startup.
 #[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
 pub fn init_cpu_brand_and_base_mhz(sys: &mut System) {
     // Read base MHz via Win32 (same logic as read_cpu_frequencies but only for base)
     let n = unsafe { windows_sys::Win32::System::Threading::GetActiveProcessorCount(0) } as usize;
@@ -129,6 +128,7 @@ pub struct CpuWin32Telemetry {
 /// Returns current_mhz where current_mhz reflects Turbo Boost / SpeedShift.
 /// Base MHz is read from the cached BASE_MHZ (initialized once at startup).
 #[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
 pub fn read_cpu_frequencies() -> (u64, u64) {
     let base_mhz = get_base_mhz();
 
@@ -172,6 +172,7 @@ pub fn read_cpu_brand(_sys: &System) -> Arc<str> {
 }
 
 #[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
 fn read_cpu_brand_registry() -> Result<String, std::io::Error> {
     use windows_sys::Win32::System::Registry::{
         RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_LOCAL_MACHINE, KEY_READ,

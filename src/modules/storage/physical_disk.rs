@@ -1,0 +1,135 @@
+//! Physical disk mapping via Win32 IOCTLs (zero admin rights).
+//! Maps volume mount point to STORAGE_DEVICE_NUMBER + DISK_PERFORMANCE.
+
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+use windows_sys::Win32::Storage::FileSystem::{
+    CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+};
+use windows_sys::Win32::System::IO::DeviceIoControl;
+
+const IOCTL_STORAGE_GET_DEVICE_NUMBER: u32 = 0x002D1080;
+const IOCTL_DISK_PERFORMANCE: u32 = 0x00070020;
+const INVALID_HANDLE: HANDLE = -1isize as HANDLE;
+
+#[repr(C)]
+#[derive(Default)]
+struct StorageDeviceNumber {
+    device_type: u32,
+    device_number: u32,
+    partition_number: u32,
+}
+
+/// Extracts drive letter from mount point like "C:\" or "C:".
+pub fn drive_letter(mount: &str) -> Option<char> {
+    let bytes = mount.as_bytes();
+    if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+        Some(bytes[0].to_ascii_uppercase() as char)
+    } else {
+        None
+    }
+}
+
+struct VolumeHandle(HANDLE);
+impl Drop for VolumeHandle {
+    #[allow(unsafe_code)]
+    fn drop(&mut self) {
+        if self.0 != 0 && self.0 != INVALID_HANDLE {
+            unsafe {
+                CloseHandle(self.0);
+            }
+        }
+    }
+}
+
+#[allow(unsafe_code)]
+fn open_volume(letter: char) -> Option<VolumeHandle> {
+    let path = format!("\\\\.\\{}:", letter);
+    let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+    let handle = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            0,
+            0,
+        )
+    };
+    if handle == 0 || handle == INVALID_HANDLE {
+        None
+    } else {
+        Some(VolumeHandle(handle))
+    }
+}
+
+/// Returns (physical_disk, partition) for a mount point, or None on failure.
+#[allow(unsafe_code)]
+pub fn physical_disk_for_mount(mount: &str) -> Option<(u32, u32)> {
+    let letter = drive_letter(mount)?;
+    let volume = open_volume(letter)?;
+    let mut out = StorageDeviceNumber::default();
+    let mut returned: u32 = 0;
+    let ok = unsafe {
+        DeviceIoControl(
+            volume.0,
+            IOCTL_STORAGE_GET_DEVICE_NUMBER,
+            std::ptr::null(),
+            0,
+            &mut out as *mut _ as *mut _,
+            std::mem::size_of::<StorageDeviceNumber>() as u32,
+            &mut returned,
+            std::ptr::null_mut(),
+        )
+    };
+    if ok == 0 || returned < 12 {
+        return None;
+    }
+    Some((out.device_number, out.partition_number))
+}
+
+/// Returns (bytes_read, bytes_written) counters from DISK_PERFORMANCE, if any.
+#[allow(unsafe_code)]
+pub fn perf_counters_for_mount(mount: &str) -> Option<(i64, i64)> {
+    let letter = drive_letter(mount)?;
+    let volume = open_volume(letter)?;
+    let mut buf = [0u8; 128];
+    let mut returned: u32 = 0;
+    let ok = unsafe {
+        DeviceIoControl(
+            volume.0,
+            IOCTL_DISK_PERFORMANCE,
+            std::ptr::null(),
+            0,
+            buf.as_mut_ptr() as *mut _,
+            buf.len() as u32,
+            &mut returned,
+            std::ptr::null_mut(),
+        )
+    };
+    if ok == 0 || returned < 16 {
+        return None;
+    }
+    let read = i64::from_ne_bytes(buf[0..8].try_into().ok()?);
+    let written = i64::from_ne_bytes(buf[8..16].try_into().ok()?);
+    Some((read, written))
+}
+
+/// Sums hardware counters across mounts using IOCTL_DISK_PERFORMANCE.
+pub fn sum_perf_counters(mounts: &[&str]) -> Option<(i64, i64)> {
+    let mut read: i64 = 0;
+    let mut written: i64 = 0;
+    let mut any = false;
+    for mount in mounts {
+        if let Some((r, w)) = perf_counters_for_mount(mount) {
+            read = read.saturating_add(r);
+            written = written.saturating_add(w);
+            any = true;
+        }
+    }
+    any.then_some((read, written))
+}
+
+#[cfg(test)]
+#[path = "physical_disk_tests.rs"]
+mod tests;

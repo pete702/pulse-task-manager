@@ -33,6 +33,17 @@ pub fn render_central_panel(
     telemetry_paused: &mut bool,
 ) {
     ui.add_space(16.0);
+    // Background ingestion: one point per genuine process scan, even on other tabs.
+    if let Some(ref snap) = snapshot {
+        let raw: &[crate::modules::cpu::model::RawProcessCpuRow] =
+            snap.cpu.as_ref().map(|c| c.raw_processes.as_ref()).unwrap_or(&[]);
+        crate::modules::storage::view::ingest_storage_snapshot(
+            &snap.storage,
+            raw,
+            *telemetry_paused,
+        );
+        crate::modules::network::view::ingest_network_snapshot(&snap.network, *telemetry_paused);
+    }
     match *active_tab {
         ActiveTab::Processes => {
             if let Some(ref snap) = snapshot {
@@ -88,8 +99,22 @@ pub fn render_central_panel(
                 render_awaiting(ui);
             }
         }
-        ActiveTab::Storage => chrome::render_placeholder_tab(ui, Key::TabStorage.t(), "v0.3.0"),
-        ActiveTab::Network => chrome::render_placeholder_tab(ui, Key::TabNetwork.t(), "v0.4.0"),
+        ActiveTab::Storage => {
+            if let Some(ref snap) = snapshot {
+                let raw: &[crate::modules::cpu::model::RawProcessCpuRow] =
+                    snap.cpu.as_ref().map(|c| c.raw_processes.as_ref()).unwrap_or(&[]);
+                crate::modules::storage::view::render_storage_tab(ui, &snap.storage, raw);
+            } else {
+                render_awaiting(ui);
+            }
+        }
+        ActiveTab::Network => {
+            if let Some(ref snap) = snapshot {
+                crate::modules::network::view::render_network_tab(ui, &snap.network);
+            } else {
+                render_awaiting(ui);
+            }
+        }
         ActiveTab::System => chrome::render_placeholder_tab(ui, Key::TabSystem.t(), "v0.5.0"),
     }
 }

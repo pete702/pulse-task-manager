@@ -13,8 +13,8 @@ fn test_key_translation_en() {
     // Sidebar tabs
     assert_eq!(Key::TabMemory.t(), "[01] Memory (RAM)");
     assert_eq!(Key::TabCpu.t(), "[02] Processor (CPU)");
-    assert_eq!(Key::TabStorage.t(), "[03] Storage (Disks)");
-    assert_eq!(Key::TabNetwork.t(), "[04] Network & Ping");
+    assert_eq!(Key::TabStorage.t(), "[03] Storage");
+    assert_eq!(Key::TabNetwork.t(), "[04] Network");
     assert_eq!(Key::TabSystem.t(), "[05] System & GPU");
 
     // Central panel

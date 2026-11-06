@@ -1,49 +1,38 @@
-//! Rich Telemetry Sidebar for PULSE — Obsidian HUD Navigation Cards.
+//! Rich Telemetry Sidebar for PULSE - Obsidian HUD Navigation Cards.
+
+use std::sync::Arc;
 
 use crate::core::SystemSnapshot;
 use crate::theme::colors;
+use crate::ui::sidebar_badges::{
+    cached_count, cached_cpu_pct, cached_network_badge, cached_pct, cached_storage_badge,
+};
 use eframe::egui;
-use std::sync::{Arc, Mutex, OnceLock};
 
-fn cached_pct(pct: f32) -> Arc<str> {
-    let key = (pct * 10.0).round() as u16;
-    static RAM_CACHE: OnceLock<Mutex<(u16, Arc<str>)>> = OnceLock::new();
-    let mut cache = RAM_CACHE
-        .get_or_init(|| Mutex::new((0, Arc::from(""))))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if cache.0 != key {
-        cache.0 = key;
-        cache.1 = Arc::from(format!("{}%", (pct.round() as u32)));
+/// Next tab in sidebar order (wraps).
+fn next_tab(tab: crate::app_tabs::ActiveTab) -> crate::app_tabs::ActiveTab {
+    use crate::app_tabs::ActiveTab as T;
+    match tab {
+        T::Processes => T::Memory,
+        T::Memory => T::Cpu,
+        T::Cpu => T::Storage,
+        T::Storage => T::Network,
+        T::Network => T::System,
+        T::System => T::Processes,
     }
-    Arc::clone(&cache.1)
 }
 
-fn cached_cpu_pct(pct: f32) -> Arc<str> {
-    let key = (pct * 10.0).round() as u16;
-    static CPU_CACHE: OnceLock<Mutex<(u16, Arc<str>)>> = OnceLock::new();
-    let mut cache = CPU_CACHE
-        .get_or_init(|| Mutex::new((0, Arc::from(""))))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if cache.0 != key {
-        cache.0 = key;
-        cache.1 = Arc::from(format!("{}%", (pct.round() as u32)));
+/// Previous tab in sidebar order (wraps).
+fn prev_tab(tab: crate::app_tabs::ActiveTab) -> crate::app_tabs::ActiveTab {
+    use crate::app_tabs::ActiveTab as T;
+    match tab {
+        T::Processes => T::System,
+        T::Memory => T::Processes,
+        T::Cpu => T::Memory,
+        T::Storage => T::Cpu,
+        T::Network => T::Storage,
+        T::System => T::Network,
     }
-    Arc::clone(&cache.1)
-}
-
-fn cached_count(count: u32) -> Arc<str> {
-    static COUNT_CACHE: OnceLock<Mutex<(u32, Arc<str>)>> = OnceLock::new();
-    let mut cache = COUNT_CACHE
-        .get_or_init(|| Mutex::new((0, Arc::from(""))))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if cache.0 != count {
-        cache.0 = count;
-        cache.1 = Arc::from(count.to_string());
-    }
-    Arc::clone(&cache.1)
 }
 
 /// Renders the left sidebar with rich navigation mini-cards.
@@ -74,7 +63,7 @@ pub fn render_sidebar(
                     egui::Color32::from_rgb(0x12, 0x14, 0x1C),
                     colors::BORDER,
                     egui::Color32::TRANSPARENT,
-                    egui::Color32::from_rgb(0x94, 0xA3, 0xB8), // #94A3B8 - readable inactive
+                    colors::TEXT_SECONDARY,
                 )
             };
 
@@ -86,6 +75,7 @@ pub fn render_sidebar(
                 egui::vec2(available_width, card_height),
                 egui::Sense::click(),
             );
+            let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
 
             // Draw card background & border
             ui.painter().rect_filled(rect, egui::Rounding::same(6.0), bg_color);
@@ -177,10 +167,44 @@ pub fn render_sidebar(
                 }
             }
 
+            // Paint live storage badge on Storage tab at RIGHT_CENTER
+            if tab == crate::app_tabs::ActiveTab::Storage {
+                if let Some(ref snapshot) = latest_snapshot {
+                    let total = snapshot.storage.read_mb_s + snapshot.storage.write_mb_s;
+                    let badge = cached_storage_badge(total, snapshot.storage.volumes.len());
+                    let badge_color =
+                        if total >= 0.1 { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
+                    let pos = egui::pos2(rect.right() - 12.0, rect.center().y);
+                    ui.painter().text(
+                        pos,
+                        egui::Align2::RIGHT_CENTER,
+                        badge,
+                        egui::FontId::monospace(14.0),
+                        badge_color,
+                    );
+                }
+            }
+
+            // Paint live network badge on Network tab at RIGHT_CENTER
+            if tab == crate::app_tabs::ActiveTab::Network {
+                if let Some(ref snapshot) = latest_snapshot {
+                    let total = snapshot.network.rx_mbps + snapshot.network.tx_mbps;
+                    let badge = cached_network_badge(total, snapshot.network.ping_ms);
+                    let badge_color =
+                        if total >= 0.1 { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
+                    let pos = egui::pos2(rect.right() - 12.0, rect.center().y);
+                    ui.painter().text(
+                        pos,
+                        egui::Align2::RIGHT_CENTER,
+                        badge,
+                        egui::FontId::monospace(14.0),
+                        badge_color,
+                    );
+                }
+            }
+
             // Roadmap badges for planned Stage B modules.
             let roadmap = match tab {
-                crate::app_tabs::ActiveTab::Storage => Some("v0.3"),
-                crate::app_tabs::ActiveTab::Network => Some("v0.4"),
                 crate::app_tabs::ActiveTab::System => Some("v0.5"),
                 _ => None,
             };
@@ -197,6 +221,22 @@ pub fn render_sidebar(
 
             if response.clicked() {
                 *active_tab = tab;
+            }
+            if response.has_focus() {
+                let (up, down, confirm) = ui.input(|i| {
+                    (
+                        i.key_pressed(egui::Key::ArrowUp),
+                        i.key_pressed(egui::Key::ArrowDown),
+                        i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space),
+                    )
+                });
+                if confirm {
+                    *active_tab = tab;
+                } else if down {
+                    *active_tab = next_tab(tab);
+                } else if up {
+                    *active_tab = prev_tab(tab);
+                }
             }
 
             ui.add_space(6.0);
