@@ -35,6 +35,7 @@ pub fn render_cpu_table(
     state: &mut CpuTableState,
     scan_generation: u64,
 ) {
+    state.poll_menu_action();
     state.rebuild_if_needed(scan_generation, cpu_snapshot.processes_raw());
     let rows = state.cached_rows().unwrap_or_default();
     let total_processes = cpu_snapshot.process_count;
@@ -148,7 +149,7 @@ fn render_toolbar(
                     heavy.iter().map(|item| (item.pid, item.start_time)).collect();
                 let _ = targets;
                 let owned: Vec<ProcessCpuItem> = heavy;
-                state.last_action_msg = "Purging RAM...".to_owned();
+                state.last_action_msg = Some(("Purging RAM...".to_owned(), Instant::now()));
                 std::thread::spawn(move || {
                     let _guard = PurgeGuard;
                     for item in &owned {
@@ -183,7 +184,7 @@ fn render_toolbar(
                     Ok(()) => "Working set trimmed".to_owned(),
                     Err(error) => format!("Trim blocked: {error}"),
                 };
-                state.last_action_msg = msg;
+                state.last_action_msg = Some((msg, Instant::now()));
                 crate::core::request_process_scan();
             }
             if action_button(ui, can_act, "[ EcoQoS ]", OPTIMAL_EMERALD).clicked() {
@@ -195,20 +196,20 @@ fn render_toolbar(
                     crate::modules::cpu::collector::set_eco_cached(item.pid, item.start_time, true);
                     crate::core::request_process_scan();
                 }
-                state.last_action_msg = msg;
+                state.last_action_msg = Some((msg, Instant::now()));
             }
             if action_button(ui, can_act, "[ Open Location ]", colors::TEXT_PRIMARY).clicked() {
                 let msg = match open_process_file_location(item.pid) {
                     Ok(()) => "Opened file location".to_owned(),
                     Err(error) => format!("Open blocked: {error}"),
                 };
-                state.last_action_msg = msg;
+                state.last_action_msg = Some((msg, Instant::now()));
             }
             if let Some((armed_pid, _)) = state.confirm_kill {
                 if armed_pid == item.pid {
                     if action_button(ui, true, "[ Cancel ]", colors::TEXT_SECONDARY).clicked() {
                         state.confirm_kill = None;
-                        state.last_action_msg = "Kill cancelled".to_owned();
+                        state.last_action_msg = Some(("Kill cancelled".to_owned(), Instant::now()));
                     }
                     if action_button(ui, true, "[ Confirm Kill (3s) ]", colors::ACCENT_RED)
                         .clicked()
@@ -221,7 +222,7 @@ fn render_toolbar(
                             Ok(()) => "Task ended".to_owned(),
                             Err(error) => format!("End blocked: {error}"),
                         };
-                        state.last_action_msg = msg;
+                        state.last_action_msg = Some((msg, Instant::now()));
                         crate::core::request_process_scan();
                     }
                 } else {
@@ -231,13 +232,13 @@ fn render_toolbar(
                 state.confirm_kill = Some((item.pid, Instant::now()));
                 let msg =
                     format!("Click Confirm Kill within 3s to end {} (PID {})", item.name, item.pid);
-                state.last_action_msg = msg;
+                state.last_action_msg = Some((msg, Instant::now()));
             }
         }
 
         // Reserved single-line status slot: always present, no height shift.
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let msg = state.last_action_msg.as_str();
+            let msg = state.last_action_msg.as_ref().map(|(s, _)| s.as_str()).unwrap_or("");
             let failed = msg.contains("blocked");
             let color = if msg.is_empty() {
                 colors::TEXT_SECONDARY

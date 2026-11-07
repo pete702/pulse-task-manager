@@ -9,13 +9,15 @@ use sysinfo::{ProcessRefreshKind, System};
 
 pub use crate::modules::cpu::collector_cpu::{collect_cpu, warmup_cpu};
 use crate::modules::cpu::model::RawProcessCpuRow;
-use crate::modules::cpu::qos_action::is_process_eco_qos;
+use crate::modules::cpu::qos_action::probe_eco_qos_budgeted;
+
+#[allow(unused_imports)]
+pub use crate::modules::cpu::qos_action::{
+    invalidate_eco_cached, mark_pending_eco, set_eco_cached, set_eco_watch,
+};
 
 /// Memo: last process scan time for disk I/O rate divisor.
 static LAST_SCAN: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
-/// Pending EcoQoS overrides from UI actions to worker cache.
-#[allow(clippy::type_complexity)]
-static PENDING_ECO: OnceLock<Mutex<HashMap<(u32, u64), Option<bool>>>> = OnceLock::new();
 
 /// Stateful collector holding `seen_pids` for first-sample disk guard.
 #[allow(dead_code)]
@@ -120,11 +122,12 @@ impl CpuCollector {
     }
 
     fn fill_eco_qos(&mut self, rows: &mut [RawProcessCpuRow]) {
-        let mut budget = 12;
-        let pending: HashMap<(u32, u64), Option<bool>> = PENDING_ECO
-            .get()
-            .map(|slot| std::mem::take(&mut *slot.lock().unwrap_or_else(|e| e.into_inner())))
-            .unwrap_or_default();
+        let mut budget: u8 = 12;
+        let pending: HashMap<(u32, u64), Option<bool>> =
+            crate::modules::cpu::qos_action::PENDING_ECO
+                .get()
+                .map(|slot| std::mem::take(&mut *slot.lock().unwrap_or_else(|e| e.into_inner())))
+                .unwrap_or_default();
         for row in rows.iter_mut() {
             if row.pid == 0 || row.pid == 4 {
                 row.eco_qos = Some(false);
@@ -142,11 +145,9 @@ impl CpuCollector {
                 .is_some_and(|(_, at)| at.elapsed() < Duration::from_secs(30));
             if fresh {
                 row.eco_qos = self.eco_cache.get(&key).map(|(v, _)| *v).unwrap_or(None);
-            } else if budget > 0 {
-                let v = is_process_eco_qos(row.pid);
+            } else if let Some(v) = probe_eco_qos_budgeted(row.pid, &mut budget) {
                 self.eco_cache.insert(key, (v, Instant::now()));
                 row.eco_qos = v;
-                budget -= 1;
             } else {
                 row.eco_qos = None;
             }
@@ -161,28 +162,6 @@ impl Default for CpuCollector {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Primes worker EcoQoS cache after UI enable so filter updates next tick.
-#[allow(dead_code)]
-pub fn set_eco_cached(pid: u32, start_time: u64, on: bool) {
-    let slot = PENDING_ECO.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
-    if guard.len() > 512 {
-        guard.clear();
-    }
-    guard.insert((pid, start_time), Some(on));
-}
-
-/// Drops pending EcoQoS prime so next scan re-queries Win32.
-#[allow(dead_code)]
-pub fn invalidate_eco_cached(pid: u32, start_time: u64) {
-    let slot = PENDING_ECO.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
-    if guard.len() > 512 {
-        guard.clear();
-    }
-    guard.insert((pid, start_time), None);
 }
 
 /// First-sample guard: only zero when `is_first_seen` is true.

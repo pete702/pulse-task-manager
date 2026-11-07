@@ -3,6 +3,7 @@ use super::table_name_cell::render_name_cell;
 use super::table_sort::{sort_header, toggle_sort};
 use super::table_state::MemoryTableState;
 use super::table_widgets::header_labels;
+use crate::modules::memory::action_bar::MemoryActionBarState;
 use crate::modules::memory::constants::HEAT_BAR_FULL_SCALE_PCT;
 use crate::modules::memory::process_item::ProcessMemoryItem;
 use crate::modules::memory::process_model::MemorySortCol;
@@ -15,11 +16,13 @@ use egui_extras::{Column, TableBuilder};
 const HOG_TEXT_COLOR: egui::Color32 = egui::Color32::from_rgb(241, 245, 249); // ice-white for top consumers
 const NORMAL_TEXT_COLOR: egui::Color32 = egui::Color32::from_rgb(203, 213, 225); // bright slate for normal rows
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn render_table(
     ui: &mut egui::Ui,
     rows: &[ProcessMemoryItem],
     state: &mut MemoryTableState,
     height: f32,
+    action_state: &mut MemoryActionBarState,
 ) {
     let labels = header_labels();
     let avail_h = ui.available_height();
@@ -134,10 +137,10 @@ pub(super) fn render_table(
                     state.toggle_selection(item);
                 }
                 if row.response().double_clicked() {
-                    handle_double_click(item);
+                    handle_double_click(item, action_state);
                 }
                 row.response().context_menu(|ui| {
-                    render_context_menu(ui, item, state);
+                    render_context_menu(ui, item, state, action_state);
                 });
             });
         });

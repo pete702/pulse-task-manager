@@ -28,6 +28,8 @@ impl PulseApp {
 
     pub(crate) fn collect_persisted(&self) -> persist::PersistedState {
         let win = self.last_viewport_size.unwrap_or(egui::Vec2::new(1180.0, 760.0));
+        let wx = if win.x.is_finite() { win.x } else { 1180.0 };
+        let wy = if win.y.is_finite() { win.y } else { 760.0 };
         persist::PersistedState {
             active_tab: persist::active_tab_index(self.active_tab),
             group_clones: self.cpu_table_state.group_clones,
@@ -42,8 +44,8 @@ impl PulseApp {
             network_chart_mode: crate::modules::network::view::chart_mode_value(),
             network_probe_enabled: crate::modules::network::latency_probe::probe_enabled(),
             process_quick_filter: self.cpu_table_state.quick_filter.to_u8(),
-            win_w: (win.x.clamp(860.0, 3840.0) * 10.0).round() / 10.0,
-            win_h: (win.y.clamp(560.0, 2160.0) * 10.0).round() / 10.0,
+            win_w: (wx.clamp(860.0, 3840.0) * 10.0).round() / 10.0,
+            win_h: (wy.clamp(560.0, 2160.0) * 10.0).round() / 10.0,
         }
     }
 
@@ -56,22 +58,26 @@ impl PulseApp {
             if cur != self.last_saved {
                 let _ = persist::save_state(&cur);
                 self.last_saved = cur;
+                self.dirty_since = None;
+                self.dirty_state_snapshot = None;
             }
             return;
         }
         if cur == self.last_saved {
             return;
         }
-        // 500ms debounce: only write after state is stable.
-        let due = self.dirty_since.is_none_or(|t| t.elapsed() >= Duration::from_millis(500));
+        // True debounce: any change to cur restarts the 500ms window.
+        if self.dirty_state_snapshot.as_ref() != Some(&cur) {
+            self.dirty_state_snapshot = Some(cur.clone());
+            self.dirty_since = Some(Instant::now());
+            return;
+        }
+        let due = self.dirty_since.is_some_and(|t| t.elapsed() >= Duration::from_millis(500));
         if due {
-            if self.dirty_since.is_some() {
-                let _ = persist::save_state(&cur);
-                self.last_saved = cur;
-                self.dirty_since = None;
-            } else {
-                self.dirty_since = Some(Instant::now());
-            }
+            let _ = persist::save_state(&cur);
+            self.last_saved = cur;
+            self.dirty_since = None;
+            self.dirty_state_snapshot = None;
         }
     }
 }

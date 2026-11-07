@@ -20,7 +20,8 @@ pub struct SelectedGroupSummary {
     pub targets: Vec<ProcessTarget>,
     pub pids: Vec<u32>,
     pub blocked: bool,
-    pub path: Option<String>,
+    pub first_exe_path: Option<String>,
+    pub first_pid: Option<u32>,
 }
 
 fn creation_matches(stored: Option<u64>, current: Option<u64>) -> bool {
@@ -113,7 +114,8 @@ impl MemoryTableState {
             targets: view.targets,
             pids: view.pids,
             blocked: view.blocked,
-            path: view.path,
+            first_exe_path: view.first_exe_path,
+            first_pid: view.first_pid,
         });
         self.cached_selection =
             Some((scan_id, group, self.selected_pid, self.group_clones, Arc::clone(&summary)));

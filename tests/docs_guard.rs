@@ -130,6 +130,17 @@ fn all_text_files_no_nul_or_cyrillic() {
 }
 
 #[test]
+fn all_markdown_docs_are_strict_ascii() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for rel in DOC_FILES {
+        let path = root.join(rel);
+        let bytes =
+            fs::read(&path).unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
+        assert!(bytes.iter().all(|b| b.is_ascii()), "{} contains non-ASCII byte(s)", rel);
+    }
+}
+
+#[test]
 fn all_rs_files_under_src_and_tests_respect_line_limit() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();

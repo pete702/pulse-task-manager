@@ -3,9 +3,6 @@
 use crate::core::worker_io::Wakeup;
 use crate::core::worker_loop::spawn_worker;
 
-#[cfg(test)]
-use crate::core::worker_io::{publish as io_publish, PublishResult as io_PublishResult};
-
 /// Handle to the running background telemetry worker.
 pub struct TelemetryWorker {
     rx: Option<std::sync::mpsc::Receiver<std::sync::Arc<crate::core::SystemSnapshot>>>,
@@ -35,10 +32,7 @@ impl TelemetryWorker {
             thread_handle: Some(thread_handle),
             shutdown,
         };
-        let rx = match worker.rx.take() {
-            Some(rx) => rx,
-            None => std::sync::mpsc::channel().1,
-        };
+        let rx = worker.rx.take().expect("worker rx initialized");
         (worker, rx)
     }
 
@@ -60,6 +54,11 @@ impl TelemetryWorker {
         if let Some(h) = &self.thread_handle {
             h.thread().unpark();
         }
+    }
+
+    /// Drains all queued overflow snapshots in chronological FIFO order.
+    pub fn drain_overflow_snapshots(&self) -> Vec<std::sync::Arc<crate::core::SystemSnapshot>> {
+        self.latest.drain_all()
     }
 }
 

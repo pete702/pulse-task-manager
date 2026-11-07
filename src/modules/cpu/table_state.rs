@@ -67,7 +67,8 @@ pub enum CpuSortCol {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CpuTableCacheKey(u64, String, CpuSortCol, bool, bool, u8);
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+#[allow(clippy::type_complexity)]
 pub struct CpuTableState {
     pub comfort_density: bool,
     pub search_query: String,
@@ -79,7 +80,9 @@ pub struct CpuTableState {
     pub selected_pid: Option<u32>,
     pub selected_name: Option<String>,
     pub paused: bool,
-    pub last_action_msg: String,
+    pub last_action_msg: Option<(String, Instant)>,
+    pub action_rx: Option<std::sync::mpsc::Receiver<(String, Option<(u32, u64, bool)>)>>,
+    pub eco_overrides: HashMap<(u32, u64), bool>,
     pub confirm_kill: Option<(u32, Instant)>,
     dirty: bool,
     cached_rows: Option<Arc<[ProcessCpuItem]>>,
@@ -101,7 +104,9 @@ impl Default for CpuTableState {
             selected_pid: None,
             selected_name: None,
             paused: false,
-            last_action_msg: String::new(),
+            last_action_msg: None,
+            action_rx: None,
+            eco_overrides: HashMap::new(),
             confirm_kill: None,
             dirty: false,
             cached_rows: None,
@@ -234,23 +239,38 @@ impl CpuTableState {
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
     }
-
-    fn compute_ram_deltas(&mut self, rows: &[RawProcessCpuRow]) -> HashMap<(u32, u64), i64> {
-        let now = Instant::now();
-        let mut deltas = HashMap::with_capacity(rows.len());
-        for row in rows {
-            let delta = self.ram_baseline.get(&(row.pid, row.start_time)).map_or(0, |prev| {
-                let dt = now.saturating_duration_since(prev.1).as_secs_f32().max(0.25);
-                let diff = row.ram_bytes as i64 - prev.0 as i64;
-                (diff as f32 * (10.0 / dt)).round() as i64
-            });
-            deltas.insert((row.pid, row.start_time), delta);
+    pub fn spawn_menu_action(
+        &mut self,
+        job: impl FnOnce() -> (String, Option<(u32, u64, bool)>) + Send + 'static,
+    ) {
+        if self.action_rx.is_some() {
+            return;
         }
-        self.ram_baseline =
-            rows.iter().map(|row| ((row.pid, row.start_time), (row.ram_bytes, now))).collect();
-        deltas
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.action_rx = Some(rx);
+        std::thread::spawn(move || {
+            let _ = tx.send(job());
+        });
+    }
+    pub fn poll_menu_action(&mut self) {
+        if let Some(rx) = self.action_rx.take() {
+            if let Ok((msg, eco)) = rx.try_recv() {
+                self.last_action_msg = Some((msg, Instant::now()));
+                if let Some((pid, st, on)) = eco {
+                    self.eco_overrides.insert((pid, st), on);
+                    crate::modules::cpu::collector::mark_pending_eco(pid, st, on);
+                }
+                crate::core::request_process_scan();
+                self.dirty = true;
+            } else {
+                self.action_rx = Some(rx);
+            }
+        }
     }
 }
+
+#[path = "table_state_deltas.rs"]
+mod table_state_deltas;
 
 #[cfg(test)]
 #[path = "table_state_tests.rs"]

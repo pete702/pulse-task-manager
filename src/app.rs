@@ -41,6 +41,7 @@ pub struct PulseApp {
     pub(crate) last_viewport_size: Option<egui::Vec2>,
     pub(crate) last_saved: persist::PersistedState,
     pub(crate) dirty_since: Option<Instant>,
+    pub(crate) dirty_state_snapshot: Option<persist::PersistedState>,
     pub(crate) pointer_down: bool,
     pub(crate) last_trim: Instant,
 }
@@ -49,6 +50,14 @@ impl PulseApp {
     fn with_worker(
         worker: crate::core::TelemetryWorker,
         snapshot_rx: mpsc::Receiver<Arc<SystemSnapshot>>,
+    ) -> Self {
+        Self::with_worker_and_state(worker, snapshot_rx, persist::load_state())
+    }
+
+    pub fn with_worker_and_state(
+        worker: crate::core::TelemetryWorker,
+        snapshot_rx: mpsc::Receiver<Arc<SystemSnapshot>>,
+        saved: persist::PersistedState,
     ) -> Self {
         let latest_slot = worker.latest.clone();
         let mut app = Self {
@@ -75,10 +84,10 @@ impl PulseApp {
             last_viewport_size: None,
             last_saved: persist::PersistedState::default(),
             dirty_since: None,
+            dirty_state_snapshot: None,
             pointer_down: false,
             last_trim: Instant::now(),
         };
-        let saved = persist::load_state();
         app.apply_persisted(&saved);
         app
     }
@@ -92,11 +101,16 @@ impl Default for PulseApp {
 }
 
 impl PulseApp {
+    #[allow(dead_code)]
     pub fn new(ctx: &egui::Context) -> Self {
+        Self::new_with_saved(ctx, persist::load_state())
+    }
+
+    pub fn new_with_saved(ctx: &egui::Context, saved: persist::PersistedState) -> Self {
         let ui_ctx = ctx.clone();
         let wakeup: Wakeup = Arc::new(move || ui_ctx.request_repaint());
         let (worker, snapshot_rx) = spawn_telemetry_worker_with_wakeup(wakeup);
-        let app = Self::with_worker(worker, snapshot_rx);
+        let app = Self::with_worker_and_state(worker, snapshot_rx, saved);
         crate::modules::memory::chart_view::set_window(ctx, app.memory_history.chart_window);
         crate::modules::cpu::chart_axis::set_window(ctx, app.cpu_history.chart_window);
         app
@@ -117,10 +131,11 @@ impl eframe::App for PulseApp {
         if minimize_edge || crate::app_trim::periodic_due(&self.last_trim) {
             crate::app_trim::run_trim(&mut self.last_trim);
         }
-        if self.startup_frames == 10 {
+        if self.startup_frames == 60 && self.latest_snapshot.is_some() {
             crate::app_trim::run_trim(&mut self.last_trim);
         }
         self.was_minimized = is_minimized;
+        self.poll_snapshots();
         if is_minimized {
             ctx.request_repaint_after(std::time::Duration::from_secs(30));
             return;
@@ -133,7 +148,6 @@ impl eframe::App for PulseApp {
             &mut self.cpu_table_state,
         ) {
             ctx.request_repaint();
-            ctx.request_repaint_after(std::time::Duration::from_millis(1000));
         }
         let processes_active = self.active_tab == crate::app_tabs::ActiveTab::Processes
             || self.active_tab == crate::app_tabs::ActiveTab::Storage
@@ -197,7 +211,12 @@ impl eframe::App for PulseApp {
         self.last_ui_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
         self.pointer_down = ctx.input(|i| i.pointer.any_down());
         self.save_state_if_needed(false);
-        ctx.request_repaint_after(std::time::Duration::from_millis(2000));
+        let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
+        ctx.request_repaint_after(std::time::Duration::from_millis(if focused {
+            2000
+        } else {
+            5000
+        }));
     }
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.save_state_if_needed(true);

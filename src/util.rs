@@ -3,6 +3,26 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
+/// Returns `v` if finite, otherwise `fallback`.
+#[allow(dead_code)]
+pub fn sanitize_f32(v: f32, fallback: f32) -> f32 {
+    if v.is_finite() {
+        v
+    } else {
+        fallback
+    }
+}
+
+/// Returns `v` if finite, otherwise `fallback`.
+#[allow(dead_code)]
+pub fn sanitize_f64(v: f64, fallback: f64) -> f64 {
+    if v.is_finite() {
+        v
+    } else {
+        fallback
+    }
+}
+
 /// Interns process names so repeated names share one allocation.
 pub fn intern_name(raw: &str) -> Arc<str> {
     static INTERN_POOL: OnceLock<Mutex<HashMap<String, Arc<str>>>> = OnceLock::new();

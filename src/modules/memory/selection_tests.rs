@@ -49,7 +49,7 @@ mod tests {
         assert_eq!(view.name, "chrome.exe");
         assert_eq!(view.pids, vec![10, 11, 12]);
         assert_eq!(view.targets.len(), 3);
-        assert_eq!(view.path.as_deref(), Some(r"C:\chrome.exe"));
+        assert_eq!(view.first_exe_path.as_deref(), Some(r"C:\chrome.exe"));
         assert!(!view.blocked);
         assert!(view.can_modify());
     }

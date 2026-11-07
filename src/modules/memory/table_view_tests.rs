@@ -40,21 +40,41 @@ mod tests {
     fn t_render() {
         let s = sp(sh(vec![r(100, "c", 1, 2, 0), r(200, "g", 3, 4, 0)]));
         let mut st = MemoryTableState::default();
+        let mut action_state = crate::modules::memory::action_bar::MemoryActionBarState::default();
         egui::__run_test_ui(|ui| {
-            crate::modules::memory::table_view::render_memory_table(ui, &s, &mut st, 0)
+            crate::modules::memory::table_view::render_memory_table(
+                ui,
+                &s,
+                &mut st,
+                0,
+                &mut action_state,
+            )
         });
     }
     #[test]
     fn t_sort() {
         let s = sp(sh(vec![r(100, "c", 1, 2, 0), r(200, "g", 3, 4, 0)]));
         let mut st = MemoryTableState::default();
+        let mut action_state = crate::modules::memory::action_bar::MemoryActionBarState::default();
         egui::__run_test_ui(|ui| {
-            crate::modules::memory::table_view::render_memory_table(ui, &s, &mut st, 0)
+            crate::modules::memory::table_view::render_memory_table(
+                ui,
+                &s,
+                &mut st,
+                0,
+                &mut action_state,
+            )
         });
         assert!(st.has_cached_rows());
         st.sort_col = crate::modules::memory::process_model::MemorySortCol::Name;
         egui::__run_test_ui(|ui| {
-            crate::modules::memory::table_view::render_memory_table(ui, &s, &mut st, 0)
+            crate::modules::memory::table_view::render_memory_table(
+                ui,
+                &s,
+                &mut st,
+                0,
+                &mut action_state,
+            )
         });
         assert!(st.has_cached_rows());
     }

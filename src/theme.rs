@@ -57,6 +57,9 @@ pub const TEXT_MUTED: egui::Color32 = colors::TEXT_SECONDARY;
 #[allow(dead_code)]
 #[inline]
 pub fn load_color(percent: f32) -> egui::Color32 {
+    if !percent.is_finite() {
+        return colors::TEXT_SECONDARY;
+    }
     if percent < 60.0 {
         colors::ACCENT_CYAN
     } else if percent < 85.0 {

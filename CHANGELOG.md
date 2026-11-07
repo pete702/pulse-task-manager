@@ -2,6 +2,42 @@
 
 All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
 
+## [0.4.29] - 2026-03-31
+
+- **Safe Font Fallback**: `setup_fonts` starts from `FontDefinitions::default`, inserts Segoe UI and Consolas only when read cleanly and <= 16 MB, removed broken `default` pushes.
+- **Hotkeys & Focus**: F5 triggers scan, `Ctrl+F` gated by `!wants_input`, Esc surrenders focus when search is empty, hotkey doc updated.
+- **Startup & Repaint**: trim delayed to frame 60 with snapshot ready, redundant repaint removed, focus-aware 2000/5000 ms heartbeat, `collect_persisted` sanitizes non-finite win size.
+- **CLI & NaN Guards**: console attach only for `--version`/`-V`/`--help`/`-h`/`--self-test`, panic log symlink check and 65536 cap, `sanitize_f32`/`sanitize_f64` helpers, `load_color` returns secondary on NaN.
+- **Version bump to 0.4.29**.
+
+## [0.4.28] - 2026-03-31
+
+- **FIFO Ring Buffer**: `LatestSlot` holds `VecDeque` capped at 960 samples, `store` pushes back, `take` pops newest, `drain_all` returns chronological order and resets overflows.
+- **Chronological Ingest**: `poll_snapshots` batches `snapshot_rx` plus `drain_overflow_snapshots`, sorts by `sample_elapsed_secs`, ingests every sample; called before the minimized early exit.
+- **1 Hz Minimized Telemetry**: `WORKER_INTERVAL_MINIMIZED` set to 1000 ms, process scans stay paused while minimized, CPU refresh runs every tick, no repaint while minimized.
+- **Version bump to 0.4.28**.
+
+## [0.4.27] - 2026-03-31
+
+- **CPU Async Menu**: Trim/EcoQoS/Open/Terminate spawn via `spawn_menu_action`, `poll_menu_action` sets message with timestamp, applies `eco_overrides` and `mark_pending_eco`, requests scan.
+- **Unified Safety & EcoQoS**: `is_system_process` delegates to `verify_pid_safety_gate`, `SetProcessInformation` result checked via `info_ok`, End Task adds access-denied suffix when zero terminated.
+- **Collector Budget**: `PENDING_ECO`/`ECO_WATCH`/`mark_pending_eco`/`set_eco_watch`/`probe_eco_qos_budgeted` moved to `qos_action.rs`, collector 239 and qos 238 lines.
+- **Version bump to 0.4.27**.
+
+## [0.4.26] - 2026-03-31
+
+- **UI-Thread Syscalls Removed**: `ProcessTarget::from_raw` and `resolve_selection` do zero Win32 calls; `first_exe_path`/`first_pid` resolve lazily on the background thread via `query_process_exe_path`.
+- **Context Menu Non-Blocking**: Open/Trim/Terminate route through `action_bar.spawn`, double-click spawns resolution, no per-frame `query_process_exe_path`.
+- **Actions & Win32 Cleanup**: `open_process_file_location` merges test guards and returns `Failed to launch Explorer` errors; `query_process_exe_path` uses `SafeHandle` + `query_process_image_path`.
+- **Version bump to 0.4.26**.
+
+## [0.4.25] - 2026-03-31
+
+- **Docs Modernization**: README and ARCHITECTURE rewritten for `[01]-[05]` (CPU, Memory, Storage, Network, System & GPU), strict ASCII-only, CPU/EcoQoS, Storage Freeze Hunter, and Ping/Jitter Radar marked Implemented [OK].
+- **Deep Audit P3 Cleanups**: `worker.rx` uses `expect`, direct `worker_io` imports, `with_worker_and_state` avoids double `load_state`, true debounce via `dirty_state_snapshot`, `pulse_ram_mb` error clarifies `K32GetProcessMemoryInfo`.
+- **ASCII Guard**: `docs_guard` verifies README, ARCHITECTURE, and CHANGELOG are strict ASCII (`is_ascii`).
+- **Version bump to 0.4.25**.
+
 ## [0.4.24] - 2026-03-31
 
 - **Viewport Guard**: `last_viewport_size` only updates when rect exists -- no more `ZERO` shrink to 860x560; `set_minimized` encapsulation on worker.
@@ -55,49 +91,14 @@ All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGEL
 - **Storage and Network Stabilization**: monotonic `push` guards, LTTB 300 to 920, removed single-sample stretch hack, stable `storage_io_plot` and `network_io_plot` IDs with forced `set_plot_bounds`.
 - **Version bump to 0.4.18**.
 
-## [0.4.17] - 2026-03-31
+<!-- rotated -->
 
-- **Strict 1 Hz Worker Cadence**: `set_worker_paused` unparks only on `true` to `false` transition; loop enforces 950 ms minimum between ticks so 960 samples span 16 minutes.
-- **Memory Full-Window Chart**: capacity 960, LTTB 920, monotonic `push` guard, always anchors `[-span, 0]`, stable `memory_load_plot` ID and forced `set_plot_bounds`.
-- **Memory Table Stability**: deterministic name/pid tie-break in all sorts and clones, `TrimGuard` plus `spawn` bool so `TRIM_RUNNING` never sticks, fixed 280x18 status slot, strict `creation_matches` PID-reuse check.
-- **Version bump to 0.4.17**.
 
-## [0.4.16] - 2026-03-31
 
-- **Full-Window CPU Chart**: history holds 960 samples, `build_windowed_series` always anchors to `[-span, 0]` even with 10s history, no stub clipping.
-- **Forced Plot Bounds**: `set_plot_bounds([-span, 0], [0, 100])` every frame; zoom/drag/scroll stay disabled.
-- **Single Clock**: `CpuHistory::push` drops duplicate timestamps; worker freezes `timestamp_s` on `< 450 ms` reuse so ingest never pushes stale samples.
-- **Version bump to 0.4.16**.
 
-## [0.4.15] - 2026-03-31
 
-- **Pause-Safe Clock & CPU Guard**: `paused_accum` excludes pause time from `timestamp_s`; CPU refresh gated to `>= 450 ms` to drop short unpark spikes.
-- **Chart Stability**: CPU LTTB trigger `900` to `920` (avoids 901 -> 900 shimmer); stable `cpu_load_plot` ID.
-- **Table Determinism**: CPU quantized to 0.1% tenths, ties by `to_ascii_lowercase` name then pid in all modes + clones; no `rows[0]` auto-select, `preserve_selection` clears to `None`.
-- **Table Layout**: constant `cpu_proc_table` ID, stable `4096.0 * 1024.0 * 1024.0` RAM reference, reserved `280x18` status slot.
-- **Version bump to 0.4.15**.
 
-## [0.4.14] - 2026-03-31
 
-- **Worker Pause & Adaptive Probe**: `WorkerConfig.paused` skips all `collect_*` and waits 1000 ms; probe sleeps 250 ms steps (8x fast, 40x slow) via `FAST_PROBE_MODE`.
-- **Peak WS & Win32 Input**: lazy query budget 8 to 64 per tick, `None` stays uncached for retry; `counters.cb` initialized before `K32GetProcessMemoryInfo`.
-- **Heap Path Buffers**: `[0u16; 32767]` and `[0u16; 1024]` replaced with `vec![0u16; 4096]` on worker threads.
-- **Purge RAII & Top-64**: `PurgeGuard` drops `PURGE_RUNNING` with `SeqCst`; only top 64 with `ram_bytes >= 10 MiB` sent to thread, `Purging RAM...` shown.
-- **Bounded Maps & Disk Lookup**: `per_adapter`/`per_disk` capped at 32 keys; `group_physical_disks` finds groups via `iter_mut().find`.
-- **Atomic Save**: serialized to `state.cfg.tmp` then `rename`, fallback to `write`.
-- **Version bump to 0.4.14**.
 
-## [0.4.11] - 2026-03-31
-
-- **Y-Axis Units**: all 4 ticks share `Gbps`/`GB/s` vs `Mbps`/`MB/s` via `is_giga`.
-- **Chart Cleanup**: `CEILINGS` removed, Storage uses `lttb_segments`, live `nice_ceiling` tested.
-- **Version bump to 0.4.11**.
-
-## [0.4.10] - 2026-03-31
-
-- **Disk Sum**: sums every volume per disk (`dt > 0.0`, `cur >= prev`); CPU uses totals plus `drive_letter` from `exe()`.
-- **Chart Gutter**: 1-2-5 ceiling (`nice_ceiling`, no cap) with `GB/s`/`Gbps`, raw <=300, 52px gutter.
-- **Show All**: keeps `None`, 4-column KPIs, no brackets, cards stacked, full width.
-- **Version bump to 0.4.10**.
 
 

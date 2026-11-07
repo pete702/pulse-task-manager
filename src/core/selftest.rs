@@ -47,7 +47,9 @@ pub fn run_headless_self_test() -> Result<(), String> {
         return Err("uptime_secs is 0".to_string());
     }
     if snap.pulse_ram_mb <= 0.0 {
-        return Err(format!("pulse_ram_mb is {:.1} (expected > 0)", snap.pulse_ram_mb));
+        return Err(
+            "pulse_ram_mb <= 0.0 (K32GetProcessMemoryInfo failed or returned zero)".to_string()
+        );
     }
     if let Some(ref mem) = snap.memory {
         println!(
@@ -139,7 +141,7 @@ pub fn run_headless_self_test() -> Result<(), String> {
 pub fn run_self_test(options: eframe::NativeOptions) -> eframe::Result<()> {
     let is_ci = env::var("CI").is_ok() || env::var("GITHUB_ACTIONS").is_ok();
     if is_ci {
-        println!("[SelfTest] CI environment detected — running headless self-test without OpenGL");
+        println!("[SelfTest] CI environment detected -- running headless self-test without OpenGL");
         let _ = run_headless_self_test().map_err(fail_selftest);
         return Ok(());
     }

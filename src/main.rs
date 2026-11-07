@@ -1,5 +1,5 @@
 #![allow(clippy::uninlined_format_args)]
-//! PULSE — Next-Gen System Telemetry for Windows
+//! PULSE -- Next-Gen System Telemetry for Windows
 //! Entry point: initializes eframe and runs the app.
 
 #![deny(unsafe_code)]
@@ -101,9 +101,15 @@ fn main() -> eframe::Result<()> {
     // Initialize panic hook
     std::panic::set_hook(Box::new(|info| {
         let bt = std::backtrace::Backtrace::force_capture();
-        let msg = format!("PANIC: {}\nBacktrace: {}", info, bt);
+        let mut msg = format!("PANIC: {}\nBacktrace: {}", info, bt);
+        if msg.len() > 65536 {
+            msg = msg.chars().take(65536).collect::<String>();
+        }
         eprintln!("{}", msg);
         let path = std::env::temp_dir().join("pulse_panic.log");
+        if std::fs::symlink_metadata(&path).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+            return;
+        }
         let _ = std::fs::write(path, msg);
     }));
 
@@ -111,12 +117,11 @@ fn main() -> eframe::Result<()> {
     let args: Vec<String> =
         std::env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned()).collect();
     let args_skip = args.as_slice();
-    let has_cli = !args_skip.is_empty()
-        && (args_skip.iter().any(|a| a.starts_with("--"))
-            || args_skip.iter().any(|a| a.starts_with('-'))
-            || args_skip.iter().any(|a| a.starts_with('/')));
-    // Attach to parent console so release (windows_subsystem) prints CLI output.
-    if has_cli {
+    let has_cli_exit_flag = args_skip
+        .iter()
+        .any(|a| matches!(a.as_str(), "--version" | "-V" | "--help" | "-h" | "/?" | "--self-test"));
+    // Attach to parent console only for CLI exit/diagnostic flags so GUI never keeps it.
+    if has_cli_exit_flag {
         #[allow(unsafe_code)]
         #[cfg(target_os = "windows")]
         {
@@ -173,13 +178,15 @@ fn main() -> eframe::Result<()> {
     if self_test {
         core::selftest::run_self_test(options)
     } else {
+        let saved_for_app = saved.clone();
         eframe::run_native(
             "PULSE",
             options,
-            Box::new(|cc| {
+            Box::new(move |cc| {
                 theme::setup_fonts(&cc.egui_ctx);
                 theme::apply_obsidian_theme(&cc.egui_ctx);
-                Box::new(app::PulseApp::new(&cc.egui_ctx)) as Box<dyn eframe::App>
+                Box::new(app::PulseApp::new_with_saved(&cc.egui_ctx, saved_for_app))
+                    as Box<dyn eframe::App>
             }),
         )
     }

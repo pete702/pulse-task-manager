@@ -1,5 +1,7 @@
 //! Process row context menu and sort button for PULSE CPU table.
 //! Split from table_body.rs for line-limit compliance.
+use std::time::Instant;
+
 use crate::modules::cpu::model::ProcessCpuItem;
 use crate::modules::cpu::qos_action::{
     enable_eco_qos, open_process_file_location, terminate_process, trim_process_working_set,
@@ -21,29 +23,42 @@ pub fn show_row_menu(ui: &mut egui::Ui, item: &ProcessCpuItem, state: &mut CpuTa
     );
     ui.separator();
     if ui.button("Trim Working Set (Free RAM)").clicked() {
-        state.last_action_msg = match trim_process_working_set(item) {
-            Ok(()) => "Working set trimmed".to_owned(),
-            Err(error) => format!("Trim blocked: {error}"),
-        };
-        crate::core::request_process_scan();
+        state.last_action_msg = Some(("Working...".to_owned(), Instant::now()));
+        let owned = item.clone();
+        state.spawn_menu_action(move || {
+            let msg = match trim_process_working_set(&owned) {
+                Ok(()) => "Working set trimmed".to_owned(),
+                Err(error) => format!("Trim blocked: {error}"),
+            };
+            (msg, None)
+        });
         ui.close_menu();
     }
     if ui.button("Enable EcoQoS (Efficiency Mode)").clicked() {
-        state.last_action_msg = match enable_eco_qos(item.pid, &item.name) {
-            Ok(()) => "EcoQoS enabled".to_owned(),
-            Err(error) => format!("EcoQoS blocked: {error}"),
-        };
-        if state.last_action_msg == "EcoQoS enabled" {
-            crate::modules::cpu::collector::set_eco_cached(item.pid, item.start_time, true);
-            crate::core::request_process_scan();
-        }
+        state.last_action_msg = Some(("Working...".to_owned(), Instant::now()));
+        let pid = item.pid;
+        let name = item.name.to_string();
+        let start = item.start_time;
+        state.spawn_menu_action(move || {
+            let msg = match enable_eco_qos(pid, &name) {
+                Ok(()) => "EcoQoS enabled".to_owned(),
+                Err(error) => format!("EcoQoS blocked: {error}"),
+            };
+            let eco = if msg == "EcoQoS enabled" { Some((pid, start, true)) } else { None };
+            (msg, eco)
+        });
         ui.close_menu();
     }
     if ui.button("Open File Location").clicked() {
-        state.last_action_msg = match open_process_file_location(item.pid) {
-            Ok(()) => "Opened file location".to_owned(),
-            Err(error) => format!("Open blocked: {error}"),
-        };
+        state.last_action_msg = Some(("Working...".to_owned(), Instant::now()));
+        let pid = item.pid;
+        state.spawn_menu_action(move || {
+            let msg = match open_process_file_location(pid) {
+                Ok(()) => "Opened file location".to_owned(),
+                Err(error) => format!("Open blocked: {error}"),
+            };
+            (msg, None)
+        });
         ui.close_menu();
     }
     ui.separator();
@@ -51,17 +66,18 @@ pub fn show_row_menu(ui: &mut egui::Ui, item: &ProcessCpuItem, state: &mut CpuTa
         .add(egui::Button::new(egui::RichText::new("Terminate Process").color(colors::ACCENT_RED)))
         .clicked()
     {
-        let result = terminate_process(item);
-        if result.is_ok() {
-            state.selected_pid = None;
-            state.selected_name = None;
-            state.confirm_kill = None;
-        }
-        state.last_action_msg = match result {
-            Ok(()) => "Task ended".to_owned(),
-            Err(error) => format!("End blocked: {error}"),
-        };
-        crate::core::request_process_scan();
+        state.last_action_msg = Some(("Working...".to_owned(), Instant::now()));
+        state.selected_pid = None;
+        state.selected_name = None;
+        state.confirm_kill = None;
+        let owned = item.clone();
+        state.spawn_menu_action(move || {
+            let msg = match terminate_process(&owned) {
+                Ok(()) => "Task ended".to_owned(),
+                Err(error) => format!("End blocked: {error}"),
+            };
+            (msg, None)
+        });
         ui.close_menu();
     }
     ui.separator();

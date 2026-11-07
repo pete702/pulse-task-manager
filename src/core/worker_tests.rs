@@ -2,7 +2,8 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::core::worker::{io_PublishResult, io_publish, spawn_telemetry_worker};
+    use crate::core::worker::spawn_telemetry_worker;
+    use crate::core::worker_io::{publish, PublishResult};
     use crate::core::worker_policy::should_scan_processes;
     use crate::core::{LatestSlot, SystemSnapshot};
     use std::sync::{mpsc, Arc};
@@ -49,10 +50,10 @@ mod tests {
         let wakeup: Arc<dyn Fn() + Send + Sync + 'static> = Arc::new(|| {});
 
         let first = Arc::new(SystemSnapshot::new(10, 1.0, Some(Default::default())));
-        assert!(matches!(io_publish(&tx, &slot, first, &wakeup, false), io_PublishResult::Sent));
+        assert!(matches!(publish(&tx, &slot, first, &wakeup, false), PublishResult::Sent));
 
         let newest = Arc::new(SystemSnapshot::new(20, 2.0, Some(Default::default())));
-        assert!(matches!(io_publish(&tx, &slot, newest, &wakeup, false), io_PublishResult::Full));
+        assert!(matches!(publish(&tx, &slot, newest, &wakeup, false), PublishResult::Full));
         assert_eq!(slot.overflow_count(), 1);
 
         let stored = slot.get().expect("slot always holds the newest");
@@ -63,6 +64,35 @@ mod tests {
         assert_eq!(queued.uptime_secs, 10);
         assert!(queued.memory.is_some());
         assert!(rx.try_recv().is_err(), "no extra dummy snapshot in the channel");
+    }
+    #[test]
+    fn test_latest_slot_drain_all_preserves_fifo_history() {
+        let (tx, rx) = mpsc::sync_channel(2);
+        let slot = LatestSlot::new();
+        for i in 1..=2u64 {
+            let s = SystemSnapshot::new(i, i as f32, Some(Default::default()));
+            tx.try_send(Arc::new(s)).expect("channel slot free");
+        }
+        for i in 3..=27u64 {
+            let mem = crate::modules::memory::model::MemorySnapshot {
+                sample_elapsed_secs: i as f64,
+                snapshot_id: i,
+                ..Default::default()
+            };
+            let s = SystemSnapshot::new(i, i as f32, Some(mem));
+            slot.store(Arc::new(s));
+        }
+        let mut all: Vec<Arc<SystemSnapshot>> = Vec::new();
+        while let Ok(s) = rx.try_recv() {
+            all.push(s);
+        }
+        all.extend(slot.drain_all());
+        assert_eq!(all.len(), 27, "rx plus drain yields every tick");
+        for (idx, snap) in all.iter().enumerate() {
+            assert_eq!(snap.uptime_secs, idx as u64 + 1, "strict chronological order");
+        }
+        assert_eq!(slot.overflow_count(), 0, "drain resets overflow count");
+        assert!(slot.drain_all().is_empty(), "second drain is empty");
     }
     #[test]
     fn test_process_scan_is_decoupled_from_ram_ticks() {

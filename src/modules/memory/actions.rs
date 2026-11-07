@@ -132,33 +132,21 @@ pub fn terminate_process_group(targets: &[ProcessTarget]) -> Result<usize, Strin
 /// Opens the containing folder of an executable in Explorer with the file selected.
 #[cfg(target_os = "windows")]
 pub fn open_process_file_location(exe_path: &Path) -> Result<(), String> {
-    use std::os::windows::process::CommandExt;
     let clean = exe_path.to_string_lossy().replace('"', "");
     let trimmed = clean.trim_end_matches('\\').trim().to_string();
     if trimmed.is_empty() || trimmed.contains('\0') {
         return Err("Invalid executable path (empty or contains NUL)".to_string());
     }
+    if !std::path::Path::new(&trimmed).exists() {
+        return Err("Executable path does not exist".to_string());
+    }
     #[cfg(test)]
     {
-        if !std::path::Path::new(&trimmed).exists() {
-            return Err("Executable path does not exist".to_string());
-        }
+        Ok(())
     }
     #[cfg(not(test))]
     {
-        let trimmed = trimmed.clone();
-        std::thread::spawn(move || {
-            let system_root = std::env::var_os("SystemRoot")
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Windows"));
-            let _ = std::process::Command::new(system_root.join("explorer.exe"))
-                .raw_arg(format!("/select,\"{}\"", trimmed))
-                .spawn();
-        });
-        Ok(())
-    }
-    #[cfg(test)]
-    {
+        use std::os::windows::process::CommandExt;
         let system_root = std::env::var_os("SystemRoot")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Windows"));
@@ -166,7 +154,7 @@ pub fn open_process_file_location(exe_path: &Path) -> Result<(), String> {
             .raw_arg(format!("/select,\"{}\"", trimmed))
             .spawn()
             .map(|_| ())
-            .map_err(|e| format!("Failed to launch Explorer: {}", e))
+            .map_err(|e| format!("Failed to launch Explorer: {e}"))
     }
 }
 

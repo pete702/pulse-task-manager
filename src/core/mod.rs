@@ -9,6 +9,7 @@ pub mod worker_io;
 pub mod worker_loop;
 pub mod worker_policy;
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 
@@ -88,10 +89,10 @@ impl SystemSnapshot {
 /// Channel type for snapshot transmission: `Sender` in background thread, `Receiver` in UI.
 pub type SnapshotTx = mpsc::SyncSender<Arc<SystemSnapshot>>;
 
-/// Newest-snapshot slot. Tracks how many unread values were overwritten.
+/// FIFO ring buffer for queued snapshots. Tracks how many unread values were overwritten.
 #[derive(Default)]
 pub struct LatestSlot {
-    inner: Arc<Mutex<Option<Arc<SystemSnapshot>>>>,
+    inner: Arc<Mutex<VecDeque<Arc<SystemSnapshot>>>>,
     overflows: Arc<AtomicU64>,
 }
 
@@ -106,24 +107,38 @@ impl LatestSlot {
         Self::default()
     }
 
-    /// Replaces the slot contents and counts an overflow when a value was unread.
+    /// Pushes a snapshot to the FIFO queue and counts an overflow when unread values exist.
     pub fn store(&self, value: Arc<SystemSnapshot>) {
-        let mut slot = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        if slot.replace(value).is_some() {
+        let mut queue = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if !queue.is_empty() {
             self.overflows.fetch_add(1, Ordering::Relaxed);
         }
+        if queue.len() >= 960 {
+            queue.pop_front();
+        }
+        queue.push_back(value);
     }
 
     /// Clones the newest value without clearing it.
     #[cfg(test)]
     pub fn get(&self) -> Option<Arc<SystemSnapshot>> {
-        self.inner.lock().ok().and_then(|slot| slot.clone())
+        self.inner.lock().ok().and_then(|queue| queue.back().cloned())
     }
 
-    /// Takes the newest value, marking it as read.
+    /// Takes the newest value, marking it as read and clearing the queue.
+    #[allow(dead_code)]
     pub fn take(&self) -> Option<Arc<SystemSnapshot>> {
-        let mut slot = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        slot.take()
+        let mut queue = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let last = queue.pop_back();
+        queue.clear();
+        last
+    }
+
+    /// Drains all queued snapshots in chronological FIFO order.
+    pub fn drain_all(&self) -> Vec<Arc<SystemSnapshot>> {
+        let mut queue = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        self.overflows.store(0, Ordering::Relaxed);
+        queue.drain(..).collect()
     }
 
     pub fn overflow_count(&self) -> u64 {

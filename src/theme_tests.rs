@@ -33,6 +33,12 @@ fn test_load_color_red_85_and_above() {
 }
 
 #[test]
+fn test_load_color_nan_returns_secondary() {
+    assert_eq!(theme::load_color(f32::NAN), colors::TEXT_SECONDARY);
+    assert_eq!(theme::load_color(f32::INFINITY), colors::TEXT_SECONDARY);
+}
+
+#[test]
 fn test_card_frame_properties() {
     let frame = theme::card_frame();
     assert_eq!(frame.fill, colors::BG_CARD);

@@ -2,7 +2,9 @@
 //! Provides EcoQoS, working-set trim, file location, and verified termination.
 //! All mutating actions reuse the hardened Memory module identity checks.
 
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 
 use windows_sys::Win32::System::Threading::{
     GetPriorityClass, GetProcessInformation, ProcessPowerThrottling, SetPriorityClass,
@@ -22,36 +24,60 @@ use crate::modules::memory::safe_handle::{
     verify_handle_identity, verify_pid_safety_gate, SafeHandle,
 };
 
-/// System process names that should never be targeted by mutating actions.
-const SYSTEM_PROCESS_BLOCKLIST: &[&str] = &[
-    "system",
-    "registry",
-    "smss.exe",
-    "csrss.exe",
-    "wininit.exe",
-    "services.exe",
-    "lsass.exe",
-    "svchost.exe",
-    "fontdrvhost.exe",
-    "dwm.exe",
-    "taskhostw.exe",
-    "explorer.exe",
-    "winlogon.exe",
-    "audiodg.exe",
-    "sihost.exe",
-    "startmenuexperiencehost.exe",
-    "textinputhost.exe",
-    "runtimebroker.exe",
-    "shellexperiencehost.exe",
-    "searchindexer.exe",
-    "searchprotocolhost.exe",
-    "searchfilterhost.exe",
-    "spoolsv.exe",
-];
+/// Pending EcoQoS overrides from UI actions to worker cache.
+#[allow(clippy::type_complexity)]
+pub(crate) static PENDING_ECO: OnceLock<Mutex<HashMap<(u32, u64), Option<bool>>>> = OnceLock::new();
+/// Watch cache for EcoQoS state (kept for API compatibility).
+#[allow(dead_code, clippy::type_complexity)]
+pub(crate) static ECO_WATCH: OnceLock<Mutex<HashMap<(u32, u64), Option<bool>>>> = OnceLock::new();
 
-/// Checks if a process name is in the system blocklist.
-fn is_system_process(name: &str) -> bool {
-    SYSTEM_PROCESS_BLOCKLIST.iter().any(|&s| name.eq_ignore_ascii_case(s))
+/// Checks if a process name is protected by the unified safety gate.
+pub fn is_system_process(name: &str) -> bool {
+    verify_pid_safety_gate(u32::MAX, name).is_err()
+}
+
+/// Primes worker EcoQoS cache after UI action.
+#[allow(dead_code)]
+pub fn mark_pending_eco(pid: u32, start_time: u64, on: bool) {
+    let slot = PENDING_ECO.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+    if guard.len() > 512 {
+        guard.clear();
+    }
+    guard.insert((pid, start_time), Some(on));
+}
+
+/// Alias for mark_pending_eco (watch cache prime).
+#[allow(dead_code)]
+pub fn set_eco_watch(pid: u32, start_time: u64, on: bool) {
+    mark_pending_eco(pid, start_time, on);
+}
+
+/// Budgeted EcoQoS probe: decrements budget and queries Win32.
+#[allow(dead_code)]
+pub fn probe_eco_qos_budgeted(pid: u32, budget: &mut u8) -> Option<Option<bool>> {
+    if *budget == 0 {
+        return None;
+    }
+    *budget -= 1;
+    Some(is_process_eco_qos(pid))
+}
+
+/// Back-compat prime entry (collector re-export).
+#[allow(dead_code)]
+pub fn set_eco_cached(pid: u32, start_time: u64, on: bool) {
+    mark_pending_eco(pid, start_time, on);
+}
+
+/// Drops pending EcoQoS prime so next scan re-queries Win32.
+#[allow(dead_code)]
+pub fn invalidate_eco_cached(pid: u32, start_time: u64) {
+    let slot = PENDING_ECO.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+    if guard.len() > 512 {
+        guard.clear();
+    }
+    guard.insert((pid, start_time), None);
 }
 
 /// Builds a verified target from creation time at action time.
@@ -93,26 +119,31 @@ pub fn set_process_eco_qos(pid: u32, name: &str, enable: bool) -> Result<(), Str
     }
 
     let priority = if enable { IDLE_PRIORITY_CLASS } else { NORMAL_PRIORITY_CLASS };
-    let result = unsafe { SetPriorityClass(handle.as_raw(), priority) };
-    if result == 0 {
+    let prio_ok = unsafe { SetPriorityClass(handle.as_raw(), priority) } != 0;
+    if prio_ok {
+    } else {
         return Err("Failed to set priority class".to_string());
     }
-    // Best-effort true EcoQoS: Power Throttling execution-speed control.
+    // True EcoQoS: Power Throttling execution-speed control.
     let (control_mask, state_mask) = build_throttling_masks(enable);
     let state = PROCESS_POWER_THROTTLING_STATE {
         Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
         ControlMask: control_mask,
         StateMask: state_mask,
     };
-    unsafe {
-        let _ = SetProcessInformation(
+    let info_ok = unsafe {
+        SetProcessInformation(
             handle.as_raw(),
             ProcessPowerThrottling,
             &state as *const _ as *const std::os::raw::c_void,
             std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32,
-        );
+        ) != 0
+    };
+    if prio_ok && info_ok {
+        Ok(())
+    } else {
+        Err("Failed to apply power throttling state".to_string())
     }
-    Ok(())
 }
 
 /// Enables EcoQoS (Efficiency Mode) by setting IDLE_PRIORITY_CLASS.

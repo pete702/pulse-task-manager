@@ -7,7 +7,6 @@
 use crate::modules::memory::model::RawProcessRow;
 use crate::modules::memory::process_target::ProcessTarget;
 use crate::modules::memory::safe_handle::verify_pid_safety_gate;
-use crate::modules::memory::win32_api::query_process_exe_path;
 
 #[cfg(test)]
 use crate::modules::memory::model::MemorySnapshot;
@@ -45,7 +44,9 @@ pub struct SelectionView {
     /// True when the PID safety gate blocks any member of the group.
     pub blocked: bool,
     /// Executable path of the first raw process that has one.
-    pub path: Option<String>,
+    pub first_exe_path: Option<String>,
+    /// PID of the first raw process in the group (for lazy path resolution).
+    pub first_pid: Option<u32>,
 }
 
 impl SelectionView {
@@ -92,12 +93,9 @@ pub fn resolve_selection(
     let blocked =
         pids.is_empty() || pids.iter().any(|pid| verify_pid_safety_gate(*pid, key).is_err());
 
-    // Find the first target with an exe_path, or query on-demand if none available
-    let path =
-        targets.iter().find_map(|t| t.exe_path.clone().filter(|p| !p.is_empty())).or_else(|| {
-            // On-demand query: try to get exe_path for the first target
-            targets.first().and_then(|t| query_process_exe_path(t.pid))
-        });
+    // Find the first target with an exe_path without Win32 syscalls on the UI thread.
+    let first_exe_path = targets.iter().find_map(|t| t.exe_path.clone().filter(|p| !p.is_empty()));
+    let first_pid = targets.first().map(|t| t.pid);
 
-    Some(SelectionView { name: key.to_owned(), targets, pids, blocked, path })
+    Some(SelectionView { name: key.to_owned(), targets, pids, blocked, first_exe_path, first_pid })
 }

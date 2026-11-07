@@ -49,7 +49,7 @@ impl ActiveTab {
 }
 
 /// Handles global hotkeys for the application.
-/// Returns true if a hotkey was handled and the app should skip normal update logic.
+/// Returns true if a hotkey was handled and the UI should repaint immediately.
 pub fn handle_global_hotkeys(
     ctx: &egui::Context,
     active_tab: &mut ActiveTab,
@@ -58,7 +58,7 @@ pub fn handle_global_hotkeys(
     cpu_table_state: &mut CpuTableState,
 ) -> bool {
     let wants_input = ctx.wants_keyboard_input();
-    let (ctrl_f, esc, num_idx) = ctx.input(|i| {
+    let (ctrl_f, esc, num_idx, f5) = ctx.input(|i| {
         let ctrl = i.modifiers.ctrl;
         let keys = [
             egui::Key::Num1,
@@ -69,11 +69,16 @@ pub fn handle_global_hotkeys(
             egui::Key::Num6,
         ];
         let num_idx = if ctrl { keys.iter().position(|k| i.key_pressed(*k)) } else { None };
-        (ctrl && i.key_pressed(egui::Key::F), i.key_pressed(egui::Key::Escape), num_idx)
+        let f5 = i.key_pressed(egui::Key::F5);
+        (ctrl && i.key_pressed(egui::Key::F), i.key_pressed(egui::Key::Escape), num_idx, f5)
     });
     let mut handled = false;
+    if f5 {
+        crate::core::request_process_scan();
+        handled = true;
+    }
     // Ctrl+F: Focus search in the master Processes tab
-    if ctrl_f {
+    if ctrl_f && !wants_input {
         *active_tab = ActiveTab::Processes;
         *memory_sub_view = MemorySubView::Overview;
         cpu_table_state.focus_search_next_frame = true;
@@ -81,17 +86,26 @@ pub fn handle_global_hotkeys(
         ctx.request_repaint();
         handled = true;
     }
-    // Escape: Clear search query if present, otherwise clear selection
+    // Escape: Clear search or release focus and clear selection
     if esc {
-        if !table_state.search_query.is_empty() {
-            table_state.clear_search();
-            ctx.request_repaint();
-            handled = true;
-        } else if !cpu_table_state.search_query.is_empty() {
-            cpu_table_state.clear_search();
-            ctx.request_repaint();
-            handled = true;
-        } else if !wants_input {
+        let has_query =
+            !table_state.search_query.is_empty() || !cpu_table_state.search_query.is_empty();
+        if has_query {
+            if !table_state.search_query.is_empty() {
+                table_state.clear_search();
+                ctx.request_repaint();
+                handled = true;
+            } else if !cpu_table_state.search_query.is_empty() {
+                cpu_table_state.clear_search();
+                ctx.request_repaint();
+                handled = true;
+            }
+        } else {
+            ctx.memory_mut(|m| {
+                if let Some(id) = m.focused() {
+                    m.surrender_focus(id);
+                }
+            });
             table_state.clear_selection();
             cpu_table_state.selected_pid = None;
             cpu_table_state.selected_name = None;

@@ -141,24 +141,35 @@ fn open_location_button(
     busy: bool,
     hint: &str,
 ) {
-    let path = sel.as_ref().and_then(|v| v.path.clone());
-    let enabled = !busy && path.is_some();
+    let enabled = !busy && sel.as_ref().is_some_and(|v| !v.blocked && !v.targets.is_empty());
     let open = ui.add_enabled(enabled, egui::Button::new("Open Location"));
     let open = if enabled {
         open.on_hover_text("Open the executable folder in Explorer")
     } else if busy {
         open.on_disabled_hover_text(BUSY_HINT)
-    } else if path.is_none() && sel.is_some() {
-        open.on_disabled_hover_text("No executable path recorded for this process")
     } else {
         open.on_disabled_hover_text(hint)
     };
     if open.clicked() {
-        if let (Some(p), Some(v)) = (path, sel) {
+        if let Some(v) = sel {
+            let first_exe_path = v.first_exe_path.clone();
+            let first_pid = v.first_pid;
             let name = v.name.clone();
-            st.spawn(move || match actions::open_process_file_location(std::path::Path::new(&p)) {
-                Ok(()) => format!("Opened location for {}", name),
-                Err(e) => format!("Open location failed: {e}"),
+            st.spawn(move || {
+                let resolved = first_exe_path.clone().or_else(|| {
+                    first_pid.and_then(|pid| {
+                        crate::modules::memory::win32_api::query_process_exe_path(pid)
+                    })
+                });
+                match resolved {
+                    Some(p) => {
+                        match actions::open_process_file_location(std::path::Path::new(&p)) {
+                            Ok(()) => format!("Opened location for {}", name),
+                            Err(e) => format!("Open location failed: {e}"),
+                        }
+                    }
+                    None => format!("Open location failed: no executable path for {}", name),
+                }
             });
         }
     }
@@ -201,7 +212,14 @@ fn end_task_button(
                     st.cancel_confirm();
                     crate::core::request_process_scan();
                     st.spawn(move || match actions::terminate_process_group(&targets) {
-                        Ok(n) => format!("End task: {n}/{groups} processes terminated"),
+                        Ok(n) => {
+                            let suffix = if n == 0 && groups > 0 {
+                                " (access denied or process exited)"
+                            } else {
+                                ""
+                            };
+                            format!("End task: {n}/{groups} processes terminated{suffix}")
+                        }
                         Err(e) => format!("End task blocked: {e}"),
                     });
                 }

@@ -4,7 +4,7 @@ use crate::app_tabs::ActiveTab;
 use crate::i18n::{set_lang, Key, Lang};
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::model::MemorySnapshot;
-use crate::util::format_uptime;
+use crate::util::{format_uptime, sanitize_f32, sanitize_f64};
 
 #[test]
 fn test_format_uptime_table() {
@@ -91,4 +91,19 @@ fn test_memory_history_integration() {
 fn test_all_tabs_present_in_sidebar() {
     let tabs = ActiveTab::all();
     assert_eq!(tabs.len(), 5, "Should have 5 tabs: Memory, CPU, Storage, Network, System");
+}
+
+#[test]
+fn test_sanitize_f32() {
+    assert_eq!(sanitize_f32(1.5, 0.0), 1.5);
+    assert_eq!(sanitize_f32(f32::NAN, 42.0), 42.0);
+    assert_eq!(sanitize_f32(f32::INFINITY, 42.0), 42.0);
+    assert_eq!(sanitize_f32(f32::NEG_INFINITY, -1.0), -1.0);
+}
+
+#[test]
+fn test_sanitize_f64() {
+    assert_eq!(sanitize_f64(2.5, 0.0), 2.5);
+    assert_eq!(sanitize_f64(f64::NAN, 7.0), 7.0);
+    assert_eq!(sanitize_f64(f64::INFINITY, 7.0), 7.0);
 }

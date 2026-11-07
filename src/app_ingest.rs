@@ -22,17 +22,28 @@ impl PulseApp {
         self.latest_snapshot = Some(snap);
     }
 
-    pub(crate) fn collect_snapshots(&mut self) {
+    pub(crate) fn poll_snapshots(&mut self) {
         if self.telemetry_paused {
             while self.snapshot_rx.try_recv().is_ok() {}
-            let _ = self.latest_slot.take();
+            let _ = self.latest_slot.drain_all();
             return;
         }
+        let mut batch: Vec<Arc<SystemSnapshot>> = Vec::new();
         while let Ok(snap) = self.snapshot_rx.try_recv() {
+            batch.push(snap);
+        }
+        batch.extend(self.worker.drain_overflow_snapshots());
+        batch.sort_by(|a, b| {
+            let ka = a.memory.as_ref().map(|m| m.sample_elapsed_secs).unwrap_or(0.0);
+            let kb = b.memory.as_ref().map(|m| m.sample_elapsed_secs).unwrap_or(0.0);
+            ka.total_cmp(&kb)
+        });
+        for snap in batch {
             self.ingest_snapshot(snap);
         }
-        if let Some(snap) = self.latest_slot.take() {
-            self.ingest_snapshot(snap);
-        }
+    }
+
+    pub(crate) fn collect_snapshots(&mut self) {
+        self.poll_snapshots();
     }
 }

@@ -2,6 +2,7 @@
 
 use eframe::egui;
 
+use crate::modules::memory::action_bar::MemoryActionBarState;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::theme::colors;
 
@@ -10,11 +11,13 @@ use super::table_state::MemoryTableState;
 use super::table_widgets::{empty_label, render_spike_banner, render_toolbar};
 
 /// Renders the spike banner, toolbar, and virtualized process table.
+#[allow(clippy::too_many_arguments)]
 pub fn render_memory_table(
     ui: &mut egui::Ui,
     snap: &MemorySnapshot,
     state: &mut MemoryTableState,
     _uptime_secs: u64,
+    action_state: &mut MemoryActionBarState,
 ) {
     state.rebuild_for_scan(snap.process_scan_id, &snap.processes, snap.ram_total_bytes);
     let rows = state.cached_rows().unwrap_or_default();
@@ -51,7 +54,7 @@ pub fn render_memory_table(
                 });
             } else {
                 let height = (ui.available_height() - 4.0).max(120.0);
-                render_table(ui, &rows, state, height);
+                render_table(ui, &rows, state, height, action_state);
             }
         });
     });
