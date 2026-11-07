@@ -14,12 +14,10 @@ impl PulseApp {
             self.memory_history.push(mem);
         }
         if let Some(ref cpu) = snap.cpu {
-            let timestamp = snap
-                .memory
-                .as_ref()
-                .map(|m| m.sample_elapsed_secs)
-                .unwrap_or(snap.uptime_secs as f64);
-            self.cpu_history.push(cpu.total_pct, cpu.hottest_core_pct, timestamp);
+            // Single source: pause-adjusted timestamp_s from worker_loop.
+            if let Some(ref mem) = snap.memory {
+                self.cpu_history.push(cpu.total_pct, cpu.hottest_core_pct, mem.sample_elapsed_secs);
+            }
         }
         self.latest_snapshot = Some(snap);
     }

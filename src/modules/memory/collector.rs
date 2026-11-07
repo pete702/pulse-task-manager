@@ -14,6 +14,8 @@ use crate::modules::memory::win32_api::{collect_windows_kernel_metrics, KernelMe
 /// Collects current system memory state into a `MemorySnapshot`.
 /// `scan_duration_ms` is left at the default here; the worker loop stamps it
 /// once with the full telemetry tick duration so the metric stays honest.
+#[allow(unused_mut)]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code, unused_mut))]
 pub fn collect_memory(sys: &mut System) -> MemorySnapshot {
     sys.refresh_memory();
 
@@ -87,7 +89,14 @@ pub fn collect_process_memory(
             // exe_path will be None since we use without_exe()
             // It will be resolved on-demand via query_process_exe_path when needed
             let exe_path: Option<Arc<str>> = None;
-            (pid.as_u32(), Arc::from(process.name()), ram, virt, exe_path, process.start_time())
+            (
+                pid.as_u32(),
+                crate::util::intern_name(process.name()),
+                ram,
+                virt,
+                exe_path,
+                process.start_time(),
+            )
         })
         .collect();
 

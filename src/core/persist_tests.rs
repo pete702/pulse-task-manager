@@ -68,3 +68,18 @@ fn tab_and_window_maps() {
     assert_eq!(chart_window_from_secs(300), ChartWindow::FiveMin);
     assert_eq!(secs_from_chart_window(ChartWindow::FifteenMin), 900);
 }
+#[test]
+fn serialize_nan_inf_win_fallback() {
+    let s = PersistedState { win_w: f32::NAN, win_h: f32::INFINITY, ..Default::default() };
+    let out = serialize(&s);
+    assert!(out.contains("win_w=1180.0"), "got: {out}");
+    assert!(out.contains("win_h=760.0"), "got: {out}");
+}
+#[test]
+fn parse_nan_inf_win_fallback() {
+    let s = parse("win_w=NaN\nwin_h=inf\nwin_w=-inf\n");
+    assert!(s.win_w.is_finite());
+    assert!(s.win_h.is_finite());
+    assert_eq!(s.win_w, 1180.0);
+    assert_eq!(s.win_h, 760.0);
+}

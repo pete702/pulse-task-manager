@@ -30,7 +30,7 @@ pub fn cached_cpu_pct(pct: f32) -> Arc<str> {
     Arc::clone(&cache.1)
 }
 
-pub fn cached_network_badge(total_mbps: f32, _ping_ms: Option<f32>) -> Arc<str> {
+pub fn cached_network_badge(total_mbps: f32) -> Arc<str> {
     let tenths = (total_mbps * 10.0).round() as u64;
     let key = tenths;
     static NET_CACHE: OnceLock<Mutex<(u64, Arc<str>)>> = OnceLock::new();
@@ -62,7 +62,7 @@ pub fn cached_count(count: u32) -> Arc<str> {
     Arc::clone(&cache.1)
 }
 
-pub fn cached_storage_badge(total_mb_s: f32, _volumes: usize) -> Arc<str> {
+pub fn cached_storage_badge(total_mb_s: f32) -> Arc<str> {
     let tenths = (total_mb_s * 10.0).round() as u32;
     let key = tenths;
     static STORAGE_CACHE: OnceLock<Mutex<(u32, Arc<str>)>> = OnceLock::new();
@@ -75,4 +75,16 @@ pub fn cached_storage_badge(total_mb_s: f32, _volumes: usize) -> Arc<str> {
         cache.1 = Arc::from(format!("{:.1} MB/s", total_mb_s));
     }
     Arc::clone(&cache.1)
+}
+
+/// Stable accent with hysteresis: on above 0.15, off below 0.05.
+pub fn badge_active(total: f32, state: &mut bool) -> bool {
+    if *state {
+        if total < 0.05 {
+            *state = false;
+        }
+    } else if total > 0.15 {
+        *state = true;
+    }
+    *state
 }

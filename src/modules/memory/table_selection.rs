@@ -23,6 +23,14 @@ pub struct SelectedGroupSummary {
     pub path: Option<String>,
 }
 
+fn creation_matches(stored: Option<u64>, current: Option<u64>) -> bool {
+    match (stored, current) {
+        (Some(a), Some(b)) => a == b,
+        (Some(a), None) => a == 0,
+        (None, _) => true,
+    }
+}
+
 impl MemoryTableState {
     /// Resolves the current selection against raw rows, cached per scan id and mode.
     /// Returns `Arc<SelectedGroupSummary>` for O(1) clone on cache hits.
@@ -46,9 +54,8 @@ impl MemoryTableState {
             if !self.group_clones {
                 if let Some(pid) = self.selected_pid {
                     if let Some(row) = raw_rows.iter().find(|r| r.pid == pid) {
-                        let creation_ok = self
-                            .selected_creation_time
-                            .is_none_or(|t| t == row.creation_time.unwrap_or(0));
+                        let creation_ok =
+                            creation_matches(self.selected_creation_time, row.creation_time);
                         let name_ok = self
                             .selected_name
                             .as_ref()
@@ -74,9 +81,8 @@ impl MemoryTableState {
             if let Some(pid) = self.selected_pid {
                 if let Some(row) = raw_rows.iter().find(|r| r.pid == pid) {
                     // Check if previously stored identity matches current process
-                    let creation_ok = self
-                        .selected_creation_time
-                        .is_none_or(|t| t == row.creation_time.unwrap_or(0));
+                    let creation_ok =
+                        creation_matches(self.selected_creation_time, row.creation_time);
                     let name_ok = self
                         .selected_name
                         .as_ref()

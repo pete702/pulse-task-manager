@@ -41,6 +41,43 @@ impl Drop for VolumeHandle {
     }
 }
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
+fn handle_cache() -> &'static Mutex<HashMap<char, isize>> {
+    static CACHE: OnceLock<Mutex<HashMap<char, isize>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[allow(unsafe_code)]
+fn cached_volume(letter: char) -> Option<isize> {
+    {
+        let cache = handle_cache().lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(h) = cache.get(&letter) {
+            return Some(*h);
+        }
+    }
+    let volume = open_volume(letter)?;
+    let raw = volume.0;
+    std::mem::forget(volume);
+    let mut cache = handle_cache().lock().unwrap_or_else(|e| e.into_inner());
+    if cache.len() >= 32 {
+        cache.clear();
+    }
+    cache.insert(letter, raw);
+    Some(raw)
+}
+
+#[allow(unsafe_code)]
+fn evict_handle(letter: char) {
+    let mut cache = handle_cache().lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(raw) = cache.remove(&letter) {
+        unsafe {
+            CloseHandle(raw as HANDLE);
+        }
+    }
+}
+
 #[allow(unsafe_code)]
 fn open_volume(letter: char) -> Option<VolumeHandle> {
     let path = format!("\\\\.\\{}:", letter);
@@ -67,12 +104,12 @@ fn open_volume(letter: char) -> Option<VolumeHandle> {
 #[allow(unsafe_code)]
 pub fn physical_disk_for_mount(mount: &str) -> Option<(u32, u32)> {
     let letter = drive_letter(mount)?;
-    let volume = open_volume(letter)?;
+    let handle = cached_volume(letter)? as HANDLE;
     let mut out = StorageDeviceNumber::default();
     let mut returned: u32 = 0;
     let ok = unsafe {
         DeviceIoControl(
-            volume.0,
+            handle,
             IOCTL_STORAGE_GET_DEVICE_NUMBER,
             std::ptr::null(),
             0,
@@ -83,6 +120,7 @@ pub fn physical_disk_for_mount(mount: &str) -> Option<(u32, u32)> {
         )
     };
     if ok == 0 || returned < 12 {
+        evict_handle(letter);
         return None;
     }
     Some((out.device_number, out.partition_number))
@@ -92,12 +130,12 @@ pub fn physical_disk_for_mount(mount: &str) -> Option<(u32, u32)> {
 #[allow(unsafe_code)]
 pub fn perf_counters_for_mount(mount: &str) -> Option<(i64, i64)> {
     let letter = drive_letter(mount)?;
-    let volume = open_volume(letter)?;
+    let handle = cached_volume(letter)? as HANDLE;
     let mut buf = [0u8; 128];
     let mut returned: u32 = 0;
     let ok = unsafe {
         DeviceIoControl(
-            volume.0,
+            handle,
             IOCTL_DISK_PERFORMANCE,
             std::ptr::null(),
             0,
@@ -108,6 +146,7 @@ pub fn perf_counters_for_mount(mount: &str) -> Option<(i64, i64)> {
         )
     };
     if ok == 0 || returned < 16 {
+        evict_handle(letter);
         return None;
     }
     let read = i64::from_ne_bytes(buf[0..8].try_into().ok()?);

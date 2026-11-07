@@ -78,6 +78,7 @@ pub fn init_cpu_brand_and_base_mhz(sys: &mut System) {
 
 /// Initializes the CPU brand and base MHz caches (non-Windows stub).
 #[cfg(not(target_os = "windows"))]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code, unused_mut))]
 pub fn init_cpu_brand_and_base_mhz(sys: &mut System) {
     sys.refresh_cpu_specifics(sysinfo::CpuRefreshKind::new().with_frequency());
     let base = sys.cpus().iter().map(|c| c.frequency()).max().unwrap_or(0);

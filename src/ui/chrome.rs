@@ -81,13 +81,19 @@ pub fn render_top_panel(
         let ram_mb = cached_self_ram_mb(latest_snapshot.as_ref().map(|s| s.pulse_ram_mb));
         let telemetry = match latest_snapshot.as_ref() {
             Some(s) => match (&s.cpu, &s.memory) {
-                (Some(cpu), Some(mem)) => format!(
-                    "[ CPU: {:.1}% | RAM: {:.1} / {:.1} GiB ({:.0}%) ]",
-                    cpu.total_pct,
-                    mem.ram_used_gib(),
-                    mem.ram_total_gib(),
-                    mem.ram_usage_percent()
-                ),
+                (Some(cpu), Some(mem)) => {
+                    if bar_w < 960.0 {
+                        format!("[ CPU: {:.0}% | RAM: {:.0}% ]", cpu.total_pct, mem.ram_usage_percent())
+                    } else {
+                        format!(
+                            "[ CPU: {:.1}% | RAM: {:.1} / {:.1} GiB ({:.0}%) ]",
+                            cpu.total_pct,
+                            mem.ram_used_gib(),
+                            mem.ram_total_gib(),
+                            mem.ram_usage_percent()
+                        )
+                    }
+                }
                 _ => "[ CPU: --% | RAM: -- ]".to_owned(),
             },
             None => "[ CPU: --% | RAM: -- ]".to_owned(),

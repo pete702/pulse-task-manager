@@ -7,31 +7,25 @@ use crate::modules::memory::model::MemorySnapshot;
 use crate::util::format_uptime;
 
 #[test]
-fn test_format_uptime_seconds() {
-    assert_eq!(format_uptime(0), "0s");
-    assert_eq!(format_uptime(30), "30s");
-    assert_eq!(format_uptime(59), "59s");
-}
-
-#[test]
-fn test_format_uptime_minutes() {
-    assert_eq!(format_uptime(60), "1m 0s");
-    assert_eq!(format_uptime(90), "1m 30s");
-    assert_eq!(format_uptime(3599), "59m 59s");
-}
-
-#[test]
-fn test_format_uptime_hours() {
-    assert_eq!(format_uptime(3600), "1h 0m 0s");
-    assert_eq!(format_uptime(7200), "2h 0m 0s");
-    assert_eq!(format_uptime(86399), "23h 59m 59s");
-}
-
-#[test]
-fn test_format_uptime_days() {
-    assert_eq!(format_uptime(86400), "1d 0h 0m 0s");
-    assert_eq!(format_uptime(172800), "2d 0h 0m 0s");
-    assert_eq!(format_uptime(90000), "1d 1h 0m 0s");
+fn test_format_uptime_table() {
+    let cases = [
+        (0, "0s"),
+        (30, "30s"),
+        (59, "59s"),
+        (60, "1m 0s"),
+        (90, "1m 30s"),
+        (3599, "59m 59s"),
+        (3600, "1h 0m 0s"),
+        (7200, "2h 0m 0s"),
+        (86399, "23h 59m 59s"),
+        (86400, "1d 0h 0m 0s"),
+        (90061, "1d 1h 1m 1s"),
+        (172800, "2d 0h 0m 0s"),
+        (90000, "1d 1h 0m 0s"),
+    ];
+    for (input, expected) in cases {
+        assert_eq!(format_uptime(input), expected, "input {input}");
+    }
 }
 
 #[test]

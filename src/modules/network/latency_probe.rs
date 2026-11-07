@@ -34,8 +34,30 @@ enum Cmd {
 static STATE: OnceLock<Mutex<ProbeState>> = OnceLock::new();
 static PROBE_ENABLED: AtomicBool = AtomicBool::new(true);
 static PROBE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+static FAST_PROBE_MODE: AtomicBool = AtomicBool::new(false);
 static TX: OnceLock<Mutex<Option<mpsc::Sender<Cmd>>>> = OnceLock::new();
 static DNS_STATE: OnceLock<Mutex<(DnsFlushState, Option<Instant>)>> = OnceLock::new();
+
+/// Adaptive probe interval in ms: 1000 when fast (Network tab), else 10000.
+/// Sleeps in 250 ms steps: 4 steps (1000 ms) fast, 40 steps (10_000 ms) slow.
+fn probe_interval_ms() -> u64 {
+    if FAST_PROBE_MODE.load(Ordering::Relaxed) {
+        1000
+    } else {
+        10_000
+    }
+}
+
+/// Sets adaptive probe mode; switching to fast wakes the throttle early.
+#[allow(dead_code)]
+pub fn set_fast_probe_mode(fast: bool) {
+    let prev = FAST_PROBE_MODE.swap(fast, Ordering::Relaxed);
+    if fast && !prev {
+        if let Ok(mut g) = state().try_lock() {
+            g.last_probe = None;
+        }
+    }
+}
 
 fn state() -> &'static Mutex<ProbeState> {
     STATE.get_or_init(|| Mutex::new(ProbeState::default()))
@@ -129,9 +151,11 @@ pub fn maybe_trigger_probe() {
         return;
     }
     let now = Instant::now();
+    let interval = probe_interval_ms();
     let due = {
         let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
-        let due = guard.last_probe.is_none_or(|t| now.duration_since(t).as_millis() >= 2000);
+        let due =
+            guard.last_probe.is_none_or(|t| now.duration_since(t).as_millis() >= interval as u128);
         if due {
             guard.last_probe = Some(now);
         }
@@ -184,6 +208,7 @@ fn record_sample(rtt: Option<f32>) {
         guard.consecutive_failures = guard.consecutive_failures.saturating_add(1);
         guard.ping_ms = None;
         guard.jitter_ms = None;
+        guard.prev_rtt = None;
     }
 }
 

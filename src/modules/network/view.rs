@@ -1,10 +1,10 @@
 //! Live `[04] Network` HUD: grade banner, KPIs, chart-first, adapter cards.
 
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::Instant;
 
 use eframe::egui;
 
+use crate::core::SystemSnapshot;
 use crate::modules::network::cards::render_adapter_cards;
 use crate::modules::network::chart_view::render_network_chart;
 use crate::modules::network::history::NetworkHistory;
@@ -27,9 +27,8 @@ struct NetworkViewState {
     history: NetworkHistory,
     window_secs: usize,
     mode: ChartMode,
-    last_push: Option<Instant>,
+    last_sample_ts: Option<f64>,
     selected: Option<Arc<str>>,
-    started: Instant,
 }
 
 impl Default for NetworkViewState {
@@ -38,9 +37,8 @@ impl Default for NetworkViewState {
             history: NetworkHistory::new(),
             window_secs: 300,
             mode: ChartMode::Traffic,
-            last_push: None,
+            last_sample_ts: None,
             selected: None,
-            started: Instant::now(),
         }
     }
 }
@@ -97,23 +95,23 @@ pub fn set_scope_all() {
     guard.selected = None;
 }
 
-/// Background ingestion: throttled push (~1s) on every snapshot.
+/// Background ingestion on worker pause-adjusted timestamps.
 /// Traffic always pushes so the Mbps chart works with probe OFF/probing.
 /// Latency keeps None gaps (never fake 0.0); per-adapter RX/TX feed the scope.
-pub fn ingest_network_snapshot(snap: &NetworkSnapshot, paused: bool) {
+pub fn ingest_network_snapshot(snap: &SystemSnapshot, paused: bool) {
     let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
     if paused {
         return;
     }
-    let now = Instant::now();
-    let due = guard.last_push.is_none_or(|t| now.duration_since(t).as_millis() >= 1000);
+    let elapsed = snap.memory.as_ref().map(|m| m.sample_elapsed_secs).unwrap_or(0.0);
+    let due = guard.last_sample_ts.is_none_or(|last| elapsed > last);
     if due {
-        let elapsed = guard.started.elapsed().as_secs_f64();
-        guard.history.push(elapsed, snap.rx_mbps, snap.tx_mbps, snap.ping_ms, snap.jitter_ms);
-        for a in snap.adapters.iter() {
+        let net = &snap.network;
+        guard.history.push(elapsed, net.rx_mbps, net.tx_mbps, net.ping_ms, net.jitter_ms);
+        for a in net.adapters.iter() {
             guard.history.push_adapter(a.name.as_ref(), elapsed, a.rx_mbps, a.tx_mbps);
         }
-        guard.last_push = Some(now);
+        guard.last_sample_ts = Some(elapsed);
     }
 }
 

@@ -11,6 +11,12 @@ use std::sync::Arc;
 use std::time::Instant;
 
 static TRIM_RUNNING: AtomicBool = AtomicBool::new(false);
+struct TrimGuard;
+impl Drop for TrimGuard {
+    fn drop(&mut self) {
+        TRIM_RUNNING.store(false, Ordering::Release);
+    }
+}
 pub fn render_action_bar(
     ui: &mut egui::Ui,
     mem: &MemorySnapshot,
@@ -26,15 +32,43 @@ pub fn render_action_bar(
     }
     let sel = ts.resolved_selection(mem.process_scan_id, &mem.processes);
     crate::theme::card_frame().show(ui, |ui| {
-        ui.horizontal(|ui| {
-            mode_label(ui);
-            ui.separator();
-            trim_all_button(ui, mem, st, busy);
-            ui.separator();
-            selection_actions(ui, &sel, st, now, busy);
-            ui.separator();
-            pause_button(ui, telemetry_paused, busy);
-            selection_info(ui, &sel, st, now);
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                mode_label(ui);
+                ui.separator();
+                trim_all_button(ui, mem, st, busy);
+                ui.separator();
+                selection_actions(ui, &sel, st, now, busy);
+                ui.separator();
+                pause_button(ui, telemetry_paused, busy);
+                selection_info(ui, &sel, st, now);
+            });
+            ui.allocate_ui_with_layout(
+                egui::vec2(280.0, 18.0),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    if let Some(v) = sel.as_ref() {
+                        if st.confirm_kill_active(&v.name, now) {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "[ Confirm Kill armed for {} ]",
+                                    v.name
+                                ))
+                                .monospace()
+                                .size(10.0)
+                                .color(colors::ACCENT_RED),
+                            );
+                        } else if let Some(t) = st.status_text(now) {
+                            ui.label(
+                                egui::RichText::new(t)
+                                    .monospace()
+                                    .size(10.0)
+                                    .color(colors::TEXT_SECONDARY),
+                            );
+                        }
+                    }
+                },
+            );
         });
     });
 }
@@ -59,13 +93,16 @@ fn trim_all_button(
             return;
         }
         let raw = Arc::clone(&mem.processes);
-        st.spawn(move || {
+        let spawned = st.spawn(move || {
+            let _trim_guard = TrimGuard;
             let items = raw.iter().map(ProcessTarget::from_raw).collect::<Vec<_>>();
             let msg = format_trim_status(&actions::purge_system_working_sets(&items));
-            TRIM_RUNNING.store(false, Ordering::Release);
             crate::core::request_process_scan();
             msg
         });
+        if !spawned {
+            TRIM_RUNNING.store(false, Ordering::Release);
+        }
     }
 }
 fn selection_actions(

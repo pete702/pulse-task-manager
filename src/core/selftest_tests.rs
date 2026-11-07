@@ -8,8 +8,23 @@ use std::path::Path;
 /// Hard limit for .rs file lines (architectural constraint).
 pub const MAX_RS_FILE_LINES: usize = 280;
 
+fn visit_files(dir: &Path, check: &mut dyn FnMut(&Path)) {
+    if dir.is_dir() {
+        for entry in fs::read_dir(dir).expect("Failed to read directory") {
+            let entry = entry.expect("Failed to get directory entry");
+            let path = entry.path();
+            if path.is_dir() {
+                visit_files(&path, check);
+            } else {
+                check(&path);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::visit_files;
     use super::MAX_RS_FILE_LINES;
     use std::fs;
     use std::path::Path;
@@ -36,21 +51,7 @@ mod tests {
             }
         }
 
-        fn visit_dirs(dir: &Path, violations: &mut Vec<String>) {
-            if dir.is_dir() {
-                for entry in fs::read_dir(dir).expect("Failed to read directory") {
-                    let entry = entry.expect("Failed to get directory entry");
-                    let path = entry.path();
-                    if path.is_dir() {
-                        visit_dirs(&path, violations);
-                    } else {
-                        check_file(&path, violations);
-                    }
-                }
-            }
-        }
-
-        visit_dirs(src_dir, &mut violations);
+        visit_files(src_dir, &mut |p| check_file(p, &mut violations));
 
         assert!(
             violations.is_empty(),
@@ -111,21 +112,7 @@ mod tests {
             }
         }
 
-        fn visit_dirs(dir: &Path, violations: &mut Vec<String>) {
-            if dir.is_dir() {
-                for entry in fs::read_dir(dir).expect("Failed to read directory") {
-                    let entry = entry.expect("Failed to get directory entry");
-                    let path = entry.path();
-                    if path.is_dir() {
-                        visit_dirs(&path, violations);
-                    } else {
-                        check_file(&path, violations);
-                    }
-                }
-            }
-        }
-
-        visit_dirs(src_dir, &mut violations);
+        visit_files(src_dir, &mut |p| check_file(p, &mut violations));
 
         assert!(
             violations.is_empty(),

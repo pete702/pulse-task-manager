@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use eframe::egui;
-use egui_plot::{GridMark, HLine, Line, LineStyle, Plot, PlotPoints};
+use egui_plot::{GridMark, HLine, Line, LineStyle, Plot, PlotBounds, PlotPoints};
 
 use crate::modules::cpu::chart_axis::x_grid_spacer;
 use crate::modules::memory::downsampling::{lttb_segments, nice_ceiling};
@@ -11,7 +11,7 @@ use crate::modules::storage::collector::IO_SPIKE_THRESHOLD_MB_S;
 use crate::theme::{card_frame, colors};
 use crate::ui::primitives::{cyber_accent, draw_cyber_corner_brackets};
 
-/// Unclamped 1-2-5 ceiling for storage (min 1.0 MB/s, no cap).
+/// 1-2-5 ceiling for storage (min 1.0 MB/s, no cap).
 fn stepped_ceiling(read: &Arc<Vec<[f64; 2]>>, write: &Arc<Vec<[f64; 2]>>) -> f64 {
     let peak = read.iter().chain(write.iter()).map(|p| p[1]).fold(0.0f64, f64::max);
     nice_ceiling(peak, 1.0)
@@ -72,7 +72,7 @@ pub fn render_storage_chart(
         let write_pts = to_points(write);
         let plot_resp = ui.horizontal(|ui| {
             ui.add_space(52.0);
-            Plot::new(("storage_io", window_secs))
+            Plot::new("storage_io_plot")
                 .width(ui.available_width().max(200.0))
                 .height(220.0)
                 .show_axes([false, false])
@@ -98,6 +98,10 @@ pub fn render_storage_chart(
                     format!("{}: {:.1} MB/s ({})", name, value.y, when)
                 })
                 .show(ui, |pu| {
+                    pu.set_plot_bounds(PlotBounds::from_min_max(
+                        [-span_min, 0.0],
+                        [0.0, y_ceiling],
+                    ));
                     pu.hline(
                         HLine::new(IO_SPIKE_THRESHOLD_MB_S as f64)
                             .color(egui::Color32::from_rgba_unmultiplied(255, 42, 84, 110))
@@ -141,10 +145,10 @@ fn pick_window(ui: &mut egui::Ui, label: &str, secs: usize, current: usize) {
 fn to_points(series: &Arc<Vec<[f64; 2]>>) -> PlotPoints {
     if series.is_empty() {
         PlotPoints::new(vec![[-1.0 / 60.0, 0.0], [0.0, 0.0]])
-    } else if series.len() <= 300 {
+    } else if series.len() <= 920 {
         PlotPoints::new(series.to_vec())
     } else {
-        PlotPoints::new(lttb_segments(series, 300))
+        PlotPoints::new(lttb_segments(series, 920))
     }
 }
 

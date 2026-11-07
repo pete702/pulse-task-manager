@@ -76,26 +76,17 @@ pub fn lttb_downsample(points: &[[f64; 2]], threshold: usize) -> Vec<[f64; 2]> {
     sampled
 }
 
-/// Universal 1-2-5 decade ceiling on raw peak * 1.15, no upper cap.
+/// 9-step decade ladder with 5% boundary tolerance, no upper cap.
 pub fn nice_ceiling(peak: f64, min: f64) -> f64 {
-    let need = (peak * 1.15).max(min);
+    let need = peak.max(min);
     if !need.is_finite() || need <= 0.0 {
         return min;
     }
     let exp = need.log10().floor() as i32;
-    let frac = need / 10_f64.powi(exp);
-    let nice_frac = if frac <= 1.0 {
-        1.0
-    } else if frac <= 2.0 {
-        2.0
-    } else if frac <= 2.5 {
-        2.5
-    } else if frac <= 5.0 {
-        5.0
-    } else {
-        10.0
-    };
-    let v = 10_f64.powi(exp) * nice_frac;
+    let norm = need / 10_f64.powi(exp);
+    const STEPS: [f64; 9] = [1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.5, 10.0];
+    let mult = STEPS.into_iter().find(|s| norm <= s * 1.05).unwrap_or(10.0);
+    let v = 10_f64.powi(exp) * mult;
     v.max(min)
 }
 
@@ -155,5 +146,21 @@ mod tests {
         let points: Vec<[f64; 2]> = vec![[0.0, 1.0], [1.0, 2.0], [2.0, 3.0]];
         let downsampled = lttb_downsample(&points, 10);
         assert_eq!(downsampled.len(), 3);
+    }
+
+    #[test]
+    fn test_nice_ceiling_with_tolerance() {
+        assert_eq!(nice_ceiling(90.0, 1.0), 100.0);
+        assert_eq!(nice_ceiling(105.0, 1.0), 100.0);
+        assert_eq!(nice_ceiling(900.0, 1.0), 1000.0);
+        assert_eq!(nice_ceiling(1050.0, 1.0), 1000.0);
+    }
+
+    #[test]
+    fn test_nice_ceiling_ping_ladder() {
+        assert_eq!(nice_ceiling(4.0, 5.0), 5.0);
+        assert_eq!(nice_ceiling(12.0, 5.0), 15.0);
+        assert_eq!(nice_ceiling(19.0, 5.0), 20.0);
+        assert_eq!(nice_ceiling(23.0, 5.0), 25.0);
     }
 }

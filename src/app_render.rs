@@ -37,12 +37,8 @@ pub fn render_central_panel(
     if let Some(ref snap) = snapshot {
         let raw: &[crate::modules::cpu::model::RawProcessCpuRow] =
             snap.cpu.as_ref().map(|c| c.raw_processes.as_ref()).unwrap_or(&[]);
-        crate::modules::storage::view::ingest_storage_snapshot(
-            &snap.storage,
-            raw,
-            *telemetry_paused,
-        );
-        crate::modules::network::view::ingest_network_snapshot(&snap.network, *telemetry_paused);
+        crate::modules::storage::view::ingest_storage_snapshot(snap, raw, *telemetry_paused);
+        crate::modules::network::view::ingest_network_snapshot(snap, *telemetry_paused);
     }
     match *active_tab {
         ActiveTab::Processes => {
@@ -172,6 +168,7 @@ pub fn render_chrome(
     active_processes: u32,
 ) {
     egui::TopBottomPanel::top("top_header")
+        .exact_height(36.0)
         .show(ctx, |ui| render_top_panel(ui, snapshot, last_ui_ms));
     egui::TopBottomPanel::bottom("bottom_status_bar")
         .exact_height(26.0)

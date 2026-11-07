@@ -24,6 +24,24 @@ fn cached_status(active_processes: u32) -> Arc<str> {
     Arc::clone(&cache.1)
 }
 
+/// Compact status for narrow width: drops "Windows Kernel Monitor".
+fn cached_status_compact(active_processes: u32) -> Arc<str> {
+    static CACHE: OnceLock<Mutex<(u32, Arc<str>)>> = OnceLock::new();
+    let mut cache = CACHE
+        .get_or_init(|| Mutex::new((u32::MAX, Arc::from(""))))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if cache.0 != active_processes {
+        cache.0 = active_processes;
+        cache.1 = Arc::from(format!(
+            "PULSE v{} | Active Processes: {}",
+            env!("CARGO_PKG_VERSION"),
+            active_processes
+        ));
+    }
+    Arc::clone(&cache.1)
+}
+
 /// Cached diagnostics keyed by (RAM tenths, UI-hundredths): idle frames reuse the Arc.
 fn cached_diag(pulse_ram_mb: f32, last_ui_ms: f32) -> Arc<str> {
     type Key2 = (u32, u32);
@@ -77,22 +95,25 @@ pub fn render_status_bar(
                 .color(colors::ACCENT_CYAN),
         );
         ui.separator();
-
-        let status_text = cached_status(active_processes);
+        let wide = ui.available_width() >= 960.0;
+        let status_text = if wide {
+            cached_status(active_processes)
+        } else {
+            cached_status_compact(active_processes)
+        };
         ui.label(
-            egui::RichText::new(status_text.as_ref().to_owned())
+            egui::RichText::new(status_text.as_ref())
                 .monospace()
                 .size(11.0)
                 .color(colors::TEXT_SECONDARY),
         );
 
-        // PULSE self-diagnostics live here (moved from the old top-bar pill).
         if let Some(ref snap) = snapshot {
             let diag = cached_diag(snap.pulse_ram_mb, last_ui_ms);
             ui.separator();
             ui.add(
                 egui::Label::new(
-                    egui::RichText::new(diag.as_ref().to_owned())
+                    egui::RichText::new(diag.as_ref())
                         .monospace()
                         .size(11.0)
                         .color(colors::ACCENT_CYAN),
@@ -117,15 +138,13 @@ pub fn render_status_bar(
             };
             ui.label(egui::RichText::new(mode_badge).monospace().size(11.0).color(mode_color));
 
-            if snap.os_scheduler_jitter_ms > 0 {
+            if snap.os_scheduler_jitter_ms > 0 && wide {
                 ui.separator();
                 ui.label(
-                    egui::RichText::new(
-                        cached_jitter(snap.os_scheduler_jitter_ms).as_ref().to_owned(),
-                    )
-                    .monospace()
-                    .size(11.0)
-                    .color(colors::TEXT_SECONDARY),
+                    egui::RichText::new(cached_jitter(snap.os_scheduler_jitter_ms).as_ref())
+                        .monospace()
+                        .size(11.0)
+                        .color(colors::TEXT_SECONDARY),
                 );
             }
         }

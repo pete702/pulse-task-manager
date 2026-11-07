@@ -80,7 +80,7 @@ fn print_help() {
     println!("Usage: pulse_manager [--self-test | --version | --help]");
     println!();
     println!("Options:");
-    println!("  --self-test    Run headless self-test (CI mode)");
+    println!("  --self-test    Run self-test (headless in CI, GUI locally)");
     println!("  --version, -V  Print version and exit");
     println!("  --help, -h, /? Print this help and exit");
     println!();
@@ -100,15 +100,35 @@ pub static AmdPowerXpressRequestHighPerformance: i32 = 0;
 fn main() -> eframe::Result<()> {
     // Initialize panic hook
     std::panic::set_hook(Box::new(|info| {
-        let msg = format!("PANIC: {}", info);
+        let bt = std::backtrace::Backtrace::force_capture();
+        let msg = format!("PANIC: {}\nBacktrace: {}", info, bt);
         eprintln!("{}", msg);
         let path = std::env::temp_dir().join("pulse_panic.log");
         let _ = std::fs::write(path, msg);
     }));
 
-    // Parse CLI arguments
-    let args: Vec<String> = env::args().collect();
-    let args_skip = &args[1..];
+    // Parse CLI arguments (lossy: non-UTF8 argv cannot panic)
+    let args: Vec<String> =
+        std::env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned()).collect();
+    let args_skip = args.as_slice();
+    let has_cli = !args_skip.is_empty()
+        && (args_skip.iter().any(|a| a.starts_with("--"))
+            || args_skip.iter().any(|a| a.starts_with('-'))
+            || args_skip.iter().any(|a| a.starts_with('/')));
+    // Attach to parent console so release (windows_subsystem) prints CLI output.
+    if has_cli {
+        #[allow(unsafe_code)]
+        #[cfg(target_os = "windows")]
+        {
+            #[link(name = "kernel32")]
+            extern "system" {
+                fn AttachConsole(dw_process_id: u32) -> i32;
+            }
+            unsafe {
+                AttachConsole(u32::MAX);
+            }
+        }
+    }
 
     if args_skip.iter().any(|a| a == "--version" || a == "-V") {
         print_version();

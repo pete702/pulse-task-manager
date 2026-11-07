@@ -82,7 +82,8 @@ fn normalize_name(name: &str) -> String {
 /// Returns the full executable path for a process handle, or `None` on failure.
 #[allow(unsafe_code)]
 pub fn query_process_image_path(handle: &SafeHandle) -> Option<String> {
-    let mut buf = [0u16; 1024];
+    // Heap-allocated to eliminate stack pressure on worker threads.
+    let mut buf = vec![0u16; 4096];
     let mut size = buf.len() as u32;
     let ok = unsafe { QueryFullProcessImageNameW(handle.as_raw(), 0, buf.as_mut_ptr(), &mut size) };
     if ok == 0 || size == 0 {

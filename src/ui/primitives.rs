@@ -155,40 +155,6 @@ pub fn draw_cyber_corner_brackets(ui: &egui::Ui, rect: egui::Rect, color: egui::
     p.line_segment([egui::pos2(x1 - l, y1), egui::pos2(x1, y1)], s);
 }
 
-/// Draws a mini sparkline (up to 24 points) using stack-only Pos2 array.
-/// - `values`: slice of f32 values in range 0.0..=100.0 (last 24 used).
-/// - `color`: line color.
-#[allow(dead_code)]
-pub fn draw_mini_sparkline(ui: &egui::Ui, rect: egui::Rect, values: &[f32], color: egui::Color32) {
-    if values.is_empty() {
-        return;
-    }
-
-    // Use last 24 values
-    let start = values.len().saturating_sub(24);
-    let visible = &values[start..];
-    let count = visible.len();
-    if count < 2 {
-        return;
-    }
-
-    // Stack-allocated array of Pos2 (max 24)
-    let mut points: [egui::Pos2; 24] = [egui::Pos2::ZERO; 24];
-
-    let step_x = rect.width() / (count - 1) as f32;
-    for (i, &v) in visible.iter().enumerate() {
-        let y_ratio = v.clamp(0.0, 100.0) / 100.0;
-        let y = rect.max.y - y_ratio * rect.height();
-        let x = rect.min.x + i as f32 * step_x;
-        points[i] = egui::pos2(x, y);
-    }
-
-    let painter = ui.painter();
-    for i in 0..count - 1 {
-        painter.line_segment([points[i], points[i + 1]], egui::Stroke::new(1.5_f32, color));
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

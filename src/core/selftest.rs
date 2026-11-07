@@ -18,6 +18,11 @@ use crate::modules::memory::safe_handle::{
 };
 
 /// Runs a completely headless self-test without eframe/OpenGL.
+fn fail_selftest(e: String) -> ! {
+    eprintln!("[SelfTest] FAILED: {}", e);
+    std::process::exit(1);
+}
+
 pub fn run_headless_self_test() -> Result<(), String> {
     println!("[SelfTest] Starting headless self-test...");
     let (worker, rx) = spawn_telemetry_worker();
@@ -107,12 +112,15 @@ pub fn run_headless_self_test() -> Result<(), String> {
     }
     println!("[SelfTest] i18n set_lang: En OK");
     let _ = is_app_elevated();
-    assert!(is_protected_process(0, "system"), "PID 0 must be blocked by the safety gate");
-    assert!(
-        verify_pid_safety_gate(0, "system").is_err(),
-        "PID 0 must be rejected by verify_pid_safety_gate"
-    );
-    assert!(SafeHandle::open(0, 0).is_none(), "PID 0 must not yield a usable process handle");
+    if !is_protected_process(0, "system") {
+        return Err("PID 0 must be blocked by the safety gate".to_string());
+    }
+    if !verify_pid_safety_gate(0, "system").is_err() {
+        return Err("PID 0 must be rejected by verify_pid_safety_gate".to_string());
+    }
+    if SafeHandle::open(0, 0).is_some() {
+        return Err("PID 0 must not yield a usable process handle".to_string());
+    }
     let _targets: &[ProcessTarget] = &[];
     let _report: ReclaimReport = trim_process_group(_targets);
     let _ = purge_system_working_sets(_targets);
@@ -132,26 +140,20 @@ pub fn run_self_test(options: eframe::NativeOptions) -> eframe::Result<()> {
     let is_ci = env::var("CI").is_ok() || env::var("GITHUB_ACTIONS").is_ok();
     if is_ci {
         println!("[SelfTest] CI environment detected — running headless self-test without OpenGL");
-        let _ = run_headless_self_test().map_err(|e| {
-            eprintln!("[SelfTest] FAILED: {}", e);
-            std::process::exit(1);
-        });
+        let _ = run_headless_self_test().map_err(fail_selftest);
         return Ok(());
     }
     let app_creator = Box::new(|cc: &eframe::CreationContext<'_>| {
         crate::theme::setup_fonts(&cc.egui_ctx);
         crate::theme::apply_obsidian_theme(&cc.egui_ctx);
-        Box::new(SelfTestApp::new(false)) as Box<dyn eframe::App>
+        Box::new(SelfTestApp::new()) as Box<dyn eframe::App>
     });
     match eframe::run_native("PULSE Self-Test", options, app_creator) {
         Ok(()) => Ok(()),
         Err(e) => {
             eprintln!("[SelfTest] eframe failed: {}. Falling back to headless mode.", e);
             println!("[SelfTest] Fallback to headless self-test");
-            let _ = run_headless_self_test().map_err(|e| {
-                eprintln!("[SelfTest] FAILED: {}", e);
-                std::process::exit(1);
-            });
+            let _ = run_headless_self_test().map_err(fail_selftest);
             Ok(())
         }
     }

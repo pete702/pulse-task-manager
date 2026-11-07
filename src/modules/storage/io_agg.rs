@@ -1,5 +1,6 @@
 //! Storage I/O helpers split from collector for the 280-line guard.
 
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -77,7 +78,17 @@ pub fn aggregate_io(raw: &[RawProcessCpuRow]) -> (f32, f32, Option<(u32, Arc<str
         write_total += row.disk_write_mb_s;
         let sum = row.disk_read_mb_s + row.disk_write_mb_s;
         if sum > TOP_IO_MIN_MB_S {
-            let is_better = top.as_ref().is_some_and(|(_, _, best)| sum > *best);
+            let is_better = top.as_ref().is_some_and(|(best_pid, best_name, best)| {
+                if sum != *best {
+                    sum > *best
+                } else {
+                    row.name
+                        .to_ascii_lowercase()
+                        .cmp(&best_name.to_ascii_lowercase())
+                        .then_with(|| row.pid.cmp(best_pid))
+                        == Ordering::Less
+                }
+            });
             if top.is_none() || is_better {
                 top = Some((row.pid, Arc::clone(&row.name), sum));
             }

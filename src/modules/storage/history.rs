@@ -1,5 +1,5 @@
 //! Storage throughput history split from model for the 280-line guard.
-//! Minutes-ago coordinates with LTTB downsampling to 300 points.
+//! Minutes-ago coordinates with LTTB downsampling to 920 points.
 //! Per-disk series mirror NetworkHistory::per_adapter for chart scope.
 
 use std::collections::{HashMap, VecDeque};
@@ -34,6 +34,11 @@ impl StorageHistory {
     }
     #[allow(dead_code)]
     pub fn push(&mut self, timestamp: f64, read_mb_s: f32, write_mb_s: f32) {
+        if let Some(last) = self.samples.back() {
+            if timestamp <= last.0 {
+                return;
+            }
+        }
         if self.samples.len() == 900 {
             self.samples.pop_front();
         }
@@ -43,7 +48,15 @@ impl StorageHistory {
     }
     #[allow(dead_code)]
     pub fn push_disk(&mut self, disk: u32, timestamp: f64, read_mb_s: f32, write_mb_s: f32) {
+        if self.per_disk.len() >= 32 && !self.per_disk.contains_key(&disk) {
+            self.per_disk.clear();
+        }
         let entry = self.per_disk.entry(disk).or_default();
+        if let Some(last) = entry.back() {
+            if timestamp <= last.0 {
+                return;
+            }
+        }
         if entry.len() == 900 {
             entry.pop_front();
         }
@@ -99,22 +112,32 @@ impl StorageHistory {
         }
         let latest = samples.back().map(|s| s.0).unwrap_or(0.0);
         let win = window_secs as f64;
-        let mut read = Vec::new();
-        let mut write = Vec::new();
-        for (t, r, w) in samples {
-            if latest - t <= win {
-                let x = -(latest - t) / 60.0;
-                read.push([x, *r as f64]);
-                write.push([x, *w as f64]);
+        let window_min = win / 60.0;
+        let mut start_idx = 0;
+        for (i, s) in samples.iter().enumerate() {
+            if latest - s.0 <= win {
+                start_idx = i;
+                break;
             }
         }
-        if read.len() == 1 {
+        let mut read = Vec::new();
+        let mut write = Vec::new();
+        for s in samples.iter().skip(start_idx) {
+            let x = -(latest - s.0) / 60.0;
+            read.push([x, s.1 as f64]);
+            write.push([x, s.2 as f64]);
+        }
+        if start_idx > 0 && !read.is_empty() && read[0][0] > -window_min {
+            let prev = samples[start_idx - 1];
+            read.insert(0, [-window_min, prev.1 as f64]);
+            write.insert(0, [-window_min, prev.2 as f64]);
+        } else if read.len() == 1 {
             let ry = read[0][1];
             let wy = write[0][1];
-            read.insert(0, [-1.0 / 60.0, ry]);
-            write.insert(0, [-1.0 / 60.0, wy]);
+            read.insert(0, [-0.001, ry]);
+            write.insert(0, [-0.001, wy]);
         }
-        (lttb_downsample(&read, 300), lttb_downsample(&write, 300))
+        (lttb_downsample(&read, 920), lttb_downsample(&write, 920))
     }
 }
 
@@ -153,8 +176,8 @@ mod tests {
         }
         assert_eq!(h.len(), 900);
         let (r, _) = h.series_points(900);
-        assert_eq!(r.len(), 300);
-        assert_eq!(r[299][1], 904.0);
+        assert_eq!(r.len(), 900);
+        assert_eq!(r[899][1], 904.0);
     }
     #[test]
     fn per_disk_series_is_separate() {

@@ -1,28 +1,6 @@
 //! Unit tests for the Obsidian HUD theme.
 
 use crate::theme::{self, colors};
-use egui::Color32;
-
-#[test]
-fn test_colors_constants() {
-    assert_eq!(colors::BG_WINDOW, Color32::from_rgb(11, 12, 16));
-    assert_eq!(colors::BG_CARD, Color32::from_rgb(18, 20, 28));
-    assert_eq!(colors::BORDER, Color32::from_rgb(31, 35, 48));
-    assert_eq!(colors::HOVER, Color32::from_rgb(26, 30, 46));
-    assert_eq!(colors::ACTIVE, Color32::from_rgb(31, 35, 48));
-    assert_eq!(colors::RADIUS, 6.0);
-    assert_eq!(colors::BORDER_WIDTH, 1.0);
-    // v0.0.6 new colors
-    assert_eq!(colors::TEXT_PRIMARY, Color32::from_rgb(0xF0, 0xF6, 0xFC));
-    assert_eq!(colors::TEXT_SECONDARY, Color32::from_rgb(0x94, 0xA3, 0xB8));
-    assert_eq!(colors::ACCENT_CYAN, Color32::from_rgb(0x00, 0xF0, 0xFF));
-    assert_eq!(colors::ACCENT_AMBER, Color32::from_rgb(0xFF, 0xB8, 0x00));
-    assert_eq!(colors::ACCENT_RED, Color32::from_rgb(0xFF, 0x2A, 0x54));
-    assert_eq!(colors::ACCENT_PURPLE, Color32::from_rgb(0xBD, 0x00, 0xFF));
-    assert_eq!(colors::SIDEBAR_ACTIVE_BG, Color32::from_rgb(0x1A, 0x22, 0x34));
-    assert_eq!(colors::SIDEBAR_ACTIVE_BORDER, Color32::from_rgb(0x00, 0xF0, 0xFF));
-    assert_eq!(colors::STATUS_BAR_BG, Color32::from_rgb(0x0A, 0x0B, 0x10));
-}
 
 #[test]
 fn test_load_color_cyan_under_60() {

@@ -37,7 +37,7 @@ pub struct SystemSnapshot {
 }
 
 impl SystemSnapshot {
-    #[allow(dead_code)]
+    #[cfg(test)]
     #[inline]
     pub fn new(uptime_secs: u64, pulse_ram_mb: f32, memory: Option<MemSnapshot>) -> Self {
         Self {
@@ -70,7 +70,7 @@ impl SystemSnapshot {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     #[inline]
     pub fn minimal(uptime_secs: u64, pulse_ram_mb: f32) -> Self {
         Self {
@@ -108,15 +108,14 @@ impl LatestSlot {
 
     /// Replaces the slot contents and counts an overflow when a value was unread.
     pub fn store(&self, value: Arc<SystemSnapshot>) {
-        if let Ok(mut slot) = self.inner.lock() {
-            if slot.replace(value).is_some() {
-                self.overflows.fetch_add(1, Ordering::Relaxed);
-            }
+        let mut slot = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.replace(value).is_some() {
+            self.overflows.fetch_add(1, Ordering::Relaxed);
         }
     }
 
     /// Clones the newest value without clearing it.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn get(&self) -> Option<Arc<SystemSnapshot>> {
         self.inner.lock().ok().and_then(|slot| slot.clone())
     }

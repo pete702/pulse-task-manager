@@ -63,7 +63,7 @@ pub fn render_cpu_chart(ui: &mut egui::Ui, h: &mut CpuHistory) {
             let show_peak: bool =
                 ui.ctx().data_mut(|d| *d.get_temp_mut_or_insert_with(peak_id, || true));
 
-            let plot_response = Plot::new(("cpp", selected.seconds()))
+            let plot_response = Plot::new("cpu_load_plot")
                 .width(plot_width)
                 .height(plot_height)
                 .show_axes([false, false])
@@ -93,6 +93,10 @@ pub fn render_cpu_chart(ui: &mut egui::Ui, h: &mut CpuHistory) {
                     }
                 })
                 .show(ui, |pu| {
+                    pu.set_plot_bounds(egui_plot::PlotBounds::from_min_max(
+                        [-span, 0.0],
+                        [0.0, 100.0],
+                    ));
                     pu.hline(
                         HLine::new(85.0)
                             .color(egui::Color32::from_rgba_unmultiplied(255, 42, 84, 110))

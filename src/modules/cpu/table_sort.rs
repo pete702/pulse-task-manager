@@ -82,12 +82,19 @@ pub fn filter_group_and_sort(
                 .or_insert(item);
         }
         items = grouped.into_values().collect();
+        items.sort_by(|a, b| {
+            a.name
+                .to_ascii_lowercase()
+                .cmp(&b.name.to_ascii_lowercase())
+                .then_with(|| a.pid.cmp(&b.pid))
+        });
     }
     sort_slice(&mut items, sort_col, sort_asc);
     items
 }
 
-/// Sorts display rows by the selected column.
+/// Sorts display rows by the selected column. CPU uses quantized tenths
+/// so sub-0.1% jitter never shuffles; ties break by name then pid.
 pub fn sort_slice(items: &mut [ProcessCpuItem], col: CpuSortCol, asc: bool) {
     items.sort_by(|a, b| {
         let ord = match col {
@@ -96,15 +103,22 @@ pub fn sort_slice(items: &mut [ProcessCpuItem], col: CpuSortCol, asc: bool) {
             CpuSortCol::RamBytes => a.ram_bytes.cmp(&b.ram_bytes),
             CpuSortCol::CloneCount => a.clone_count.cmp(&b.clone_count),
             CpuSortCol::Delta => a.ram_delta_10s.cmp(&b.ram_delta_10s),
-            CpuSortCol::CpuPct => a.cpu_pct.total_cmp(&b.cpu_pct),
+            CpuSortCol::CpuPct => {
+                let aq = (a.cpu_pct * 10.0).round() as i64;
+                let bq = (b.cpu_pct * 10.0).round() as i64;
+                aq.cmp(&bq)
+            }
             CpuSortCol::DiskIo => (a.disk_read_mb_s + a.disk_write_mb_s)
                 .total_cmp(&(b.disk_read_mb_s + b.disk_write_mb_s)),
         };
-        if asc {
-            ord
-        } else {
-            ord.reverse()
+        let directed = if asc { ord } else { ord.reverse() };
+        if directed != std::cmp::Ordering::Equal {
+            return directed;
         }
+        a.name
+            .to_ascii_lowercase()
+            .cmp(&b.name.to_ascii_lowercase())
+            .then_with(|| a.pid.cmp(&b.pid))
     });
 }
 

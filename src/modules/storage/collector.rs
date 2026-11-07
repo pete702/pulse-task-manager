@@ -45,8 +45,7 @@ impl StorageCollector {
             self.cached_volumes = Arc::from(volumes_from_disks(&self.disks));
         }
         let (agg_read, agg_write, top) = aggregate_io(raw_processes);
-        // Sum every volume handle per physical disk: IOCTL on volume
-        // counters is per-volume only, so D:/E: would be lost if skipped.
+        // Query once per physical disk: partitions share one counter set.
         let all: Vec<(String, Option<u32>)> = self
             .cached_volumes
             .iter()
@@ -124,8 +123,13 @@ impl StorageCollector {
         let now = Instant::now();
         let mut per_disk: HashMap<u32, (f32, f32)> = HashMap::new();
         let mut sums: HashMap<u32, (i64, i64)> = HashMap::new();
+        let mut visited: Vec<u32> = Vec::new();
         for (mount, disk) in all {
             let Some(disk) = disk else { continue };
+            if visited.contains(disk) {
+                continue;
+            }
+            visited.push(*disk);
             let Some((r, w)) = physical_disk::perf_counters_for_mount(mount) else { continue };
             let e = sums.entry(*disk).or_insert((0, 0));
             e.0 += r;

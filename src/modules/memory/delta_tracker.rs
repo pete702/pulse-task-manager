@@ -71,13 +71,13 @@ impl ProcessDeltaTracker {
         self.current_gen = self.current_gen.wrapping_add(1);
         let mut result = Vec::with_capacity(processes.len());
         // Syscall budget shared by new PIDs and deferred retries.
-        let mut budget: u32 = 8;
+        let mut budget: u32 = 64;
 
         for (pid, name, ram, virt, exe_path, start_time) in processes {
             let key = (*pid, *start_time);
             let seen_pid = *pid;
 
-            // Deferred marker is None; inaccessible caches Some(0) forever.
+            // Deferred marker is None; failed queries stay uncached for retry.
             let state = self.states.entry(key).or_insert_with(|| DeltaState {
                 prev_ram: *ram,
                 name: Arc::clone(name),
@@ -87,15 +87,16 @@ impl ProcessDeltaTracker {
             });
             if state.creation_time.is_none() && budget > 0 {
                 budget -= 1;
-                let queried = resolve(seen_pid);
-                state.creation_time = Some(queried.unwrap_or(0));
+                if let Some(queried) = resolve(seen_pid) {
+                    state.creation_time = Some(queried);
+                }
             }
 
             // Use the cached creation_time (FILETIME) for PID-reuse safety in actions (Open Location / Terminate).
             // No fallback to Unix start_time — they are incompatible time bases.
             let identity = state.creation_time;
 
-            let is_new = state.last_gen == 0;
+            let is_new = state.last_gen == 0 || dt > 15.0;
             let prev = if is_new { *ram } else { state.prev_ram };
             let delta_bytes = *ram as i64 - prev as i64;
             let delta_per_sec = (delta_bytes as f64 / dt).round() as i64;
@@ -147,14 +148,14 @@ mod tests {
         let sample1 = vec![(pid, Arc::from("test.exe"), 1000u64, 2000u64, None, start_time)];
         let result1 = tracker.track_with_resolver(&sample1, Instant::now(), |_| None);
         assert_eq!(result1.len(), 1);
-        assert_eq!(result1[0].creation_time, Some(0)); // inaccessible caches 0
+        assert_eq!(result1[0].creation_time, None);
         let sample2 = vec![(pid, Arc::from("test.exe"), 1500u64, 2000u64, None, start_time)];
         let result2 = tracker.track_with_resolver(&sample2, Instant::now(), |_| None);
         assert_eq!(result2.len(), 1);
         assert_eq!(tracker.states.len(), 1);
         let state = tracker.states.get(&(pid, start_time)).unwrap();
         assert_eq!(state.last_gen, tracker.current_gen);
-        assert_eq!(state.creation_time, Some(0));
+        assert_eq!(state.creation_time, None);
     }
 
     #[test]
@@ -184,10 +185,10 @@ mod tests {
             .collect();
         let r1 = tracker.track_with_resolver(&sample, Instant::now(), |_| None);
         assert_eq!(r1.len(), 12);
-        assert_eq!(r1.iter().filter(|r| r.creation_time.is_none()).count(), 4);
-        assert_eq!(r1.iter().filter(|r| r.creation_time == Some(0)).count(), 8);
-        let r2 = tracker.track_with_resolver(&sample, Instant::now(), |_| None);
+        assert_eq!(r1.iter().filter(|r| r.creation_time.is_none()).count(), 12);
+        let r2 = tracker
+            .track_with_resolver(&sample, Instant::now(), |pid| Some(9000 + pid as u64 % 100));
         assert_eq!(r2.iter().filter(|r| r.creation_time.is_none()).count(), 0);
-        assert_eq!(r2.iter().filter(|r| r.creation_time == Some(0)).count(), 12);
+        assert_eq!(r2.iter().filter(|r| r.creation_time.is_some()).count(), 12);
     }
 }

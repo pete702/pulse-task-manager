@@ -119,15 +119,16 @@ impl MemoryActionBarState {
         self.pending_rx.is_some()
     }
     /// Runs a job on a worker thread and reports its status back to the UI.
-    /// Refuses to start a second job while one is still pending.
-    pub(crate) fn spawn(&mut self, job: impl FnOnce() -> String + Send + 'static) {
+    /// Refuses to start a second job while one is still pending. Returns false if busy.
+    pub(crate) fn spawn(&mut self, job: impl FnOnce() -> String + Send + 'static) -> bool {
         if self.pending_rx.is_some() {
-            return;
+            return false;
         }
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             let _ = tx.send(job());
         });
         self.pending_rx = Some(rx);
+        true
     }
 }

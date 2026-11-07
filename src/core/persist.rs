@@ -3,6 +3,7 @@
 use crate::app_tabs::ActiveTab;
 use crate::modules::cpu::table_state::CpuSortCol;
 use crate::modules::memory::model::ChartWindow;
+use std::io::Read;
 use std::path::PathBuf;
 
 /// Persisted UI state across restarts.
@@ -56,7 +57,13 @@ pub fn state_path() -> Option<PathBuf> {
 /// Loads persisted state, or defaults when the file is missing or unreadable.
 pub fn load_state() -> PersistedState {
     let Some(path) = state_path() else { return PersistedState::default() };
-    match std::fs::read_to_string(path) {
+    let Ok(file) = std::fs::File::open(&path) else { return PersistedState::default() };
+    let mut buf = Vec::new();
+    let mut limited = file.take(64 * 1024);
+    if limited.read_to_end(&mut buf).is_err() {
+        return PersistedState::default();
+    }
+    match String::from_utf8(buf) {
         Ok(text) => parse(&text),
         Err(_) => PersistedState::default(),
     }
@@ -68,11 +75,19 @@ pub fn save_state(s: &PersistedState) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(path, serialize(s))
+    let tmp_path = path.with_file_name("state.cfg.tmp");
+    std::fs::write(&tmp_path, serialize(s))?;
+    if std::fs::rename(&tmp_path, &path).is_err() {
+        let _ = std::fs::remove_file(&tmp_path);
+        std::fs::write(&path, serialize(s))?;
+    }
+    Ok(())
 }
 
 /// Serializes state to key=value text (fixed key order).
 pub fn serialize(s: &PersistedState) -> String {
+    let win_w = if s.win_w.is_finite() { s.win_w } else { 1180.0 };
+    let win_h = if s.win_h.is_finite() { s.win_h } else { 760.0 };
     format!(
         "active_tab={}\ngroup_clones={}\ncompact_rows={}\nsort_col={}\nsort_asc={}\ncpu_show_grid={}\nmem_window_secs={}\ncpu_window_secs={}\nstorage_window_secs={}\nnetwork_window_secs={}\nnetwork_chart_mode={}\nnetwork_probe_enabled={}\nprocess_quick_filter={}\nwin_w={:.1}\nwin_h={:.1}\n",
         s.active_tab,
@@ -88,8 +103,8 @@ pub fn serialize(s: &PersistedState) -> String {
         s.network_chart_mode,
         bool_str(s.network_probe_enabled),
         s.process_quick_filter,
-        s.win_w.clamp(860.0, 3840.0),
-        s.win_h.clamp(560.0, 2160.0),
+        win_w.clamp(860.0, 3840.0),
+        win_h.clamp(560.0, 2160.0),
     )
 }
 
@@ -117,8 +132,22 @@ pub fn parse(text: &str) -> PersistedState {
             "network_chart_mode" => s.network_chart_mode = v.parse::<u8>().unwrap_or(0).min(2),
             "network_probe_enabled" => s.network_probe_enabled = parse_bool(v),
             "process_quick_filter" => s.process_quick_filter = v.parse::<u8>().unwrap_or(0).min(3),
-            "win_w" => s.win_w = v.parse::<f32>().unwrap_or(1180.0).clamp(860.0, 3840.0),
-            "win_h" => s.win_h = v.parse::<f32>().unwrap_or(760.0).clamp(560.0, 2160.0),
+            "win_w" => {
+                s.win_w = v
+                    .parse::<f32>()
+                    .ok()
+                    .filter(|v: &f32| v.is_finite())
+                    .unwrap_or(1180.0)
+                    .clamp(860.0, 3840.0)
+            }
+            "win_h" => {
+                s.win_h = v
+                    .parse::<f32>()
+                    .ok()
+                    .filter(|v: &f32| v.is_finite())
+                    .unwrap_or(760.0)
+                    .clamp(560.0, 2160.0)
+            }
             _ => {}
         }
     }

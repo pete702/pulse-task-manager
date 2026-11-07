@@ -5,6 +5,8 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
+use crate::modules::memory::downsampling::lttb_downsample;
+
 type Sample = (f64, f32, f32, Option<f32>, Option<f32>);
 type AdapterSample = (f64, f32, f32);
 type SeriesCache = (Option<String>, usize, u64, Arc<Vec<[f64; 2]>>, Arc<Vec<[f64; 2]>>);
@@ -35,6 +37,11 @@ impl NetworkHistory {
     }
     #[allow(dead_code)]
     pub fn push(&mut self, t: f64, rx: f32, tx: f32, ping: Option<f32>, jitter: Option<f32>) {
+        if let Some(last) = self.samples.back() {
+            if t <= last.0 {
+                return;
+            }
+        }
         if self.samples.len() == 900 {
             self.samples.pop_front();
         }
@@ -45,7 +52,15 @@ impl NetworkHistory {
     }
     #[allow(dead_code)]
     pub fn push_adapter(&mut self, name: &str, t: f64, rx: f32, tx: f32) {
+        if self.per_adapter.len() >= 32 && !self.per_adapter.contains_key(name) {
+            self.per_adapter.clear();
+        }
         let entry = self.per_adapter.entry(name.to_owned()).or_default();
+        if let Some(last) = entry.back() {
+            if t <= last.0 {
+                return;
+            }
+        }
         if entry.len() == 900 {
             entry.pop_front();
         }
@@ -103,22 +118,32 @@ impl NetworkHistory {
         }
         let latest = self.samples.back().map(|s| s.0).unwrap_or(0.0);
         let win = window_secs as f64;
-        let mut first = Vec::new();
-        let mut second = Vec::new();
-        for (t, rx, tx, _, _) in &self.samples {
-            if latest - t <= win {
-                let x = -(latest - t) / 60.0;
-                first.push([x, *rx as f64]);
-                second.push([x, *tx as f64]);
+        let window_min = win / 60.0;
+        let mut start_idx = 0;
+        for (i, s) in self.samples.iter().enumerate() {
+            if latest - s.0 <= win {
+                start_idx = i;
+                break;
             }
         }
-        if first.len() == 1 {
+        let mut first = Vec::new();
+        let mut second = Vec::new();
+        for s in self.samples.iter().skip(start_idx) {
+            let x = -(latest - s.0) / 60.0;
+            first.push([x, s.1 as f64]);
+            second.push([x, s.2 as f64]);
+        }
+        if start_idx > 0 && !first.is_empty() && first[0][0] > -window_min {
+            let prev = &self.samples[start_idx - 1];
+            first.insert(0, [-window_min, prev.1 as f64]);
+            second.insert(0, [-window_min, prev.2 as f64]);
+        } else if first.len() == 1 {
             let ay = first[0][1];
             let by = second[0][1];
-            first.insert(0, [-1.0 / 60.0, ay]);
-            second.insert(0, [-1.0 / 60.0, by]);
+            first.insert(0, [-0.001, ay]);
+            second.insert(0, [-0.001, by]);
         }
-        (first, second)
+        slim(first, second)
     }
     fn build_adapter(&self, scope: &str, window_secs: usize) -> (Vec<[f64; 2]>, Vec<[f64; 2]>) {
         let Some(series) = self.per_adapter.get(scope) else { return (Vec::new(), Vec::new()) };
@@ -127,20 +152,30 @@ impl NetworkHistory {
         }
         let latest = series.back().map(|s| s.0).unwrap_or(0.0);
         let win = window_secs as f64;
-        let mut first = Vec::new();
-        let mut second = Vec::new();
-        for (t, rx, tx) in series {
-            if latest - t <= win {
-                let x = -(latest - t) / 60.0;
-                first.push([x, *rx as f64]);
-                second.push([x, *tx as f64]);
+        let window_min = win / 60.0;
+        let mut start_idx = 0;
+        for (i, s) in series.iter().enumerate() {
+            if latest - s.0 <= win {
+                start_idx = i;
+                break;
             }
         }
-        if first.len() == 1 {
+        let mut first = Vec::new();
+        let mut second = Vec::new();
+        for s in series.iter().skip(start_idx) {
+            let x = -(latest - s.0) / 60.0;
+            first.push([x, s.1 as f64]);
+            second.push([x, s.2 as f64]);
+        }
+        if start_idx > 0 && !first.is_empty() && first[0][0] > -window_min {
+            let prev = &series[start_idx - 1];
+            first.insert(0, [-window_min, prev.1 as f64]);
+            second.insert(0, [-window_min, prev.2 as f64]);
+        } else if first.len() == 1 {
             let ay = first[0][1];
             let by = second[0][1];
-            first.insert(0, [-1.0 / 60.0, ay]);
-            second.insert(0, [-1.0 / 60.0, by]);
+            first.insert(0, [-0.001, ay]);
+            second.insert(0, [-0.001, by]);
         }
         slim(first, second)
     }
@@ -150,29 +185,41 @@ impl NetworkHistory {
         }
         let latest = self.samples.back().map(|s| s.0).unwrap_or(0.0);
         let win = window_secs as f64;
-        let mut first = Vec::new();
-        let mut second = Vec::new();
-        for (t, _, _, ping, jitter) in &self.samples {
-            if latest - t <= win {
-                let x = -(latest - t) / 60.0;
-                // Emit NAN for missing samples so egui_plot breaks the line
-                // across outages. Never fake 0.0.
-                first.push([x, ping.map(|v| v as f64).unwrap_or(f64::NAN)]);
-                second.push([x, jitter.map(|v| v as f64).unwrap_or(f64::NAN)]);
+        let window_min = win / 60.0;
+        let mut start_idx = 0;
+        for (i, s) in self.samples.iter().enumerate() {
+            if latest - s.0 <= win {
+                start_idx = i;
+                break;
             }
         }
-        if first.len() == 1 {
+        let mut first = Vec::new();
+        let mut second = Vec::new();
+        for s in self.samples.iter().skip(start_idx) {
+            let x = -(latest - s.0) / 60.0;
+            // Emit NAN for missing samples so egui_plot breaks the line
+            // across outages. Never fake 0.0.
+            first.push([x, s.3.map(|v| v as f64).unwrap_or(f64::NAN)]);
+            second.push([x, s.4.map(|v| v as f64).unwrap_or(f64::NAN)]);
+        }
+        if start_idx > 0 && !first.is_empty() && first[0][0] > -window_min {
+            let prev = &self.samples[start_idx - 1];
+            let ay = prev.3.map(|v| v as f64).unwrap_or(f64::NAN);
+            let by = prev.4.map(|v| v as f64).unwrap_or(f64::NAN);
+            first.insert(0, [-window_min, ay]);
+            second.insert(0, [-window_min, by]);
+        } else if first.len() == 1 {
             let ay = first[0][1];
             let by = second[0][1];
-            first.insert(0, [-1.0 / 60.0, ay]);
-            second.insert(0, [-1.0 / 60.0, by]);
+            first.insert(0, [-0.001, ay]);
+            second.insert(0, [-0.001, by]);
         }
         (first, second)
     }
 }
 
 fn slim(a: Vec<[f64; 2]>, b: Vec<[f64; 2]>) -> (Vec<[f64; 2]>, Vec<[f64; 2]>) {
-    (a, b)
+    (lttb_downsample(&a, 920), lttb_downsample(&b, 920))
 }
 
 #[cfg(test)]

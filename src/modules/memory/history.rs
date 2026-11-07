@@ -4,10 +4,9 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use super::model::{ChartWindow, MemorySnapshot, HISTORY_CAPACITY};
-use crate::modules::memory::constants::CHART_ANCHOR_TOLERANCE_SECS;
 use crate::modules::memory::downsampling::lttb_downsample;
 
-/// Ring buffer for memory usage history. Stores up to `HISTORY_CAPACITY` (900) points
+/// Ring buffer for memory usage history. Stores up to `HISTORY_CAPACITY` (960) points
 /// (RAM/Swap/Commit %) at 1s interval covering 15 min. Tracks session peaks.
 #[derive(Clone, Debug, Default)]
 pub struct MemoryHistory {
@@ -57,6 +56,11 @@ impl MemoryHistory {
     }
 
     pub fn push(&mut self, snap: &MemorySnapshot) {
+        if let Some(last) = self.timestamps.back().copied() {
+            if snap.sample_elapsed_secs <= last {
+                return;
+            }
+        }
         let ram_pct = snap.ram_usage_percent();
         let swap_pct = snap.swap_usage_percent();
         let commit_pct = snap.commit_usage_percent();
@@ -78,15 +82,10 @@ impl MemoryHistory {
         if self.timestamps.len() == HISTORY_CAPACITY {
             self.timestamps.pop_front();
         }
-        let ts = if snap.sample_elapsed_secs > 0.0 {
-            snap.sample_elapsed_secs
-        } else {
-            self.timestamps.back().copied().unwrap_or(0.0) + 1.0
-        };
         self.ram_points.push_back(ram_pct);
         self.swap_points.push_back(swap_pct);
         self.commit_points.push_back(commit_pct);
-        self.timestamps.push_back(ts);
+        self.timestamps.push_back(snap.sample_elapsed_secs);
         self.revision = self.revision.wrapping_add(1);
         self.invalidate_caches();
     }
@@ -115,7 +114,7 @@ impl MemoryHistory {
             return c;
         }
         let points = self.build_windowed_series(&self.ram_points, window);
-        let arc = Arc::new(lttb_downsample(&points, 900));
+        let arc = Arc::new(lttb_downsample(&points, 920));
         match window {
             ChartWindow::OneMin => self.cached_ram_1m = Some(arc.clone()),
             ChartWindow::FiveMin => self.cached_ram_5m = Some(arc.clone()),
@@ -134,7 +133,7 @@ impl MemoryHistory {
             return c;
         }
         let points = self.build_windowed_series(&self.swap_points, window);
-        let arc = Arc::new(lttb_downsample(&points, 900));
+        let arc = Arc::new(lttb_downsample(&points, 920));
         match window {
             ChartWindow::OneMin => self.cached_swap_1m = Some(arc.clone()),
             ChartWindow::FiveMin => self.cached_swap_5m = Some(arc.clone()),
@@ -153,7 +152,7 @@ impl MemoryHistory {
             return c;
         }
         let points = self.build_windowed_series(&self.commit_points, window);
-        let arc = Arc::new(lttb_downsample(&points, 900));
+        let arc = Arc::new(lttb_downsample(&points, 920));
         match window {
             ChartWindow::OneMin => self.cached_commit_1m = Some(arc.clone()),
             ChartWindow::FiveMin => self.cached_commit_5m = Some(arc.clone()),
@@ -162,7 +161,7 @@ impl MemoryHistory {
         arc
     }
 
-    /// Build raw windowed [timestamp, value] points. Anchors left edge to exact -span when history spans full window.
+    /// Build raw windowed [timestamp, value] points. Clean startup avoids fake flat lines.
     #[allow(clippy::needless_range_loop)]
     fn build_windowed_series(&self, points: &VecDeque<f32>, window: ChartWindow) -> Vec<[f64; 2]> {
         if self.timestamps.is_empty() || points.is_empty() {
@@ -183,13 +182,10 @@ impl MemoryHistory {
         for i in start_idx..len {
             out.push([timestamps[i], points[i] as f64]);
         }
-        let history_span = now - timestamps[0];
-        let tol = CHART_ANCHOR_TOLERANCE_SECS;
-        let first_x_ok = !out.is_empty() && out.len() >= 2 && out[0][0] <= now - window_secs + tol;
-        let history_ok = history_span >= window_secs - tol;
-        if (history_ok || first_x_ok) && !out.is_empty() {
-            let first_y = out[0][1];
-            out.insert(0, [now - window_secs, first_y]);
+        let cutoff = now - window_secs;
+        if start_idx > 0 && out.len() > 1 && out[0][0] > cutoff {
+            let prev_y = points[start_idx - 1] as f64;
+            out.insert(0, [cutoff, prev_y]);
         }
         out
     }

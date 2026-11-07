@@ -36,6 +36,7 @@ mod tests {
                 swap_total_bytes: 8_000_000_000,
                 swap_used_bytes: (2_000_000_000 + (i * 5_000_000) as u64) % 8_000_000_000,
                 swap_free_bytes: 6_000_000_000,
+                sample_elapsed_secs: i as f64 + 1.0,
                 ..Default::default()
             };
             history.push(&snap);
@@ -71,7 +72,7 @@ mod tests {
     fn test_chart_window_slices() {
         let mut h = MemoryHistory::new();
         for i in 0..400 {
-            h.push(&snap(100, i % 100));
+            h.push(&MemorySnapshot { sample_elapsed_secs: i as f64 + 1.0, ..snap(100, i % 100) });
         }
         h.chart_window = ChartWindow::OneMin;
         assert_eq!(h.windowed_ram_points().count(), 60);
@@ -89,7 +90,7 @@ mod tests {
     fn test_timed_window_uses_real_timestamps() {
         let mut h = MemoryHistory::new();
         for i in 0..10 {
-            h.push(&snap(100, i));
+            h.push(&MemorySnapshot { sample_elapsed_secs: i as f64 + 1.0, ..snap(100, i) });
         }
         h.timestamps.clear();
         for i in 0..10 {
@@ -155,8 +156,8 @@ mod tests {
         history.chart_window = ChartWindow::FifteenMin;
         let ram_series = history.ram_series(ChartWindow::FifteenMin);
         assert!(
-            ram_series.len() <= 900,
-            "exact series should hold at most 900 points, got {}",
+            ram_series.len() <= 920,
+            "exact series should hold at most 920 points, got {}",
             ram_series.len()
         );
 
@@ -171,17 +172,17 @@ mod tests {
 
         // Test 1m window
         let ram_1m = history.ram_series(ChartWindow::OneMin);
-        assert!(ram_1m.len() <= 900, "1m series should stay within 900 points");
+        assert!(ram_1m.len() <= 920, "1m series should stay within 920 points");
 
         // Test 5m window
         let ram_5m = history.ram_series(ChartWindow::FiveMin);
-        assert!(ram_5m.len() <= 900, "5m series should stay within 900 points");
+        assert!(ram_5m.len() <= 920, "5m series should stay within 920 points");
     }
 
     #[test]
     fn test_history_wrap_invalidates_cache() {
         let mut history = MemoryHistory::new();
-        for i in 0..905 {
+        for i in 0..965 {
             let snap = MemorySnapshot {
                 ram_total_bytes: 1000,
                 ram_used_bytes: 500 + (i % 10) as u64,
@@ -190,13 +191,18 @@ mod tests {
             };
             history.push(&snap);
         }
-        assert_eq!(history.len(), 900, "ring buffer evicts the oldest samples");
+        assert_eq!(history.len(), 960, "ring buffer evicts the oldest samples");
         history.chart_window = ChartWindow::FifteenMin;
-        assert_eq!(history.windowed_ram_timed().count(), 900);
+        assert_eq!(history.windowed_ram_timed().count(), 901);
 
         // Verify that new data invalidates and recomputes the precomputed series
         let _series_before = history.ram_series(ChartWindow::FifteenMin).clone();
-        history.push(&snap(1000, 999));
+        history.push(&MemorySnapshot {
+            ram_total_bytes: 1000,
+            ram_used_bytes: 999,
+            sample_elapsed_secs: 966.0,
+            ..Default::default()
+        });
         let series_after = history.ram_series(ChartWindow::FifteenMin);
 
         // Series should be recomputed (different Arc or different data)

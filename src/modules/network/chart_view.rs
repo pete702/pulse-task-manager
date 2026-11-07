@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use eframe::egui;
-use egui_plot::{GridMark, Line, Plot, PlotPoints};
+use egui_plot::{GridMark, Line, Plot, PlotBounds, PlotPoints};
 
 use crate::modules::cpu::chart_axis::x_grid_spacer;
 use crate::modules::memory::downsampling::{lttb_segments, nice_ceiling};
@@ -18,11 +18,11 @@ fn draw_plot(
     span_min: f64,
     latency: bool,
     legend: &str,
-    id: (usize, bool),
+    _id: (usize, bool),
 ) {
-    let window_secs = (span_min * 60.0) as usize;
     let peak = first.iter().chain(second.iter()).map(|p| p[1]).fold(0.0f64, f64::max);
-    let ceiling = nice_ceiling(peak, if latency { 10.0 } else { 1.0 });
+    let min_floor = if latency { 5.0 } else { 1.0 };
+    let ceiling = nice_ceiling(peak, min_floor);
     let step = ceiling / 4.0;
     let y_grid = [
         GridMark { value: f64::from(0), step_size: step },
@@ -37,7 +37,7 @@ fn draw_plot(
     let second_pts = to_points(second);
     let resp = ui.horizontal(|ui| {
         ui.add_space(52.0);
-        Plot::new(("network_io", window_secs, id))
+        Plot::new(("network_io_plot", latency))
             .width(ui.available_width().max(200.0))
             .height(220.0)
             .show_axes([false, false])
@@ -60,6 +60,7 @@ fn draw_plot(
                 format!("{}: {:.1} {} ({})", name, value.y, unit, when)
             })
             .show(ui, |pu| {
+                pu.set_plot_bounds(PlotBounds::from_min_max([-span_min, 0.0], [0.0, ceiling]));
                 pu.line(
                     Line::new(first_pts)
                         .name(n1)
@@ -207,10 +208,10 @@ fn pick_mode(ui: &mut egui::Ui, label: &str, mode: ChartMode, selected: bool) {
 fn to_points(series: &Arc<Vec<[f64; 2]>>) -> PlotPoints {
     if series.is_empty() {
         PlotPoints::new(vec![[-1.0 / 60.0, 0.0], [0.0, 0.0]])
-    } else if series.len() <= 300 {
+    } else if series.len() <= 920 {
         PlotPoints::new(series.to_vec())
     } else {
-        PlotPoints::new(lttb_segments(series, 300))
+        PlotPoints::new(lttb_segments(series, 920))
     }
 }
 

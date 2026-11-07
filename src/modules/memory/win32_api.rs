@@ -95,7 +95,8 @@ pub fn query_process_exe_path(pid: u32) -> Option<String> {
     }
 
     // Buffer for the path (MAX_PATH = 260, but we use 32767 for extended paths)
-    let mut buffer: [u16; 32767] = [0; 32767];
+    // Heap-allocated to eliminate stack pressure on worker threads.
+    let mut buffer = vec![0u16; 4096];
     let size =
         unsafe { K32GetModuleFileNameExW(handle, 0, buffer.as_mut_ptr(), buffer.len() as u32) };
 

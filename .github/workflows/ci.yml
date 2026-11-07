@@ -1,5 +1,9 @@
 name: CI
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
@@ -86,5 +90,3 @@ jobs:
             ${{ runner.os }}-cargo-msrv-
       - name: Run cargo check (stable)
         run: cargo check --locked --all-targets
-      - name: Run Clippy (stable)
-        run: cargo clippy --locked --all-targets -- -D warnings

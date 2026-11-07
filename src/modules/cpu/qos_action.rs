@@ -6,9 +6,9 @@ use std::path::Path;
 
 use windows_sys::Win32::System::Threading::{
     GetPriorityClass, GetProcessInformation, ProcessPowerThrottling, SetPriorityClass,
-    SetProcessInformation, IDLE_PRIORITY_CLASS, PROCESS_POWER_THROTTLING_CURRENT_VERSION,
-    PROCESS_POWER_THROTTLING_EXECUTION_SPEED, PROCESS_POWER_THROTTLING_STATE,
-    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
+    SetProcessInformation, IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS,
+    PROCESS_POWER_THROTTLING_CURRENT_VERSION, PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+    PROCESS_POWER_THROTTLING_STATE, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
 };
 
 use crate::modules::cpu::model::ProcessCpuItem;
@@ -54,8 +54,7 @@ fn is_system_process(name: &str) -> bool {
     SYSTEM_PROCESS_BLOCKLIST.iter().any(|&s| name.eq_ignore_ascii_case(s))
 }
 
-/// Builds a verified target using creation time queried at action time.
-/// CPU rows intentionally do not collect creation time during scans.
+/// Builds a verified target from creation time at action time.
 fn target_for(item: &ProcessCpuItem) -> Result<ProcessTarget, String> {
     let creation_time = query_creation_time_by_pid(item.pid)
         .ok_or_else(|| "Cannot read process creation time".to_string())?;
@@ -67,9 +66,16 @@ fn target_for(item: &ProcessCpuItem) -> Result<ProcessTarget, String> {
     })
 }
 
+/// Throttling masks: ControlMask always set, StateMask only when enabling.
+pub(crate) fn build_throttling_masks(enable: bool) -> (u32, u32) {
+    let control_mask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+    let state_mask = if enable { PROCESS_POWER_THROTTLING_EXECUTION_SPEED } else { 0 };
+    (control_mask, state_mask)
+}
+
 /// Enables EcoQoS (Efficiency Mode) by setting IDLE_PRIORITY_CLASS.
 #[allow(unsafe_code)]
-pub fn enable_eco_qos(pid: u32, name: &str) -> Result<(), String> {
+pub fn set_process_eco_qos(pid: u32, name: &str, enable: bool) -> Result<(), String> {
     if is_system_process(name) {
         return Err("System process is protected".to_string());
     }
@@ -86,15 +92,17 @@ pub fn enable_eco_qos(pid: u32, name: &str) -> Result<(), String> {
         return Err("Process identity verification failed".to_string());
     }
 
-    let result = unsafe { SetPriorityClass(handle.as_raw(), IDLE_PRIORITY_CLASS) };
+    let priority = if enable { IDLE_PRIORITY_CLASS } else { NORMAL_PRIORITY_CLASS };
+    let result = unsafe { SetPriorityClass(handle.as_raw(), priority) };
     if result == 0 {
-        return Err("Failed to set IDLE_PRIORITY_CLASS".to_string());
+        return Err("Failed to set priority class".to_string());
     }
     // Best-effort true EcoQoS: Power Throttling execution-speed control.
+    let (control_mask, state_mask) = build_throttling_masks(enable);
     let state = PROCESS_POWER_THROTTLING_STATE {
         Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
-        ControlMask: PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
-        StateMask: 0,
+        ControlMask: control_mask,
+        StateMask: state_mask,
     };
     unsafe {
         let _ = SetProcessInformation(
@@ -107,8 +115,13 @@ pub fn enable_eco_qos(pid: u32, name: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Returns Some(true) when PID runs in EcoQoS (idle priority or power throttling).
-/// Returns None when the process cannot be opened or queried.
+/// Enables EcoQoS (Efficiency Mode) by setting IDLE_PRIORITY_CLASS.
+#[allow(unsafe_code)]
+pub fn enable_eco_qos(pid: u32, name: &str) -> Result<(), String> {
+    set_process_eco_qos(pid, name, true)
+}
+
+/// Some(true) when PID runs in EcoQoS (idle priority or power throttling).
 #[allow(unsafe_code)]
 pub fn is_process_eco_qos(pid: u32) -> Option<bool> {
     if pid == 0 || pid == 4 {
@@ -168,79 +181,6 @@ pub fn terminate_process(item: &ProcessCpuItem) -> Result<(), String> {
     }
 }
 
-/// Renders the right-click action menu for one CPU process row.
-#[allow(dead_code)]
-pub fn show_cpu_process_context_menu(ui: &mut eframe::egui::Ui, item: &ProcessCpuItem) {
-    use eframe::egui;
-
-    let blocked = is_system_process(item.name.as_ref());
-    let pid = item.pid;
-    let name = item.name.to_string();
-
-    ui.label(
-        egui::RichText::new(&name).monospace().size(12.0).color(crate::theme::colors::TEXT_PRIMARY),
-    );
-    ui.label(
-        egui::RichText::new(format!("PID {pid}"))
-            .monospace()
-            .size(10.0)
-            .color(crate::theme::colors::TEXT_SECONDARY),
-    );
-    ui.separator();
-
-    if ui.add_enabled(!blocked, egui::Button::new("Enable EcoQoS (Efficiency Mode)")).clicked() {
-        if enable_eco_qos(pid, &name).is_ok() {
-            crate::modules::cpu::collector::set_eco_cached(pid, item.start_time, true);
-            crate::core::request_process_scan();
-        }
-        ui.close_menu();
-    }
-
-    if ui.add_enabled(!blocked, egui::Button::new("Trim Working Set (Free RAM)")).clicked() {
-        let _ = trim_process_working_set(item);
-        ui.close_menu();
-    }
-
-    if ui.button("Open File Location").clicked() {
-        let _ = open_process_file_location(pid);
-        ui.close_menu();
-    }
-
-    ui.separator();
-
-    if ui
-        .add_enabled(
-            !blocked,
-            egui::Button::new(
-                egui::RichText::new("Terminate Process").color(crate::theme::colors::ACCENT_RED),
-            ),
-        )
-        .clicked()
-    {
-        let _ = terminate_process(item);
-        ui.close_menu();
-    }
-
-    if blocked {
-        ui.label(
-            egui::RichText::new("Mutating actions blocked for system process")
-                .italics()
-                .size(10.0)
-                .color(crate::theme::colors::TEXT_SECONDARY),
-        );
-    }
-
-    ui.separator();
-    if ui.button("Copy PID").clicked() {
-        ui.output_mut(|o| o.copied_text = pid.to_string());
-        ui.close_menu();
-    }
-    if ui.button("Copy Name").clicked() {
-        ui.output_mut(|o| o.copied_text = name);
-        ui.close_menu();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -253,5 +193,15 @@ mod tests {
         assert!(!is_system_process("chrome.exe"));
         assert!(!is_system_process("notepad.exe"));
         assert!(!is_system_process("myapp"));
+    }
+
+    #[test]
+    fn test_build_throttling_masks() {
+        let (on_control, on_state) = build_throttling_masks(true);
+        assert_ne!(on_control, 0);
+        assert_ne!(on_state, 0);
+        let (off_control, off_state) = build_throttling_masks(false);
+        assert_ne!(off_control, 0);
+        assert_eq!(off_state, 0);
     }
 }

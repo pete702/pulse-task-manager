@@ -5,9 +5,22 @@ use std::sync::Arc;
 use crate::core::SystemSnapshot;
 use crate::theme::colors;
 use crate::ui::sidebar_badges::{
-    cached_count, cached_cpu_pct, cached_network_badge, cached_pct, cached_storage_badge,
+    badge_active, cached_count, cached_cpu_pct, cached_network_badge, cached_pct,
+    cached_storage_badge,
 };
 use eframe::egui;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static STORAGE_ACTIVE: AtomicBool = AtomicBool::new(false);
+static NETWORK_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Stable accent color with hysteresis above 0.15 / below 0.05.
+fn hysteresis_active(slot: &AtomicBool, total: f32) -> bool {
+    let mut cur = slot.load(Ordering::Relaxed);
+    let next = badge_active(total, &mut cur);
+    slot.store(next, Ordering::Relaxed);
+    next
+}
 
 /// Next tab in sidebar order (wraps).
 fn next_tab(tab: crate::app_tabs::ActiveTab) -> crate::app_tabs::ActiveTab {
@@ -171,9 +184,12 @@ pub fn render_sidebar(
             if tab == crate::app_tabs::ActiveTab::Storage {
                 if let Some(ref snapshot) = latest_snapshot {
                     let total = snapshot.storage.read_mb_s + snapshot.storage.write_mb_s;
-                    let badge = cached_storage_badge(total, snapshot.storage.volumes.len());
-                    let badge_color =
-                        if total >= 0.1 { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
+                    let badge = cached_storage_badge(total);
+                    let badge_color = if hysteresis_active(&STORAGE_ACTIVE, total) {
+                        colors::ACCENT_CYAN
+                    } else {
+                        colors::TEXT_SECONDARY
+                    };
                     let pos = egui::pos2(rect.right() - 12.0, rect.center().y);
                     ui.painter().text(
                         pos,
@@ -189,9 +205,12 @@ pub fn render_sidebar(
             if tab == crate::app_tabs::ActiveTab::Network {
                 if let Some(ref snapshot) = latest_snapshot {
                     let total = snapshot.network.rx_mbps + snapshot.network.tx_mbps;
-                    let badge = cached_network_badge(total, snapshot.network.ping_ms);
-                    let badge_color =
-                        if total >= 0.1 { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
+                    let badge = cached_network_badge(total);
+                    let badge_color = if hysteresis_active(&NETWORK_ACTIVE, total) {
+                        colors::ACCENT_CYAN
+                    } else {
+                        colors::TEXT_SECONDARY
+                    };
                     let pos = egui::pos2(rect.right() - 12.0, rect.center().y);
                     ui.painter().text(
                         pos,
@@ -238,7 +257,6 @@ pub fn render_sidebar(
                     *active_tab = prev_tab(tab);
                 }
             }
-
             ui.add_space(6.0);
         }
     });

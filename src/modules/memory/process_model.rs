@@ -1,6 +1,7 @@
-//! Pure mathematical model for process memory telemetry — zero dependencies on egui/sysinfo.
+//! Pure mathematical model for process memory telemetry -- zero dependencies on egui/sysinfo.
 //! Provides process memory aggregation, grouping, sorting, and spike detection.
 
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -85,6 +86,12 @@ pub fn filter_group_and_sort(
                 .or_insert(item);
         }
         items = grouped.into_values().collect();
+        items.sort_by(|a, b| {
+            a.name
+                .to_ascii_lowercase()
+                .cmp(&b.name.to_ascii_lowercase())
+                .then_with(|| a.pid.cmp(&b.pid))
+        });
     }
     items.sort_by(|a, b| {
         let ord = match sort_col {
@@ -93,6 +100,14 @@ pub fn filter_group_and_sort(
             MemorySortCol::RamBytes => a.ram_bytes.cmp(&b.ram_bytes),
             MemorySortCol::VirtualBytes => a.virtual_bytes.cmp(&b.virtual_bytes),
             MemorySortCol::RamPct => a.ram_pct.total_cmp(&b.ram_pct),
+        };
+        let ord = if ord == Ordering::Equal {
+            a.name
+                .to_ascii_lowercase()
+                .cmp(&b.name.to_ascii_lowercase())
+                .then_with(|| a.pid.cmp(&b.pid))
+        } else {
+            ord
         };
         if sort_asc {
             ord

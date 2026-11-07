@@ -25,7 +25,7 @@ mod tests {
     #[test]
     fn test_history_ring_buffer_eviction() {
         let mut h = MemoryHistory::new();
-        for i in 0..905 {
+        for i in 0..965 {
             let snap = MemorySnapshot {
                 ram_total_bytes: 1000,
                 ram_used_bytes: 500 + (i % 10) as u64,
@@ -34,18 +34,50 @@ mod tests {
             };
             h.push(&snap);
         }
-        assert_eq!(h.len(), 900, "ring buffer evicts the oldest samples");
+        assert_eq!(h.len(), 960, "ring buffer evicts the oldest samples");
     }
 
     #[test]
     fn test_history_windowed_points() {
         let mut h = MemoryHistory::new();
         for i in 0..400 {
-            h.push(&snap(100, i % 100));
+            h.push(&MemorySnapshot { sample_elapsed_secs: i as f64 + 1.0, ..snap(100, i % 100) });
         }
         h.chart_window = ChartWindow::OneMin;
         assert_eq!(h.windowed_ram_points().count(), 60);
         h.chart_window = ChartWindow::FifteenMin;
         assert_eq!(h.windowed_ram_points().count(), 400);
+    }
+
+    #[test]
+    fn test_short_history_starts_at_first_sample() {
+        let mut h = MemoryHistory::new();
+        for i in 1..=10 {
+            h.push(&MemorySnapshot {
+                ram_total_bytes: 1000,
+                ram_used_bytes: 500,
+                sample_elapsed_secs: i as f64,
+                ..Default::default()
+            });
+        }
+        let series = h.ram_series(ChartWindow::OneMin);
+        assert_eq!(series.first().map(|p| p[0]), Some(1.0));
+        assert_eq!(series.last().map(|p| p[0]), Some(10.0));
+    }
+
+    #[test]
+    fn test_long_history_anchored_at_60s_window() {
+        let mut h = MemoryHistory::new();
+        for i in 1..=70 {
+            h.push(&MemorySnapshot {
+                ram_total_bytes: 1000,
+                ram_used_bytes: 500,
+                sample_elapsed_secs: i as f64,
+                ..Default::default()
+            });
+        }
+        let series = h.ram_series(ChartWindow::OneMin);
+        assert_eq!(series.first().map(|p| p[0]), Some(10.0));
+        assert_eq!(series.last().map(|p| p[0]), Some(70.0));
     }
 }

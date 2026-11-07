@@ -1,10 +1,10 @@
 //! Live `[03] Storage` HUD: status strip, throughput chart, volumes, consumers.
 
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
 
 use eframe::egui;
 
+use crate::core::SystemSnapshot;
 use crate::modules::cpu::model::RawProcessCpuRow;
 use crate::modules::storage::chart_view::render_storage_chart;
 use crate::modules::storage::inspector::render_selection_split;
@@ -16,9 +16,8 @@ use crate::theme::{card_frame, colors};
 struct StorageViewState {
     history: StorageHistory,
     window_secs: usize,
-    last_push: Option<Instant>,
+    last_sample_ts: Option<f64>,
     selected_mount: Option<Arc<str>>,
-    started: Instant,
 }
 
 impl Default for StorageViewState {
@@ -26,9 +25,8 @@ impl Default for StorageViewState {
         Self {
             history: StorageHistory::new(),
             window_secs: 300,
-            last_push: None,
+            last_sample_ts: None,
             selected_mount: None,
-            started: Instant::now(),
         }
     }
 }
@@ -67,28 +65,26 @@ pub(crate) fn set_selected_for_test(value: Option<Arc<str>>) {
     guard.selected_mount = value;
 }
 
-/// Background ingestion: pure 1-second time throttle (like network).
+/// Background ingestion on worker pause-adjusted timestamps.
 /// Pushes even at 0.0 MB/s so the chart scrolls smoothly when idle.
-/// Lock is held only briefly.
 pub fn ingest_storage_snapshot(
-    snap: &StorageSnapshot,
-    raw_processes: &[RawProcessCpuRow],
+    snap: &SystemSnapshot,
+    _raw_processes: &[RawProcessCpuRow],
     paused: bool,
 ) {
     let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
-    if paused || raw_processes.is_empty() {
+    if paused {
         return;
     }
-    let now = Instant::now();
-    let due = guard.last_push.is_none_or(|t| now.duration_since(t) >= Duration::from_millis(950));
+    let elapsed = snap.memory.as_ref().map(|m| m.sample_elapsed_secs).unwrap_or(0.0);
+    let due = guard.last_sample_ts.is_none_or(|last| elapsed > last);
     if !due {
         return;
     }
-    let elapsed = guard.started.elapsed().as_secs_f64();
-    guard.history.push(elapsed, snap.read_mb_s, snap.write_mb_s);
+    guard.history.push(elapsed, snap.storage.read_mb_s, snap.storage.write_mb_s);
     // Per-disk series: one sample per physical disk (volumes share rates).
     let mut seen: Vec<u32> = Vec::new();
-    for vol in snap.volumes.iter() {
+    for vol in snap.storage.volumes.iter() {
         if let Some(d) = vol.physical_disk {
             if seen.contains(&d) {
                 continue;
@@ -97,7 +93,7 @@ pub fn ingest_storage_snapshot(
             guard.history.push_disk(d, elapsed, vol.read_mb_s, vol.write_mb_s);
         }
     }
-    guard.last_push = Some(now);
+    guard.last_sample_ts = Some(elapsed);
 }
 
 /// Renders the live Storage tab: chart first, then volume grid.

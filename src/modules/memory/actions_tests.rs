@@ -70,13 +70,13 @@ mod tests {
     }
     #[cfg(target_os = "windows")]
     #[test]
-    fn test_safe_handle_open_returns_none_on_pid_0() {
-        assert!(SafeHandle::open(PROCESS_QUERY_LIMITED_INFORMATION, 0).is_none());
-    }
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn test_safe_handle_open_returns_none_on_pid_4() {
-        assert!(SafeHandle::open(PROCESS_QUERY_LIMITED_INFORMATION, 4).is_none());
+    fn test_safe_handle_refuses_system_pids() {
+        for pid in [0, 4] {
+            assert!(
+                SafeHandle::open(PROCESS_QUERY_LIMITED_INFORMATION, pid).is_none(),
+                "pid {pid}"
+            );
+        }
     }
     #[cfg(target_os = "windows")]
     #[test]
@@ -89,7 +89,9 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn test_is_app_elevated_executes_cleanly() {
-        let _ = is_app_elevated();
+        let a = is_app_elevated();
+        let b = is_app_elevated();
+        assert_eq!(a, b);
     }
     #[test]
     fn test_trim_process_group_skips_protected() {

@@ -10,12 +10,22 @@ pub const WORKER_INTERVAL_MINIMIZED: std::time::Duration = std::time::Duration::
 /// Storage tab also uses this fast cadence so the 1s chart stays live.
 pub const SCAN_TICKS_VISIBLE: u64 = 3;
 
-/// Full process scans run every 2nd tick on Storage tab for live disk chart.
-#[allow(dead_code)]
-pub const SCAN_TICKS_STORAGE: u64 = 2;
-
 /// Full process scans run every 5th tick when Overview tab is open (5 seconds).
 pub const SCAN_TICKS_BACKGROUND: u64 = 5;
 
 /// RAM usage threshold that triggers the high-pressure banner.
 pub const HIGH_RAM_PRESSURE_PCT: f32 = 85.0;
+
+/// Cadence gate for full process scans.
+pub fn should_scan_processes(
+    minimized: bool,
+    tick: u64,
+    wake: bool,
+    requested: bool,
+    fast: bool,
+) -> bool {
+    !minimized
+        && (wake
+            || requested
+            || tick.is_multiple_of(if fast { SCAN_TICKS_VISIBLE } else { SCAN_TICKS_BACKGROUND }))
+}

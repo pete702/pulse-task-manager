@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use crate::core::worker::{io_PublishResult, io_publish, spawn_telemetry_worker};
-    use crate::core::worker_loop::should_scan_processes;
+    use crate::core::worker_policy::should_scan_processes;
     use crate::core::{LatestSlot, SystemSnapshot};
     use std::sync::{mpsc, Arc};
     use std::time::Duration;

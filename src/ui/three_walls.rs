@@ -1,11 +1,7 @@
 //! Three Walls badge: at-a-glance Windows memory pressure indicator.
 
-use eframe::egui;
-
 use crate::core::SystemSnapshot;
-use crate::modules::memory::formatters::format_bytes;
 use crate::modules::memory::model::MemorySnapshot;
-use crate::theme;
 
 /// Honest Three Walls badge state: optimal, elevated, memory wall, or unconfirmed telemetry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,23 +13,12 @@ pub enum WallState {
 }
 
 impl WallState {
-    #[allow(dead_code)]
     pub fn label(self) -> &'static str {
         match self {
             Self::Unconfirmed => "[ ⏳ INITIALIZING TELEMETRY ]",
             Self::Optimal => "[ ● SYSTEM OPTIMAL ]",
             Self::Elevated => "[ ● RAM ELEVATED ]",
             Self::MemoryWall => "[ ▲ MEMORY WALL ]",
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn color(self) -> egui::Color32 {
-        match self {
-            Self::Unconfirmed => theme::TEXT_MUTED,
-            Self::Optimal => theme::OPTIMAL_EMERALD,
-            Self::Elevated => theme::WARNING_AMBER,
-            Self::MemoryWall => theme::CRITICAL_CORAL,
         }
     }
 }
@@ -58,31 +43,6 @@ pub fn evaluate(snap: &SystemSnapshot) -> WallState {
     match snap.memory.as_ref() {
         Some(mem) => evaluate_memory(mem),
         None => WallState::Unconfirmed,
-    }
-}
-
-#[allow(dead_code)]
-fn hover_text(snap: &SystemSnapshot) -> String {
-    let Some(ref m) = snap.memory else {
-        return "Awaiting memory telemetry".to_owned();
-    };
-    format!(
-        "RAM: {:.1}%\nCommit: {:.1}% ({} / {})",
-        m.ram_usage_percent(),
-        m.commit_charge_pct(),
-        format_bytes(m.commit_total_bytes),
-        format_bytes(m.commit_limit_bytes)
-    )
-}
-
-/// Renders the Three Walls badge into the top bar.
-#[allow(dead_code)]
-pub fn render_badge(ui: &mut egui::Ui, snap: &SystemSnapshot) {
-    let state = evaluate(snap);
-    let resp =
-        ui.label(egui::RichText::new(state.label()).monospace().size(11.0).color(state.color()));
-    if resp.hovered() {
-        resp.on_hover_text(hover_text(snap));
     }
 }
 

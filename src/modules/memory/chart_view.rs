@@ -10,7 +10,7 @@ use crate::modules::memory::model::{ChartWindow, MemorySnapshot};
 use crate::theme::colors;
 use crate::ui::primitives::{cyber_accent, draw_cyber_corner_brackets};
 use eframe::egui;
-use egui_plot::{GridInput, GridMark, HLine, Line, LineStyle, Plot, PlotPoints};
+use egui_plot::{GridInput, GridMark, HLine, Line, LineStyle, Plot, PlotBounds, PlotPoints};
 use std::sync::Arc;
 
 const Y_GRID: &[GridMark] = &[
@@ -160,7 +160,7 @@ pub fn render_memory_chart(
                 ui.ctx().data_mut(|d| *d.get_temp_mut_or_insert_with(commit_id, || true));
 
             // Full-width, full-height plot inside the card - flush with MEMORY COMPOSITION bar
-            let plot_response = Plot::new(("mpp", selected.seconds()))
+            let plot_response = Plot::new("memory_load_plot")
                 .width(plot_width)
                 .height(plot_height)
                 .show_axes([false, false])
@@ -190,6 +190,7 @@ pub fn render_memory_chart(
                     }
                 })
                 .show(ui, |pu| {
+                    pu.set_plot_bounds(PlotBounds::from_min_max([-span, 0.0], [0.0, 100.0]));
                     pu.hline(
                         HLine::new(85.0)
                             .color(egui::Color32::from_rgba_unmultiplied(255, 42, 84, 110))

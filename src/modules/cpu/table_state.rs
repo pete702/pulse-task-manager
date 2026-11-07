@@ -170,12 +170,15 @@ impl CpuTableState {
     fn preserve_selection(&mut self, rows: &[ProcessCpuItem]) {
         self.selected_pid = self.selected_pid.filter(|&pid| rows.iter().any(|r| r.pid == pid));
         if self.selected_pid.is_none() {
+            // No auto-select: only follow a name match, never rows[0].
             self.selected_pid = self
                 .selected_name
                 .as_ref()
                 .and_then(|n| rows.iter().find(|r| r.name.eq_ignore_ascii_case(n)))
-                .map(|r| r.pid)
-                .or_else(|| (!rows.is_empty()).then(|| rows[0].pid));
+                .map(|r| r.pid);
+            if self.selected_pid.is_none() {
+                self.selected_name = None;
+            }
         }
         self.selected_name = self
             .selected_pid

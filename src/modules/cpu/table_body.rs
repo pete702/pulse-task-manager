@@ -20,11 +20,9 @@ pub fn render_virtualized_table(
     ui.style_mut().interaction.selectable_labels = false;
     let row_height = if state.comfort_density { 28.0 } else { 22.0 };
     let max_body = (ui.available_height() - 48.0).max(60.0);
-    let max_ram = rows.iter().map(|row| row.ram_bytes).max().unwrap_or(1).max(1);
     ui.set_width(ui.available_width());
     let avail_w = ui.available_width().max(480.0);
-    let width_bucket = (avail_w / 8.0).round() as u32;
-    ui.push_id(("proc_table", width_bucket), |ui| {
+    ui.push_id("cpu_proc_table", |ui| {
         TableBuilder::new(ui)
             .striped(true)
             .resizable(true)
@@ -175,8 +173,8 @@ pub fn render_virtualized_table(
                     });
 
                     row.col(|ui| {
-                        let cap_ref = max_ram.min(4096 * 1024 * 1024);
-                        let ratio = (item.ram_bytes as f32 / cap_ref as f32).clamp(0.0, 1.0);
+                        let cap_ref = 4096.0 * 1024.0 * 1024.0;
+                        let ratio = (item.ram_bytes as f64 / cap_ref).clamp(0.0, 1.0) as f32;
                         let rect_for_bar = ui.max_rect();
                         if ratio * 100.0 >= 0.5 && ui.is_rect_visible(rect_for_bar) {
                             draw_cell_heat_bar(ui, rect_for_bar, ratio, colors::ACCENT_CYAN, false);

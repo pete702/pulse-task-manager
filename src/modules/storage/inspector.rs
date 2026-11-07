@@ -103,6 +103,7 @@ fn render_activity_card(
 }
 
 fn render_consumers(ui: &mut egui::Ui, raw: &[RawProcessCpuRow], filter: Option<&[char]>) {
+    ui.set_min_height(118.0);
     let top = cached_consumers(raw, filter);
     let active = top.iter().any(|g| g.total >= 0.05);
     if !active {

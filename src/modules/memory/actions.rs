@@ -36,6 +36,7 @@ pub enum TrimSkipReason {
 #[allow(unsafe_code)]
 unsafe fn query_working_set(handle: HANDLE) -> Option<u64> {
     let mut pmc: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
+    pmc.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
     let ok = K32GetProcessMemoryInfo(
         handle,
         &mut pmc as *mut _ as *mut _,

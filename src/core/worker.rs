@@ -13,8 +13,6 @@ pub struct TelemetryWorker {
     pub is_minimized: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// True when the Processes sub-tab is active (drives 3s vs 5s scan cadence).
     pub processes_tab_active: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    #[allow(dead_code)]
-    pub wakeup: Option<Wakeup>,
     /// Worker thread handle for instant wakeup via unpark().
     thread_handle: Option<std::thread::JoinHandle<()>>,
     /// Shutdown signal for graceful worker termination.
@@ -27,14 +25,13 @@ impl TelemetryWorker {
         wakeup: Option<Wakeup>,
     ) -> (Self, std::sync::mpsc::Receiver<std::sync::Arc<crate::core::SystemSnapshot>>) {
         let processes_tab_active = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let (rx, latest, is_minimized, shutdown, wakeup, thread_handle) =
+        let (rx, latest, is_minimized, shutdown, _wakeup, thread_handle) =
             spawn_worker(wakeup, processes_tab_active.clone());
         let mut worker = TelemetryWorker {
             rx: Some(rx),
             latest,
             is_minimized,
             processes_tab_active,
-            wakeup,
             thread_handle: Some(thread_handle),
             shutdown,
         };
@@ -50,9 +47,16 @@ impl TelemetryWorker {
         self.processes_tab_active.store(fast, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// Sets minimized watchdog state for the worker loop.
+    pub fn set_minimized(&self, min: bool) {
+        self.is_minimized.store(min, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Requests an immediate process scan and unparks the worker thread for instant wakeup.
     pub fn request_process_scan(&self) {
-        crate::core::worker_loop::request_process_scan();
+        if crate::core::worker_loop::request_process_scan() {
+            return;
+        }
         if let Some(h) = &self.thread_handle {
             h.thread().unpark();
         }

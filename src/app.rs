@@ -1,5 +1,4 @@
 //! PULSE main application state: UI, telemetry handling, tabs.
-use std::sync::atomic::Ordering;
 use std::sync::{mpsc, Arc};
 use std::time::Instant;
 
@@ -113,7 +112,7 @@ impl eframe::App for PulseApp {
         }
         // Minimized: honest 0 FPS. No hotkeys or repaints while minimized.
         let is_minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
-        self.worker.is_minimized.store(is_minimized, Ordering::Relaxed);
+        self.worker.set_minimized(is_minimized);
         let minimize_edge = is_minimized && !self.was_minimized;
         if minimize_edge || crate::app_trim::periodic_due(&self.last_trim) {
             crate::app_trim::run_trim(&mut self.last_trim);
@@ -135,7 +134,6 @@ impl eframe::App for PulseApp {
         ) {
             ctx.request_repaint();
             ctx.request_repaint_after(std::time::Duration::from_millis(1000));
-            return;
         }
         let processes_active = self.active_tab == crate::app_tabs::ActiveTab::Processes
             || self.active_tab == crate::app_tabs::ActiveTab::Storage
@@ -143,6 +141,12 @@ impl eframe::App for PulseApp {
             || (self.active_tab == crate::app_tabs::ActiveTab::Cpu
                 && self.cpu_sub_view == CpuSubView::Processes);
         self.worker.set_fast_process_cadence(processes_active);
+        crate::core::worker_loop::set_worker_paused(crate::core::worker_loop::WorkerConfig {
+            paused: self.telemetry_paused,
+        });
+        crate::modules::network::latency_probe::set_fast_probe_mode(
+            self.active_tab == crate::app_tabs::ActiveTab::Network && !self.telemetry_paused,
+        );
         if self.active_tab == crate::app_tabs::ActiveTab::Processes
             && self.prev_active_tab != crate::app_tabs::ActiveTab::Processes
         {
@@ -164,9 +168,9 @@ impl eframe::App for PulseApp {
         self.frame_count = self.frame_count.wrapping_add(1);
         self.collect_snapshots();
         let vp = ctx.input(|i| i.viewport().inner_rect.or(i.viewport().outer_rect));
-        let current_size = vp.map(|r| r.size()).unwrap_or(egui::Vec2::ZERO);
-        // Resize never trims; viewport size is tracked for persistence only.
-        self.last_viewport_size = Some(current_size);
+        if let Some(rect) = vp {
+            self.last_viewport_size = Some(rect.size());
+        }
         let latest_snapshot = self.latest_snapshot.clone();
         let active_processes = latest_snapshot
             .as_ref()

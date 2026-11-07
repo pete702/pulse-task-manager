@@ -1,5 +1,26 @@
 //! Utility functions for PULSE.
 
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
+
+/// Interns process names so repeated names share one allocation.
+pub fn intern_name(raw: &str) -> Arc<str> {
+    static INTERN_POOL: OnceLock<Mutex<HashMap<String, Arc<str>>>> = OnceLock::new();
+    let mut map = INTERN_POOL
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if let Some(v) = map.get(raw) {
+        return Arc::clone(v);
+    }
+    if map.len() >= 512 {
+        map.clear();
+    }
+    let v: Arc<str> = Arc::from(raw);
+    map.insert(raw.to_string(), Arc::clone(&v));
+    v
+}
+
 /// Formats uptime in seconds into a human-readable string (days, hours, minutes, seconds).
 pub fn format_uptime(secs: u64) -> String {
     let days = secs / 86400;

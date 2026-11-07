@@ -19,9 +19,9 @@ pub struct RawProcessRow {
 /// Incoming process sample: (PID, name, RAM, virtual, exe path, sysinfo start time).
 pub type ProcessSample = (u32, Arc<str>, u64, u64, Option<Arc<str>>, u64);
 
-/// Number of history points to retain (900 points = 15 minutes at 1s interval).
+/// Number of history points to retain (960 points = 16 minutes at 1s interval).
 #[allow(dead_code)]
-pub const HISTORY_CAPACITY: usize = 900;
+pub const HISTORY_CAPACITY: usize = 960;
 
 /// Time window for chart display.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

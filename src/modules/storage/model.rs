@@ -63,9 +63,10 @@ pub fn group_physical_disks(volumes: &[DiskVolumeInfo]) -> Vec<PhysicalDiskGroup
     let mut groups: Vec<PhysicalDiskGroup> = Vec::new();
     for vol in volumes {
         let disk = vol.physical_disk;
-        let existing = disk.is_some() && groups.last().is_some_and(|g| g.disk_index == disk);
-        if existing {
-            groups.last_mut().expect("group exists").volumes.push(vol.clone());
+        if let Some(existing) =
+            disk.and_then(|idx| groups.iter_mut().find(|g| g.disk_index == Some(idx)))
+        {
+            existing.volumes.push(vol.clone());
         } else {
             groups.push(PhysicalDiskGroup {
                 disk_index: disk,

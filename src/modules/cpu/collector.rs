@@ -2,7 +2,7 @@
 //! and computes per-process CPU percentages in a single pass.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use sysinfo::{ProcessRefreshKind, System};
@@ -33,6 +33,9 @@ impl CpuCollector {
     /// Marks a PID as EcoQoS after UI enable action.
     #[allow(dead_code)]
     pub fn set_eco_cached(&mut self, pid: u32, start_time: u64, on: bool) {
+        if self.eco_cache.len() > 512 {
+            self.eco_cache.clear();
+        }
         self.eco_cache.insert((pid, start_time), (Some(on), Instant::now()));
     }
     /// Drops a stale EcoQoS entry so the next scan re-queries.
@@ -96,7 +99,7 @@ impl CpuCollector {
             self.prev_disk.insert(key, (tot_r, tot_w));
             raw_rows.push(RawProcessCpuRow {
                 pid: pid_u32,
-                name: Arc::from(process.name()),
+                name: crate::util::intern_name(process.name()),
                 cpu_usage,
                 ram_bytes: ram,
                 disk_read_mb_s: r_mb,
@@ -148,6 +151,9 @@ impl CpuCollector {
                 row.eco_qos = None;
             }
         }
+        if self.eco_cache.len() > 512 {
+            self.eco_cache.clear();
+        }
     }
 }
 
@@ -161,14 +167,22 @@ impl Default for CpuCollector {
 #[allow(dead_code)]
 pub fn set_eco_cached(pid: u32, start_time: u64, on: bool) {
     let slot = PENDING_ECO.get_or_init(|| Mutex::new(HashMap::new()));
-    slot.lock().unwrap_or_else(|e| e.into_inner()).insert((pid, start_time), Some(on));
+    let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+    if guard.len() > 512 {
+        guard.clear();
+    }
+    guard.insert((pid, start_time), Some(on));
 }
 
 /// Drops pending EcoQoS prime so next scan re-queries Win32.
 #[allow(dead_code)]
 pub fn invalidate_eco_cached(pid: u32, start_time: u64) {
     let slot = PENDING_ECO.get_or_init(|| Mutex::new(HashMap::new()));
-    slot.lock().unwrap_or_else(|e| e.into_inner()).insert((pid, start_time), None);
+    let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+    if guard.len() > 512 {
+        guard.clear();
+    }
+    guard.insert((pid, start_time), None);
 }
 
 /// First-sample guard: only zero when `is_first_seen` is true.

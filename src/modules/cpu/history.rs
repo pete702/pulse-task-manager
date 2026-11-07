@@ -1,12 +1,10 @@
 //! CPU history ring buffer and chart window types.
-//! Stores 900 samples (15 minutes at 1s interval) of dual series: total_pct + hottest_core_pct.
-use crate::modules::memory::constants::CHART_ANCHOR_TOLERANCE_SECS;
+//! Stores 960 samples (15 minutes at 1s interval) of dual series: total_pct + hottest_core_pct.
 use crate::modules::memory::downsampling::lttb_downsample;
 use crate::modules::memory::model::ChartWindow;
 use std::collections::VecDeque;
 use std::sync::Arc;
-pub const CPU_HISTORY_CAPACITY: usize = 900;
-
+pub const CPU_HISTORY_CAPACITY: usize = 960;
 /// Re-export memory's ChartWindow for CPU charts (identical values: 60, 300, 900).
 pub type CpuChartWindow = ChartWindow;
 #[derive(Clone, Debug, Default)]
@@ -48,13 +46,14 @@ impl CpuHistory {
             cached_revision: 0,
         }
     }
-    pub fn push(&mut self, total_pct: f32, hottest_pct: f32, timestamp: f64) {
-        if total_pct > self.peak_total_percent {
-            self.peak_total_percent = total_pct;
+    pub fn push(&mut self, total_pct: f32, hottest_pct: f32, timestamp_s: f64) {
+        if let Some(last_ts) = self.timestamps.back() {
+            if timestamp_s <= *last_ts {
+                return;
+            }
         }
-        if hottest_pct > self.peak_hottest_percent {
-            self.peak_hottest_percent = hottest_pct;
-        }
+        self.peak_total_percent = self.peak_total_percent.max(total_pct);
+        self.peak_hottest_percent = self.peak_hottest_percent.max(hottest_pct);
         if self.total_points.len() == CPU_HISTORY_CAPACITY {
             self.total_points.pop_front();
         }
@@ -66,7 +65,7 @@ impl CpuHistory {
         }
         self.total_points.push_back(total_pct);
         self.hottest_points.push_back(hottest_pct);
-        self.timestamps.push_back(timestamp);
+        self.timestamps.push_back(timestamp_s);
         self.revision = self.revision.wrapping_add(1);
         self.invalidate_caches();
     }
@@ -91,7 +90,7 @@ impl CpuHistory {
             return c;
         }
         let points = self.build_windowed_series(&self.total_points, window);
-        let arc = Arc::new(lttb_downsample(&points, 900));
+        let arc = Arc::new(lttb_downsample(&points, 920));
         match window {
             CpuChartWindow::OneMin => self.cached_total_1m = Some(arc.clone()),
             CpuChartWindow::FiveMin => self.cached_total_5m = Some(arc.clone()),
@@ -110,7 +109,7 @@ impl CpuHistory {
             return c;
         }
         let points = self.build_windowed_series(&self.hottest_points, window);
-        let arc = Arc::new(lttb_downsample(&points, 900));
+        let arc = Arc::new(lttb_downsample(&points, 920));
         match window {
             CpuChartWindow::OneMin => self.cached_hottest_1m = Some(arc.clone()),
             CpuChartWindow::FiveMin => self.cached_hottest_5m = Some(arc.clone()),
@@ -129,6 +128,7 @@ impl CpuHistory {
         }
         let now = self.latest_timestamp();
         let window_secs = window.seconds() as f64;
+        let cutoff = now - window_secs;
         let len = points.len();
         let timestamps = &self.timestamps;
         let mut start_idx = 0;
@@ -142,13 +142,15 @@ impl CpuHistory {
         for i in start_idx..len {
             out.push([timestamps[i], points[i] as f64]);
         }
-        let history_span = now - timestamps[0];
-        let tol = CHART_ANCHOR_TOLERANCE_SECS;
-        let first_x_ok = !out.is_empty() && out.len() >= 2 && out[0][0] <= now - window_secs + tol;
-        let history_ok = history_span >= window_secs - tol;
-        if (history_ok || first_x_ok) && !out.is_empty() {
-            let first_y = out[0][1];
-            out.insert(0, [now - window_secs, first_y]);
+        // Clean startup: only anchor when real history predates cutoff.
+        if start_idx > 0 && out.len() > 1 && out[0][0] > cutoff {
+            let prev_y = points[start_idx - 1] as f64;
+            out.insert(0, [cutoff, prev_y]);
+        }
+        if let Some(last) = out.last().copied() {
+            if last[0] < now {
+                out.push([now, last[1]]);
+            }
         }
         out
     }
@@ -156,16 +158,6 @@ impl CpuHistory {
     #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.total_points.len()
-    }
-    #[inline]
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.total_points.is_empty()
-    }
-    #[inline]
-    #[allow(dead_code)]
-    pub fn revision(&self) -> u64 {
-        self.revision
     }
     #[inline]
     pub fn latest_timestamp(&self) -> f64 {
@@ -178,26 +170,6 @@ impl CpuHistory {
     #[allow(dead_code)]
     pub fn hottest_series(&mut self, window: CpuChartWindow) -> Arc<Vec<[f64; 2]>> {
         self.get_hottest_series(window)
-    }
-    #[allow(dead_code)]
-    pub fn windowed_total_timed(&self) -> impl Iterator<Item = (f64, f32)> + '_ {
-        let now = self.latest_timestamp();
-        let window = self.chart_window.seconds() as f64;
-        self.timestamps
-            .iter()
-            .zip(self.total_points.iter())
-            .filter(move |(t, _)| now - **t <= window)
-            .map(|(t, v)| (*t, *v))
-    }
-    #[allow(dead_code)]
-    pub fn windowed_hottest_timed(&self) -> impl Iterator<Item = (f64, f32)> + '_ {
-        let now = self.latest_timestamp();
-        let window = self.chart_window.seconds() as f64;
-        self.timestamps
-            .iter()
-            .zip(self.hottest_points.iter())
-            .filter(move |(t, _)| now - **t <= window)
-            .map(|(t, v)| (*t, *v))
     }
     #[allow(dead_code)]
     pub fn clear(&mut self) {
@@ -247,5 +219,32 @@ mod tests {
         assert!(!series5.is_empty());
         let series15 = hist.total_series(CpuChartWindow::FifteenMin);
         assert!(!series15.is_empty());
+    }
+    #[test]
+    fn test_short_history_starts_at_first_sample() {
+        let mut hist = CpuHistory::new();
+        for i in 0..10 {
+            hist.push(10.0, 20.0, i as f64 - 9.0);
+        }
+        let series = hist.total_series(CpuChartWindow::OneMin);
+        assert!(!series.is_empty());
+        assert_eq!(series.first().map(|p| p[0]), Some(-9.0));
+        assert_eq!(series.last().map(|p| p[0]), Some(0.0));
+        let mut hist2 = CpuHistory::new();
+        for i in 0..70 {
+            hist2.push(i as f32, i as f32, i as f64);
+        }
+        let series2 = hist2.total_series(CpuChartWindow::OneMin);
+        assert_eq!(series2.first().map(|p| p[0]), Some(9.0));
+        assert_eq!(series2.last().map(|p| p[0]), Some(69.0));
+    }
+    #[test]
+    fn test_duplicate_timestamp_ignored() {
+        let mut hist = CpuHistory::new();
+        hist.push(10.0, 20.0, 1.0);
+        hist.push(99.0, 99.0, 1.0);
+        hist.push(99.0, 99.0, 0.5);
+        assert_eq!(hist.len(), 1);
+        assert_eq!(hist.current_total_percent(), 10.0);
     }
 }

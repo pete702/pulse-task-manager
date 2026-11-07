@@ -16,6 +16,14 @@ use std::time::Instant;
 static ELEVATED: OnceLock<bool> = OnceLock::new();
 static PURGE_RUNNING: AtomicBool = AtomicBool::new(false);
 
+/// RAII guard: resets PURGE_RUNNING on drop (even on panic).
+struct PurgeGuard;
+impl Drop for PurgeGuard {
+    fn drop(&mut self) {
+        PURGE_RUNNING.store(false, Ordering::SeqCst);
+    }
+}
+
 fn cached_elevated() -> bool {
     *ELEVATED.get_or_init(is_app_elevated)
 }
@@ -29,13 +37,6 @@ pub fn render_cpu_table(
 ) {
     state.rebuild_if_needed(scan_generation, cpu_snapshot.processes_raw());
     let rows = state.cached_rows().unwrap_or_default();
-    // Keep the action toolbar enabled across rebuilds: when nothing is
-    // selected but rows exist, auto-select the first row. A user's click
-    // (set in table_body.rs) is preserved because selected_pid is already Some.
-    if state.selected_pid.is_none() && !rows.is_empty() {
-        state.selected_pid = Some(rows[0].pid);
-        state.selected_name = Some(rows[0].name.to_string());
-    }
     let total_processes = cpu_snapshot.process_count;
     let shown_rows = rows.len();
     let clone_groups = rows.iter().filter(|row| row.clone_count > 1).count();
@@ -136,13 +137,23 @@ fn render_toolbar(
                     .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
                     .is_ok()
             {
-                let owned: Vec<_> = rows.to_vec();
-                state.last_action_msg = "Purging All RAM...".to_owned();
+                let mut heavy: Vec<ProcessCpuItem> = rows
+                    .iter()
+                    .filter(|item| item.ram_bytes >= 10 * 1024 * 1024)
+                    .cloned()
+                    .collect();
+                heavy.sort_by_key(|a| std::cmp::Reverse(a.ram_bytes));
+                heavy.truncate(64);
+                let targets: Vec<(u32, u64)> =
+                    heavy.iter().map(|item| (item.pid, item.start_time)).collect();
+                let _ = targets;
+                let owned: Vec<ProcessCpuItem> = heavy;
+                state.last_action_msg = "Purging RAM...".to_owned();
                 std::thread::spawn(move || {
+                    let _guard = PurgeGuard;
                     for item in &owned {
                         let _ = trim_process_working_set(item);
                     }
-                    PURGE_RUNNING.store(false, Ordering::Release);
                     crate::core::request_process_scan();
                 });
             }
@@ -224,19 +235,23 @@ fn render_toolbar(
             }
         }
 
-        if !state.last_action_msg.is_empty() {
-            let failed = state.last_action_msg.contains("blocked");
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let label = egui::Label::new(
-                    egui::RichText::new(state.last_action_msg.as_str())
-                        .monospace()
-                        .size(10.0)
-                        .color(if failed { colors::ACCENT_RED } else { colors::ACCENT_CYAN }),
-                )
-                .truncate(true);
-                ui.add(label);
-            });
-        }
+        // Reserved single-line status slot: always present, no height shift.
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let msg = state.last_action_msg.as_str();
+            let failed = msg.contains("blocked");
+            let color = if msg.is_empty() {
+                colors::TEXT_SECONDARY
+            } else if failed {
+                colors::ACCENT_RED
+            } else {
+                colors::ACCENT_CYAN
+            };
+            let text = if msg.is_empty() { " " } else { msg };
+            let label =
+                egui::Label::new(egui::RichText::new(text).monospace().size(10.0).color(color))
+                    .truncate(true);
+            ui.add_sized(egui::Vec2::new(280.0, 18.0), label);
+        });
     });
 }
 
