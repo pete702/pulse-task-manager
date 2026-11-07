@@ -68,7 +68,7 @@ fn render_adapter_card(
             );
             if is_selected {
                 ui.label(
-                    egui::RichText::new("[ SELECTED ]")
+                    egui::RichText::new("SELECTED")
                         .monospace()
                         .size(11.0)
                         .color(colors::ACCENT_CYAN),

@@ -16,6 +16,7 @@ pub struct RawProcessCpuRow {
     pub disk_write_mb_s: f32,
     pub eco_qos: Option<bool>,
     pub exe_path: Option<Arc<str>>,
+    pub drive_letter: Option<u8>,
     pub creation_time: Option<u64>,
     pub start_time: u64, // sysinfo start_time (Unix seconds)
 }
@@ -28,6 +29,7 @@ pub struct ProcessCpuItem {
     pub pid: u32,
     pub start_time: u64,
     pub creation_time: Option<u64>,
+    pub drive_letter: Option<u8>,
     pub name: Arc<str>,
     pub exe_path: Arc<str>,
     pub cpu_pct: f32, // Normalized 0.0..=100.0 of total system capacity
@@ -75,6 +77,7 @@ impl ProcessCpuItem {
             pid,
             start_time: 0,
             creation_time,
+            drive_letter: None,
             name: Arc::clone(&name),
             exe_path: Arc::from(""),
             cpu_pct,
@@ -167,6 +170,7 @@ pub fn item_from_raw_cpu(row: &RawProcessCpuRow) -> ProcessCpuItem {
         row.creation_time,
     );
     item.start_time = row.start_time;
+    item.drive_letter = row.drive_letter;
     item.disk_read_mb_s = row.disk_read_mb_s;
     item.disk_write_mb_s = row.disk_write_mb_s;
     item.eco_qos = row.eco_qos;

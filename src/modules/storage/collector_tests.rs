@@ -12,6 +12,7 @@ fn raw(pid: u32, name: &str, read: f32, write: f32) -> RawProcessCpuRow {
         disk_write_mb_s: write,
         eco_qos: None,
         exe_path: None,
+        drive_letter: None,
         creation_time: None,
         start_time: 0,
     }

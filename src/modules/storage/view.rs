@@ -166,8 +166,8 @@ pub fn render_storage_tab(
     guard.selected_mount = selected;
 }
 
-/// Fixed 5-column strip spanning 100% width (zero-jitter, no wrapping).
-/// Col 0: Blackbox state, Col 1-3: rates/count, Col 4: truncated TOP I/O.
+/// Fixed 4-column strip spanning 100% width (zero-jitter, no wrapping).
+/// Col 0: Blackbox state, Col 1: READ, Col 2: WRITE, Col 3: TOP I/O.
 fn render_status_and_kpis(
     ui: &mut egui::Ui,
     snap: &StorageSnapshot,
@@ -183,58 +183,19 @@ fn render_status_and_kpis(
         Some(d) => format!("WRITE Disk {d}"),
         None => "WRITE MB/s".to_owned(),
     };
+    let top = snap
+        .top_io_process
+        .as_ref()
+        .map(|t| truncate(&format!("{} {:.1}", t.1, t.2), 22))
+        .unwrap_or_else(|| "-".to_owned());
     card_frame().show(ui, |ui| {
         ui.set_width(ui.available_width());
-        if ui.available_width() >= 720.0 {
-            ui.columns(5, |cols| {
-                render_blackbox(&mut cols[0], snap);
-                col_kpi(&mut cols[1], &read_label, format!("{:.1}", kpi_read), colors::ACCENT_CYAN);
-                col_kpi(
-                    &mut cols[2],
-                    &write_label,
-                    format!("{:.1}", kpi_write),
-                    colors::ACCENT_AMBER,
-                );
-                col_kpi(
-                    &mut cols[3],
-                    "VOLUMES",
-                    format!("{}", snap.volumes.len()),
-                    colors::TEXT_PRIMARY,
-                );
-                let top = snap
-                    .top_io_process
-                    .as_ref()
-                    .map(|t| truncate(&format!("{} {:.1}", t.1, t.2), 22))
-                    .unwrap_or_else(|| "-".to_owned());
-                col_kpi(&mut cols[4], "TOP I/O", top, colors::TEXT_PRIMARY);
-            });
-        } else {
-            ui.columns(3, |cols| {
-                render_blackbox(&mut cols[0], snap);
-                col_kpi(&mut cols[1], &read_label, format!("{:.1}", kpi_read), colors::ACCENT_CYAN);
-                col_kpi(
-                    &mut cols[2],
-                    &write_label,
-                    format!("{:.1}", kpi_write),
-                    colors::ACCENT_AMBER,
-                );
-            });
-            ui.add_space(4.0);
-            ui.columns(3, |cols| {
-                col_kpi(
-                    &mut cols[0],
-                    "VOLUMES",
-                    format!("{}", snap.volumes.len()),
-                    colors::TEXT_PRIMARY,
-                );
-                let top = snap
-                    .top_io_process
-                    .as_ref()
-                    .map(|t| truncate(&format!("{} {:.1}", t.1, t.2), 22))
-                    .unwrap_or_else(|| "-".to_owned());
-                col_kpi(&mut cols[1], "TOP I/O", top, colors::TEXT_PRIMARY);
-            });
-        }
+        ui.columns(4, |cols| {
+            render_blackbox(&mut cols[0], snap);
+            col_kpi(&mut cols[1], &read_label, format!("{:.1}", kpi_read), colors::ACCENT_CYAN);
+            col_kpi(&mut cols[2], &write_label, format!("{:.1}", kpi_write), colors::ACCENT_AMBER);
+            col_kpi(&mut cols[3], "TOP I/O", top, colors::TEXT_PRIMARY);
+        });
     });
 }
 

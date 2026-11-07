@@ -137,8 +137,8 @@ impl NetworkCollector {
             if is_virtual(name.as_str()) {
                 continue;
             }
-            let rx_now = data.received();
-            let tx_now = data.transmitted();
+            let rx_now = data.total_received();
+            let tx_now = data.total_transmitted();
             let prev = self.prev.get(name.as_str()).copied().unwrap_or((rx_now, tx_now));
             let base =
                 self.adapter_baseline.entry(Arc::from(name.as_str())).or_insert((rx_now, tx_now));
@@ -238,5 +238,19 @@ mod tests {
         assert_eq!(new_session, 0);
         // Total session is the sum, unaffected by the new adapter baseline.
         assert_eq!(rx_session + new_session, 2_000);
+    }
+
+    #[test]
+    fn steady_throughput_plateau() {
+        let base = 5_000_000_000_u64;
+        let step = 11_250_000_u64; // 90 Mbps at 1s.
+        let mut prev = base;
+        for i in 1..=4 {
+            let now = prev + step;
+            let (mbps, session) = rate_and_session(prev, base, now, 1.0);
+            assert!((mbps - 90.0).abs() < 0.5, "tick {i} mbps {mbps}");
+            assert_eq!(session, step * i as u64);
+            prev = now;
+        }
     }
 }

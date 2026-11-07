@@ -22,12 +22,13 @@ static PENDING_ECO: OnceLock<Mutex<HashMap<(u32, u64), Option<bool>>>> = OnceLoc
 pub struct CpuCollector {
     pub seen_pids: HashSet<(u32, u64)>,
     eco_cache: HashMap<(u32, u64), (Option<bool>, Instant)>,
+    prev_disk: HashMap<(u32, u64), (u64, u64)>,
 }
 
 impl CpuCollector {
     #[allow(dead_code)]
     pub fn new() -> Self {
-        Self { seen_pids: HashSet::new(), eco_cache: HashMap::new() }
+        Self { seen_pids: HashSet::new(), eco_cache: HashMap::new(), prev_disk: HashMap::new() }
     }
     /// Marks a PID as EcoQoS after UI enable action.
     #[allow(dead_code)]
@@ -53,55 +54,64 @@ impl CpuCollector {
         if !refresh_processes {
             return Vec::new();
         }
-        sys.refresh_processes_specifics(
-            ProcessRefreshKind::new().with_memory().with_cpu().with_disk_usage().without_exe(),
-        );
+        sys.refresh_processes_specifics(ProcessRefreshKind::everything());
         let elapsed_secs = elapsed_since_last_scan();
         let mut live: HashSet<(u32, u64)> = HashSet::with_capacity(sys.processes().len());
-        let mut raw_rows: Vec<RawProcessCpuRow> = sys
-            .processes()
-            .iter()
-            .map(|(pid, process)| {
-                let pid_u32 = pid.as_u32();
-                let start_time = process.start_time();
-                live.insert((pid_u32, start_time));
-                let is_first_seen = !self.seen_pids.contains(&(pid_u32, start_time));
-                let cpu_usage =
-                    (process.cpu_usage() / logical_cores.max(1) as f32).clamp(0.0, 100.0);
-                let ram = process.memory();
-                let disk = process.disk_usage();
-                let (read_bytes, written_bytes) = guarded_disk_bytes(
-                    disk.read_bytes,
-                    disk.written_bytes,
-                    disk.total_read_bytes,
-                    disk.total_written_bytes,
-                    is_first_seen,
-                );
-                let disk_mb = |bytes: u64| {
-                    let v = bytes as f32 / (elapsed_secs * 1_048_576.0);
-                    if v.is_finite() {
-                        v.clamp(0.0, f32::MAX)
-                    } else {
-                        0.0
-                    }
-                };
-                RawProcessCpuRow {
-                    pid: pid_u32,
-                    name: Arc::from(process.name()),
-                    cpu_usage,
-                    ram_bytes: ram,
-                    disk_read_mb_s: disk_mb(read_bytes),
-                    disk_write_mb_s: disk_mb(written_bytes),
-                    eco_qos: None,
-                    exe_path: None,
-                    creation_time: None,
-                    start_time,
+        let rate = |b: u64| {
+            let v = b as f32 / (elapsed_secs * 1_048_576.0);
+            if v.is_finite() {
+                v.clamp(0.0, f32::MAX)
+            } else {
+                0.0
+            }
+        };
+        let mut raw_rows: Vec<RawProcessCpuRow> = Vec::with_capacity(sys.processes().len());
+        for (pid, process) in sys.processes().iter() {
+            let pid_u32 = pid.as_u32();
+            let start_time = process.start_time();
+            live.insert((pid_u32, start_time));
+            let cpu_usage = (process.cpu_usage() / logical_cores.max(1) as f32).clamp(0.0, 100.0);
+            let ram = process.memory();
+            let du = process.disk_usage();
+            let exe = process.exe();
+            let drive = exe.and_then(|p| {
+                let eb = p.as_os_str().as_encoded_bytes();
+                if eb.len() >= 2 && eb[1] == b':' && eb[0].is_ascii_alphabetic() {
+                    Some(eb[0].to_ascii_uppercase())
+                } else {
+                    None
                 }
-            })
-            .collect();
+            });
+            let key = (pid_u32, start_time);
+            let tot_r = du.total_read_bytes;
+            let tot_w = du.total_written_bytes;
+            let (r_mb, w_mb) = match self.prev_disk.get(&key) {
+                Some((pr, pw)) => {
+                    let dr = tot_r.saturating_sub(*pr);
+                    let dw = tot_w.saturating_sub(*pw);
+                    (rate(dr), rate(dw))
+                }
+                None => (0.0, 0.0),
+            };
+            self.prev_disk.insert(key, (tot_r, tot_w));
+            raw_rows.push(RawProcessCpuRow {
+                pid: pid_u32,
+                name: Arc::from(process.name()),
+                cpu_usage,
+                ram_bytes: ram,
+                disk_read_mb_s: r_mb,
+                disk_write_mb_s: w_mb,
+                eco_qos: None,
+                exe_path: None,
+                drive_letter: drive,
+                creation_time: None,
+                start_time,
+            });
+        }
         self.fill_eco_qos(&mut raw_rows);
         self.seen_pids = live.clone();
         self.eco_cache.retain(|k, _| live.contains(k));
+        self.prev_disk.retain(|k, _| live.contains(k));
         raw_rows.sort_by(|a, b| b.cpu_usage.total_cmp(&a.cpu_usage));
         raw_rows
     }

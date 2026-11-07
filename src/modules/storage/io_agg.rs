@@ -116,7 +116,7 @@ pub fn aggregate_io_by_disk(
         if r + w <= 0.0 {
             continue;
         }
-        let letter = crate::modules::storage::inspector_group::exe_drive(row.pid, row.start_time);
+        let letter = row.drive_letter.map(|b| (b as char).to_ascii_uppercase());
         let disk = letter.and_then(|l| drive_to_disk.get(&l).copied()).unwrap_or(default_disk);
         let entry = out.entry(disk).or_insert((0.0, 0.0));
         entry.0 += r;

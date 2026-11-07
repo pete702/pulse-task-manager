@@ -27,6 +27,7 @@ pub fn item_from_raw_cpu(row: &RawProcessCpuRow, delta: i64) -> ProcessCpuItem {
         row.creation_time,
     );
     item.start_time = row.start_time;
+    item.drive_letter = row.drive_letter;
     item.exe_path = row.exe_path.clone().unwrap_or_default();
     item.disk_read_mb_s = row.disk_read_mb_s;
     item.disk_write_mb_s = row.disk_write_mb_s;
@@ -121,6 +122,7 @@ mod table_sort_tests {
             disk_write_mb_s: write,
             eco_qos: None,
             exe_path: None,
+            drive_letter: None,
             creation_time: None,
             start_time: 1,
         }

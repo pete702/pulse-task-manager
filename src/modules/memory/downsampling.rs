@@ -19,6 +19,14 @@ pub fn lttb_downsample(points: &[[f64; 2]], threshold: usize) -> Vec<[f64; 2]> {
     // Always keep first point
     sampled.push(points[0]);
 
+    // Preserve global peak so 15m view never shaves true spikes.
+    let peak_idx = points
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1[1].total_cmp(&b.1[1]))
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+
     for i in 0..bucket_count {
         // Bucket range (excluding first point)
         let start = 1 + (i as f64 * bucket_size).floor() as usize;
@@ -44,6 +52,10 @@ pub fn lttb_downsample(points: &[[f64; 2]], threshold: usize) -> Vec<[f64; 2]> {
         let mut max_idx = start;
 
         for j in start..end {
+            if j == peak_idx {
+                max_idx = j;
+                break;
+            }
             let p = points[j];
             // Triangle area = 0.5 * |(x2-x1)(y3-y1) - (x3-x1)(y2-y1)|
             // We can skip the 0.5 factor since we only compare
@@ -62,6 +74,58 @@ pub fn lttb_downsample(points: &[[f64; 2]], threshold: usize) -> Vec<[f64; 2]> {
     // Always keep last point
     sampled.push(points[n - 1]);
     sampled
+}
+
+/// Universal 1-2-5 decade ceiling on raw peak * 1.15, no upper cap.
+pub fn nice_ceiling(peak: f64, min: f64) -> f64 {
+    let need = (peak * 1.15).max(min);
+    if !need.is_finite() || need <= 0.0 {
+        return min;
+    }
+    let exp = need.log10().floor() as i32;
+    let frac = need / 10_f64.powi(exp);
+    let nice_frac = if frac <= 1.0 {
+        1.0
+    } else if frac <= 2.0 {
+        2.0
+    } else if frac <= 2.5 {
+        2.5
+    } else if frac <= 5.0 {
+        5.0
+    } else {
+        10.0
+    };
+    let v = 10_f64.powi(exp) * nice_frac;
+    v.max(min)
+}
+
+/// LTTB that keeps NAN gaps broken: each finite run is sampled alone.
+pub fn lttb_segments(points: &[[f64; 2]], threshold: usize) -> Vec<[f64; 2]> {
+    if points.iter().all(|p| p[1].is_finite()) {
+        return lttb_downsample(points, threshold);
+    }
+    let total_finite = points.iter().filter(|p| p[1].is_finite()).count();
+    if total_finite <= threshold {
+        return points.to_vec();
+    }
+    let mut out = Vec::with_capacity(points.len().min(threshold + 32));
+    let mut start = 0usize;
+    while start < points.len() {
+        if !points[start][1].is_finite() {
+            out.push(points[start]);
+            start += 1;
+            continue;
+        }
+        let mut end = start;
+        while end < points.len() && points[end][1].is_finite() {
+            end += 1;
+        }
+        let seg = &points[start..end];
+        let budget = (seg.len() * threshold / total_finite.max(1)).clamp(2, threshold);
+        out.extend(lttb_downsample(seg, budget.max(2)));
+        start = end;
+    }
+    out
 }
 
 #[cfg(test)]

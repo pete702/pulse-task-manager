@@ -49,11 +49,11 @@ pub fn render_volume_cards(
 pub fn health_label(vol: &DiskVolumeInfo) -> (String, egui::Color32) {
     let pct = vol.used_pct.round() as u32;
     if vol.is_critical_space {
-        (format!("[ LOW {pct}% ]"), colors::ACCENT_RED)
+        (format!("LOW {pct}%"), colors::ACCENT_RED)
     } else if vol.used_pct >= 80.0 {
-        (format!("[ HIGH {pct}% ]"), colors::ACCENT_AMBER)
+        (format!("HIGH {pct}%"), colors::ACCENT_AMBER)
     } else {
-        (format!("[ HEALTHY {pct}% ]"), crate::theme::OPTIMAL_EMERALD)
+        (format!("HEALTHY {pct}%"), crate::theme::OPTIMAL_EMERALD)
     }
 }
 
@@ -68,11 +68,22 @@ fn bar_color(vol: &DiskVolumeInfo) -> egui::Color32 {
 }
 
 fn disk_title(group: &PhysicalDiskGroup) -> String {
+    let badge = group.kind.badge();
     match group.disk_index {
-        Some(d) => format!("DISK {d} - {}", group.kind.badge()),
+        Some(d) => {
+            if badge == "DISK" {
+                format!("DISK {d}")
+            } else {
+                format!("DISK {d} - {badge}")
+            }
+        }
         None => {
             let mount = group.volumes.first().map(|v| v.mount_point.as_ref()).unwrap_or("?");
-            format!("{mount} - {}", group.kind.badge())
+            if badge == "DISK" {
+                mount.to_owned()
+            } else {
+                format!("{mount} - {badge}")
+            }
         }
     }
 }
@@ -122,34 +133,34 @@ fn render_disk_header(ui: &mut egui::Ui, group: &PhysicalDiskGroup, is_selected:
     let speed_color = if active { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
     // Worst partition drives the health badge so cards and details agree.
     let worst = group.volumes.iter().max_by(|a, b| a.used_pct.total_cmp(&b.used_pct));
-    ui.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new(disk_title(group))
-                .monospace()
-                .size(13.0)
-                .color(colors::TEXT_PRIMARY),
-        );
-        ui.label(
-            egui::RichText::new(format!(
-                "R: {:.1} MB/s | W: {:.1} MB/s",
-                group.read_mb_s, group.write_mb_s
-            ))
-            .monospace()
-            .size(11.0)
-            .color(speed_color),
-        );
-        if is_selected {
+    let title = disk_title(group);
+    ui.vertical(|ui| {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(title).monospace().size(13.0).color(colors::TEXT_PRIMARY));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if let Some(v) = worst {
+                    let (health, color) = health_label(v);
+                    ui.label(egui::RichText::new(health).monospace().size(11.0).color(color));
+                }
+            });
+        });
+        ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new("[ SELECTED ]")
-                    .monospace()
-                    .size(11.0)
-                    .color(colors::ACCENT_CYAN),
+                egui::RichText::new(format!(
+                    "R: {:.1} MB/s | W: {:.1} MB/s",
+                    group.read_mb_s, group.write_mb_s
+                ))
+                .monospace()
+                .size(11.0)
+                .color(speed_color),
             );
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if let Some(v) = worst {
-                let (health, color) = health_label(v);
-                ui.label(egui::RichText::new(health).monospace().size(11.0).color(color));
+            if is_selected {
+                ui.label(
+                    egui::RichText::new("SELECTED")
+                        .monospace()
+                        .size(11.0)
+                        .color(colors::ACCENT_CYAN),
+                );
             }
         });
     });
@@ -165,7 +176,7 @@ fn render_partition(
     let mut clicked = false;
     ui.horizontal(|ui| {
         let label = if is_selected {
-            format!("{} ({}) [ SELECTED ]", vol.mount_point, vol.fs_type)
+            format!("{} ({}) SELECTED", vol.mount_point, vol.fs_type)
         } else {
             format!("{} ({})", vol.mount_point, vol.fs_type)
         };

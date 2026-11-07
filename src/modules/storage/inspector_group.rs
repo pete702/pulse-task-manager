@@ -37,6 +37,7 @@ pub fn filter_on() -> &'static Mutex<bool> {
     FILTER_ON.get_or_init(|| Mutex::new(true))
 }
 
+#[allow(dead_code)]
 pub(crate) fn exe_drive(pid: u32, start_time: u64) -> Option<char> {
     let path = cached_exe_path(pid, start_time);
     let b = path.as_bytes();
@@ -100,7 +101,7 @@ fn group(raw: &[RawProcessCpuRow], filter: Option<&[char]>) -> Vec<Grouped> {
     let mut map: HashMap<String, Grouped> = HashMap::new();
     for row in raw {
         let drive = if row.disk_read_mb_s + row.disk_write_mb_s >= 0.05 {
-            exe_drive(row.pid, row.start_time)
+            row.drive_letter.map(|b| b as char)
         } else {
             None
         };

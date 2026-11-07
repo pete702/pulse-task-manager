@@ -118,6 +118,9 @@ impl eframe::App for PulseApp {
         if minimize_edge || crate::app_trim::periodic_due(&self.last_trim) {
             crate::app_trim::run_trim(&mut self.last_trim);
         }
+        if self.startup_frames == 10 {
+            crate::app_trim::run_trim(&mut self.last_trim);
+        }
         self.was_minimized = is_minimized;
         if is_minimized {
             ctx.request_repaint_after(std::time::Duration::from_secs(30));

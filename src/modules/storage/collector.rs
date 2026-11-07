@@ -45,25 +45,16 @@ impl StorageCollector {
             self.cached_volumes = Arc::from(volumes_from_disks(&self.disks));
         }
         let (agg_read, agg_write, top) = aggregate_io(raw_processes);
-        // One representative mount per disk: DISK_PERFORMANCE counters are
-        // per-disk, so C: and D: on Disk 0 must not both be summed.
-        let entries: Vec<(&str, Option<u32>)> =
-            self.cached_volumes.iter().map(|v| (v.mount_point.as_ref(), v.physical_disk)).collect();
-        let unique_mounts = dedupe_disk_mounts(&entries);
-        let unique: Vec<(String, Option<u32>)> = unique_mounts
+        // Sum every volume handle per physical disk: IOCTL on volume
+        // counters is per-volume only, so D:/E: would be lost if skipped.
+        let all: Vec<(String, Option<u32>)> = self
+            .cached_volumes
             .iter()
-            .map(|m| {
-                let disk = self
-                    .cached_volumes
-                    .iter()
-                    .find(|v| v.mount_point.as_ref() == *m)
-                    .and_then(|v| v.physical_disk);
-                (m.to_string(), disk)
-            })
+            .map(|v| (v.mount_point.to_string(), v.physical_disk))
             .collect();
         let volumes_for_rates = Arc::clone(&self.cached_volumes);
         let (read_total, write_total, per_disk) =
-            self.per_disk_rates(&unique, raw_processes, &volumes_for_rates, agg_read, agg_write);
+            self.per_disk_rates(&all, raw_processes, &volumes_for_rates, agg_read, agg_write);
         let read_total = clamp_rate(read_total);
         let write_total = clamp_rate(write_total);
         // Stamp every volume of a disk with its live per-disk rates.
@@ -124,7 +115,7 @@ impl StorageCollector {
     }
     fn per_disk_rates(
         &mut self,
-        unique: &[(String, Option<u32>)],
+        all: &[(String, Option<u32>)],
         raw_processes: &[RawProcessCpuRow],
         volumes: &[DiskVolumeInfo],
         agg_read: f32,
@@ -132,21 +123,33 @@ impl StorageCollector {
     ) -> (f32, f32, HashMap<u32, (f32, f32)>) {
         let now = Instant::now();
         let mut per_disk: HashMap<u32, (f32, f32)> = HashMap::new();
-        let (mut sum_r, mut sum_w, mut any_rate) = (0.0f32, 0.0f32, false);
-        for (mount, disk) in unique {
+        let mut sums: HashMap<u32, (i64, i64)> = HashMap::new();
+        for (mount, disk) in all {
             let Some(disk) = disk else { continue };
-            let Some(counters) = physical_disk::perf_counters_for_mount(mount) else { continue };
-            let (new_r, new_w) = counters;
-            let prev = self.prev_per_disk.insert(*disk, (new_r, new_w, now));
-            if let Some((old_r, old_w, at)) = prev {
-                let dt = now.duration_since(at).as_secs_f64();
-                if (0.5..=10.0).contains(&dt) && new_r >= old_r && new_w >= old_w {
-                    let r = ((new_r - old_r) as f64 / dt / 1_048_576.0) as f32;
-                    let w = ((new_w - old_w) as f64 / dt / 1_048_576.0) as f32;
-                    per_disk.insert(*disk, (r, w));
-                    sum_r += r;
-                    sum_w += w;
-                    any_rate = true;
+            let Some((r, w)) = physical_disk::perf_counters_for_mount(mount) else { continue };
+            let e = sums.entry(*disk).or_insert((0, 0));
+            e.0 += r;
+            e.1 += w;
+        }
+        let (mut sum_r, mut sum_w, mut any_rate) = (0.0f32, 0.0f32, false);
+        for (disk, (new_r, new_w)) in sums {
+            match self.prev_per_disk.get(&disk).copied() {
+                Some((old_r, old_w, at)) => {
+                    let dt = now.duration_since(at).as_secs_f64();
+                    if dt > 0.0 {
+                        if new_r >= old_r && new_w >= old_w {
+                            let r = ((new_r - old_r) as f64 / dt / 1_048_576.0) as f32;
+                            let w = ((new_w - old_w) as f64 / dt / 1_048_576.0) as f32;
+                            per_disk.insert(disk, (r, w));
+                            sum_r += r;
+                            sum_w += w;
+                            any_rate = true;
+                        }
+                        self.prev_per_disk.insert(disk, (new_r, new_w, now));
+                    }
+                }
+                None => {
+                    self.prev_per_disk.insert(disk, (new_r, new_w, now));
                 }
             }
         }
@@ -190,6 +193,7 @@ fn top_rw(raw: &[RawProcessCpuRow], pid: u32) -> (f32, f32) {
 }
 
 /// Keeps one mount per unique physical disk; None entries stay distinct.
+#[allow(dead_code)]
 pub(crate) fn dedupe_disk_mounts<'a>(entries: &[(&'a str, Option<u32>)]) -> Vec<&'a str> {
     let mut seen: Vec<u32> = Vec::new();
     let mut out: Vec<&'a str> = Vec::new();

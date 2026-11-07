@@ -14,6 +14,7 @@ fn raw(pid: u32, name: &str, cpu: f32, ram: u64) -> RawProcessCpuRow {
         disk_write_mb_s: 0.0,
         eco_qos: None,
         exe_path: None,
+        drive_letter: None,
         creation_time: None,
         start_time: 0,
     }

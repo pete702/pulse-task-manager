@@ -9,12 +9,9 @@ use crate::modules::memory::formatters::format_bytes;
 use crate::modules::storage::inspector_group::{cached_consumers, filter_on, last_scan};
 use crate::modules::storage::model::{DiskVolumeInfo, StorageSnapshot};
 use crate::modules::storage::physical_disk::drive_letter;
-use crate::modules::storage::volume_cards::health_label;
 use crate::theme::{card_frame, colors};
 
-const GIB_F: f64 = 1_073_741_824.0;
-
-/// Bottom 2-column split: selected disk details + top process activity.
+/// Bottom: top process activity full width (details live in disk cards).
 pub fn render_selection_split(
     ui: &mut egui::Ui,
     snap: &StorageSnapshot,
@@ -33,10 +30,7 @@ pub fn render_selection_split(
         None => Vec::new(),
     };
     let letters = disk_letters(&disk_volumes);
-    ui.columns(2, |cols| {
-        render_details_card(&mut cols[0], snap, vol.as_ref(), &disk_volumes);
-        render_activity_card(&mut cols[1], raw_processes, &letters, selected);
-    });
+    render_activity_card(ui, raw_processes, &letters, selected);
 }
 
 fn disk_letters(volumes: &[DiskVolumeInfo]) -> Vec<char> {
@@ -49,79 +43,6 @@ fn disk_letters(volumes: &[DiskVolumeInfo]) -> Vec<char> {
         }
     }
     out
-}
-
-fn render_details_card(
-    ui: &mut egui::Ui,
-    snap: &StorageSnapshot,
-    vol: Option<&DiskVolumeInfo>,
-    disk_volumes: &[DiskVolumeInfo],
-) {
-    card_frame().show(ui, |ui| {
-        let is_disk = vol.is_some_and(|v| v.physical_disk.is_some());
-        ui.label(
-            egui::RichText::new(if is_disk {
-                "SELECTED DISK DETAILS"
-            } else {
-                "SELECTED VOLUME DETAILS"
-            })
-            .monospace()
-            .size(12.0)
-            .color(colors::TEXT_PRIMARY),
-        );
-        ui.add_space(4.0);
-        if let Some(v) = vol {
-            if let Some(disk) = v.physical_disk {
-                // Single per-disk numbers once, then one line per partition.
-                line(ui, "Physical Drive", &format!("Disk {disk} ({})", v.kind.badge()));
-                line(
-                    ui,
-                    "Live I/O",
-                    &format!("R: {:.1} MB/s | W: {:.1} MB/s", v.read_mb_s, v.write_mb_s),
-                );
-                let mounts: Vec<String> =
-                    disk_volumes.iter().map(|x| x.mount_point.to_string()).collect();
-                line(ui, "Partitions", &mounts.join(", "));
-                let worst = disk_volumes.iter().max_by(|a, b| a.used_pct.total_cmp(&b.used_pct));
-                if let Some(w) = worst {
-                    let (health, color) = health_label(w);
-                    ui.label(egui::RichText::new(health).monospace().size(11.0).color(color));
-                }
-                for part in disk_volumes {
-                    let used = part.total_bytes.saturating_sub(part.available_bytes) as f64 / GIB_F;
-                    let free = part.available_bytes as f64 / GIB_F;
-                    let total = part.total_bytes as f64 / GIB_F;
-                    let key = format!("{} ({})", part.mount_point, part.fs_type);
-                    let value = format!(
-                        "{used:.1} / {total:.1} GiB ({:.0}%) Free {free:.1} GiB",
-                        part.used_pct
-                    );
-                    line(ui, &key, &value);
-                }
-            } else {
-                // No disk mapping: single-volume details.
-                let used = v.total_bytes.saturating_sub(v.available_bytes) as f64 / GIB_F;
-                let free = v.available_bytes as f64 / GIB_F;
-                let total = v.total_bytes as f64 / GIB_F;
-                let (health, color) = health_label(v);
-                line(ui, "Mount", &format!("{}  {}", v.mount_point, v.name));
-                line(ui, "Media", &format!("{} / {}", v.kind.badge(), v.fs_type));
-                line(ui, "Used", &format!("{used:.2} GiB"));
-                line(ui, "Free", &format!("{free:.2} GiB"));
-                line(ui, "Total", &format!("{total:.2} GiB"));
-                line(ui, "Used %", &format!("{:.1}%", v.used_pct));
-                ui.label(egui::RichText::new(health).monospace().size(11.0).color(color));
-            }
-            let _ = snap;
-        } else {
-            ui.label(
-                egui::RichText::new("No volumes detected")
-                    .monospace()
-                    .size(11.0)
-                    .color(colors::TEXT_SECONDARY),
-            );
-        }
-    });
 }
 
 fn render_activity_card(
@@ -142,7 +63,7 @@ fn render_activity_card(
                 let scope: Vec<String> = letters.iter().map(|c| format!("{c}:")).collect();
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let filter = *filter_on().lock().unwrap_or_else(|e| e.into_inner());
-                    let on_label = format!("[ On {} ]", scope.join(","));
+                    let on_label = format!("On {}", scope.join(","));
                     let on_color =
                         if filter { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
                     if ui
@@ -157,7 +78,7 @@ fn render_activity_card(
                         if filter { colors::TEXT_SECONDARY } else { colors::ACCENT_CYAN };
                     if ui
                         .add(egui::Button::new(
-                            egui::RichText::new("[ All Drives ]")
+                            egui::RichText::new("All Drives")
                                 .monospace()
                                 .size(10.0)
                                 .color(all_color),
@@ -210,7 +131,7 @@ fn render_consumers(ui: &mut egui::Ui, raw: &[RawProcessCpuRow], filter: Option<
     });
     for g in top.iter() {
         let label = if g.count > 1 { format!("{} (x{})", g.name, g.count) } else { g.name.clone() };
-        let badge = g.drive.map(|d| format!(" [{d}:]")).unwrap_or_default();
+        let badge = g.drive.map(|d| format!(" {d}:")).unwrap_or_default();
         let short = truncate(&format!("{label}{badge}"), 22);
         ui.columns(4, |cols| {
             cols[0].label(
@@ -236,13 +157,6 @@ fn render_consumers(ui: &mut egui::Ui, raw: &[RawProcessCpuRow], filter: Option<
             );
         });
     }
-}
-
-fn line(ui: &mut egui::Ui, key: &str, value: &str) {
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(key).monospace().size(10.0).color(colors::TEXT_SECONDARY));
-        ui.label(egui::RichText::new(value).monospace().size(11.0).color(colors::TEXT_PRIMARY));
-    });
 }
 
 fn truncate(text: &str, max_chars: usize) -> String {

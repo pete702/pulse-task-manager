@@ -142,8 +142,8 @@ pub fn render_network_tab(ui: &mut egui::Ui, snap: &NetworkSnapshot) {
     };
     let sel_initial = selected.clone();
     let valid = snap.adapters.iter().any(|a| selected.as_ref() == Some(&a.name));
-    if !valid {
-        selected = snap.adapters.first().map(|a| Arc::clone(&a.name));
+    if selected.is_some() && !valid {
+        selected = None;
     }
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         render_banner(ui, snap);
@@ -197,23 +197,23 @@ fn render_banner(ui: &mut egui::Ui, snap: &NetworkSnapshot) {
     let effective = if snap.probe_enabled { snap.grade } else { ConnectionGrade::ProbeDisabled };
     card_frame().show(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
-            let text = format!("[ GRADE: {} ]", effective.badge());
+            let text = format!("GRADE: {}", effective.badge());
             ui.label(
                 egui::RichText::new(text).monospace().size(13.0).color(grade_color(effective)),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let flush_label = match dns_flush_state() {
-                    DnsFlushState::Running => "[ Flushing... ]",
-                    DnsFlushState::Success => "[ DNS Flushed OK ]",
-                    DnsFlushState::Failed => "[ DNS Flush Failed ]",
-                    DnsFlushState::Idle => "[ Flush DNS Cache ]",
+                    DnsFlushState::Running => "Flushing...",
+                    DnsFlushState::Success => "DNS Flushed OK",
+                    DnsFlushState::Failed => "DNS Flush Failed",
+                    DnsFlushState::Idle => "Flush DNS Cache",
                 };
                 if ui.button(egui::RichText::new(flush_label).monospace().size(11.0)).clicked() {
                     trigger_dns_flush();
                 }
                 let probe_label = if probe_enabled() { "ON" } else { "OFF" };
                 let btn = egui::Button::new(
-                    egui::RichText::new(format!("[ Ping Probe: {probe_label} ]"))
+                    egui::RichText::new(format!("Ping Probe: {probe_label}"))
                         .monospace()
                         .size(11.0),
                 );
@@ -230,35 +230,17 @@ fn render_kpis(ui: &mut egui::Ui, snap: &NetworkSnapshot) {
         ui.set_width(ui.available_width());
         let ping = snap.ping_ms.map(|p| format!("{p:.0}")).unwrap_or_else(|| "--".to_owned());
         let jitter = snap.jitter_ms.map(|j| format!("{j:.1}")).unwrap_or_else(|| "--".to_owned());
-        let session = format!("{:.2}", snap.total_rx_gib + snap.total_tx_gib);
-        let cells: [(&str, String, egui::Color32); 6] = [
+        let cells: [(&str, String, egui::Color32); 4] = [
             ("DOWNLOAD (Mbps)", format!("{:.1}", snap.rx_mbps), colors::ACCENT_CYAN),
             ("UPLOAD (Mbps)", format!("{:.1}", snap.tx_mbps), colors::ACCENT_AMBER),
             ("PING (ms)", ping, colors::TEXT_PRIMARY),
             ("JITTER (ms)", jitter, colors::TEXT_PRIMARY),
-            ("PACKET LOSS (%)", format!("{:.1}", snap.packet_loss_pct), colors::ACCENT_RED),
-            ("SESSION TRAFFIC (GiB)", session, colors::TEXT_PRIMARY),
         ];
-        if ui.available_width() >= 720.0 {
-            ui.columns(6, |cols| {
-                for (i, (label, value, color)) in cells.iter().enumerate() {
-                    kpi_cell(&mut cols[i], label, value.clone(), *color);
-                }
-            });
-        } else {
-            // Narrow: 2 rows of 3 so labels never clip at 860 px window width.
-            ui.columns(3, |cols| {
-                for (i, (label, value, color)) in cells.iter().take(3).enumerate() {
-                    kpi_cell(&mut cols[i], label, value.clone(), *color);
-                }
-            });
-            ui.add_space(4.0);
-            ui.columns(3, |cols| {
-                for (i, (label, value, color)) in cells.iter().skip(3).enumerate() {
-                    kpi_cell(&mut cols[i], label, value.clone(), *color);
-                }
-            });
-        }
+        ui.columns(4, |cols| {
+            for (i, (label, value, color)) in cells.iter().enumerate() {
+                kpi_cell(&mut cols[i], label, value.clone(), *color);
+            }
+        });
     });
 }
 

@@ -4,6 +4,34 @@ All notable PULSE changes are in this file.
 Binary assets and checksums are published on [GitHub Releases](https://github.com/pete702/pulse-task-manager/releases).
 Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
 
+## [0.4.12] - 2026-03-31
+
+- **Speedtest & Disk I/O Fixes**: network collector uses `total_received`/`total_transmitted` for true plateau; storage sums every `\\.\X:` per physical disk with `dt>0.0` guard; CPU cumulative I/O totals with `drive_letter` from `exe()`.
+- **Universal 1-2-5 Auto-Scaler**: `nice_ceiling` (raw peak ×1.15, 1/2/2.5/5 decades, no cap) with `GB/s`/`Gbps` units; raw points ≤300, LTTB preserves peak; 52px gutter, labels at `left-6`.
+- **Show All & UI Declutter**: Network H4 keeps `None` (no `first()` fallback); 4-col KPIs (no brackets); storage cards stacked header, `DISK` omitted for `Unknown`; inspector full-width activity.
+- **Test Pruning**: removed 5 legacy tests, added `nice_ceiling` live test, `docs_guard` stable at 4.
+- **Version bump to 0.4.12**.
+
+## [0.4.11] - 2026-03-31
+
+- **Y-Axis Units**: all 4 ticks share `Gbps`/`GB/s` vs `Mbps`/`MB/s` via `is_giga`.
+- **Chart Cleanup**: `CEILINGS` removed, Storage uses `lttb_segments`, live `nice_ceiling` tested.
+- **Version bump to 0.4.11**.
+
+## [0.4.10] - 2026-03-31
+
+- **Disk Sum**: sums every volume per disk (`dt > 0.0`, `cur >= prev`); CPU uses totals plus `drive_letter` from `exe()`.
+- **Chart Gutter**: 1-2-5 ceiling (`nice_ceiling`, no cap) with `GB/s`/`Gbps`, raw <=300, 52px gutter.
+- **Show All**: keeps `None`, 4-column KPIs, no brackets, cards stacked, full width.
+- **Version bump to 0.4.10**.
+
+## [0.4.9] - 2026-03-31
+
+- **Network Speedtest Plateau Fix**: `collector` now uses `total_received()` / `total_transmitted()` so steady 90 Mbps downloads show a true plateau and accurate `session_rx_gib` / `session_tx_gib`; steady throughput test added.
+- **Chart HUD Cleanup**: Y-axis scale labels moved to the left (`rect.left() + 6.0` with dark pill background), compact top-left split legends (`RX / TX` / `Ping / Jitter`), active mode button uses dim Cyan fill with Cyan stroke, window buttons iterate `[900, 300, 60]` to read `1m  5m  15m`.
+- **Sidebar Badges + Startup Trim**: `[03] Storage` always shows `{:.1} MB/s`; `[04] Network` always shows `{:.1} Mbps` (`{:.2} Gbps` at >= 1000.0); one-time `run_trim()` on `startup_frames == 10`.
+- **Version bump to 0.4.9**.
+
 ## [0.4.8] - 2026-03-08
 
 - **CI Delta Tracker Fix**: deterministic `track_with_resolver` with invalid PIDs (`u32::MAX`) so `twelve_new_pids_defer_then_resolve` no longer depends on live OS processes; worker timeout `5s -> 15s`.
@@ -47,42 +75,4 @@ Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
 - **Storage Audit Fixes**: spike KPI shows process, peak, age plus PID/timestamp/R-W tooltip, ABA-safe `Arc` consumer cache with last-scan age, unified `[ HEALTHY/HIGH/LOW N% ]` badge, `3+2` narrow KPIs, LTTB to 300 points.
 - **Version bump to 0.4.3**.
 
-## [0.4.2] - 2026-11-06
 
-- **Network Audit Fixes**: `prev` now holds raw lifetime counters so `rx/tx Mbps` reflect true intervals; timeouts clear stale ping, 3 consecutive failures flip grade to OFFLINE/PACKET_LOSS fast; traffic history pushes even with probe OFF/probing.
-- **100% Width Layouts**: Network KPIs render in 6 fixed columns, chart mode `[ TRAFFIC | PING & JITTER ]` buttons sit in the header, single adapter spans full width with activity bar; Storage KPIs use 5 fixed columns with truncated TOP I/O.
-- **Storage Selection Works**: media badges + filesystem restored, 3-tier health (`LOW SPACE`/`HIGH`/`HEALTHY`), row-major volume pairs, bottom split with selected-volume details and cached deterministic process table.
-- **Version bump to 0.4.2**.
-
-## [0.4.1] - 2026-11-06
-
-- **Chart-First Ergonomics**: Storage and Network place the HUD chart right below the KPI strip; volume and adapter cards render in 2-column grids; Storage consumers are grouped by process name.
-- **UX Fixes**: sidebar split into `sidebar_badges.rs` with short `[03] Storage` / `[04] Network` titles, disks sorted `C:\` first, honest critical rule for mid-size drives, Npcap/WFP adapters filtered.
-- **Network Correctness**: session traffic baseline since PULSE start, startup shows `PROBING...` instead of false OFFLINE, disabled probe shows `--`, `0.0 ms` fakes removed, `DNS Flushed OK` feedback for 3 seconds.
-- **Version bump to 0.4.1**.
-
-## [0.4.0] - 2026-11-06
-
-- **Network `[04]` HUD**: esports grade banner (Tournament Ready/Stable/Bufferbloat/Packet Loss/Offline), DOWNLOAD/UPLOAD/PING/JITTER/LOSS KPIs, clickable adapter cards, dual-mode traffic/latency chart, sidebar `Mbps`/`ms` badge.
-
-- **Telemetry Backend**: `NetworkCollector` over sysinfo counters with virtual-interface filtering, non-blocking TCP probe (`1.1.1.1:53` / `8.8.8.8:53`, 800 ms) with EWMA jitter and windowed loss, `ipconfig /flushdns` action.
-
-- **Version bump to 0.4.0**.
-
-## [0.3.4] - 2026-11-06
-
-- **Storage Audit Closure**: stepped Y-ceiling up to 10000 MB/s (no NVMe clipping), `HLine` tied to spike threshold, one history point per process scan, focus-free progress bars.
-- **Sortable DISK I/O Column**: `[00] Processes` gains a `DISK I/O` header/cell (dim/Cyan/Amber) with summed clone-group I/O; table sorting extracted to `table_sort.rs`.
-- **Version bump to 0.3.4**.
-
-## [0.3.3] - 2026-11-06
-
-- **Storage Chart Parity**: timestamped cached history in minutes-ago coordinates, anchored HUD chart with `HLine 80`, fixed Y grid, and corner brackets.
-- **Audit Fixes**: background ingestion on every snapshot, spike expires after 120 ticks, fresh-scan spike gate, finite clamps, small USB sticks no longer flagged critical.
-- **Version bump to 0.3.3**.
-
-## [0.3.2] - 2026-11-06
-
-- **Clickable Volumes & Inspector**: volume cards are click-selectable (`[ SELECTED ]` cyan border); inspector shows mount/label/media/filesystem/health, GiB breakdown, and top 6 disk consumers.
-- **First-Tick Guard**: first-seen processes with lifetime I/O are zeroed to kill startup multi-GB/s spikes; sidebar Storage badge shows live `MB/s` or volume count.
-- **Version bump to 0.3.2**.
