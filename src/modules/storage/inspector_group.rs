@@ -70,13 +70,21 @@ fn scan_key(raw: &[RawProcessCpuRow], filter: Option<&[char]>) -> CacheKey {
     let mut rsum = 0.0f32;
     let mut wsum = 0.0f32;
     for r in raw {
-        rsum += r.disk_read_mb_s;
-        wsum += r.disk_write_mb_s;
+        rsum += if r.disk_read_mb_s.is_finite() && r.disk_read_mb_s > 0.0 {
+            r.disk_read_mb_s
+        } else {
+            0.0
+        };
+        wsum += if r.disk_write_mb_s.is_finite() && r.disk_write_mb_s > 0.0 {
+            r.disk_write_mb_s
+        } else {
+            0.0
+        };
     }
     (raw.as_ptr() as usize, raw.len(), rsum.to_bits(), wsum.to_bits(), drive_mask(filter))
 }
 
-/// Returns cached top-5 grouped consumers; ABA-safe key prevents stale hits.
+/// Returns cached top-8 grouped consumers; ABA-safe key prevents stale hits.
 /// `filter` is the set of drive letters for the selected disk (None = all).
 pub fn cached_consumers(raw: &[RawProcessCpuRow], filter: Option<&[char]>) -> Arc<Vec<Grouped>> {
     let key = scan_key(raw, filter);
@@ -138,6 +146,41 @@ fn group(raw: &[RawProcessCpuRow], filter: Option<&[char]>) -> Vec<Grouped> {
     rows.sort_by(|a, b| {
         b.total.total_cmp(&a.total).then(b.ram_bytes.cmp(&a.ram_bytes)).then(a.name.cmp(&b.name))
     });
-    rows.truncate(5);
+    rows.retain(|g| g.total >= 0.05);
+    rows.truncate(8);
     rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    fn r(pid: u32, n: &str, rd: f32, wr: f32) -> RawProcessCpuRow {
+        RawProcessCpuRow {
+            pid,
+            name: Arc::from(n),
+            cpu_usage: 0.0,
+            ram_bytes: 0,
+            disk_read_mb_s: rd,
+            disk_write_mb_s: wr,
+            eco_qos: None,
+            exe_path: None,
+            drive_letter: None,
+            creation_time: None,
+            start_time: 0,
+        }
+    }
+    #[test]
+    fn group_excludes_idle_zero_io_entries() {
+        let rows = vec![
+            r(1, "active.exe", 3.0, 1.0),
+            r(2, "chrome.exe", 0.0, 0.0),
+            r(3, "svchost.exe", 0.0, 0.0),
+        ];
+        let g = group(&rows, None);
+        assert_eq!(g.len(), 1);
+        assert_eq!(g[0].name, "active.exe");
+        let all_idle = vec![r(4, "idle.exe", 0.0, 0.0)];
+        assert!(group(&all_idle, None).is_empty());
+    }
 }

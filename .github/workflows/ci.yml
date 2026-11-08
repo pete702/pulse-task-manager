@@ -90,3 +90,20 @@ jobs:
             ${{ runner.os }}-cargo-msrv-
       - name: Run cargo check (stable)
         run: cargo check --locked --all-targets
+
+  linux-clippy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2
+      - name: Run Clippy (deny warnings)
+        run: cargo clippy --locked --all-targets -- -D warnings

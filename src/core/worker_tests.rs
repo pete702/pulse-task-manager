@@ -41,7 +41,11 @@ mod tests {
         assert_eq!(taken.uptime_secs, 20);
         assert!(slot.take().is_none(), "take clears the slot");
         slot.store(Arc::new(SystemSnapshot::new(30, 3.0, Some(Default::default()))));
-        assert_eq!(slot.overflow_count(), 1, "Reading clears the overflow condition");
+        assert_eq!(
+            slot.overflow_count(),
+            1,
+            "take keeps the overflow counter; drain_all resets it"
+        );
     }
     #[test]
     fn test_latest_slot_wins_when_channel_is_full() {

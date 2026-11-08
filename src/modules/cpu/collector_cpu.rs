@@ -17,15 +17,18 @@ pub fn collect_cpu(sys: &mut System) -> CpuSnapshot {
     let mut hottest_core_idx = 0;
     let mut hottest_core_pct = 0.0f32;
     for (idx, cpu) in cpus.iter().enumerate() {
-        let usage = cpu.cpu_usage();
+        let raw = cpu.cpu_usage();
+        let usage = if raw.is_finite() { raw.clamp(0.0, 100.0) } else { 0.0 };
         per_core_pct.push(usage);
         total_usage += usage;
-        if usage > hottest_core_pct {
+        if usage.is_finite() && usage > hottest_core_pct {
             hottest_core_pct = usage;
             hottest_core_idx = idx;
         }
     }
-    let total_pct = (total_usage / logical_cores.max(1) as f32).clamp(0.0, 100.0);
+    let raw_total = total_usage / logical_cores.max(1) as f32;
+    let total_pct = if raw_total.is_finite() { raw_total.clamp(0.0, 100.0) } else { 0.0 };
+    let hottest_core_pct = if hottest_core_pct.is_finite() { hottest_core_pct } else { 0.0 };
     let (base_mhz, current_mhz) = read_cpu_frequencies();
     let brand = read_cpu_brand(sys);
     CpuSnapshot {

@@ -23,12 +23,10 @@ impl WallState {
     }
 }
 
-fn evaluate_memory(mem: &MemorySnapshot) -> WallState {
-    // Never claim "optimal" without confirmed kernel/RAM telemetry.
-    if mem.snapshot_id == 0 || mem.ram_total_bytes == 0 || !mem.kernel_metrics_valid {
+fn wall_from_pcts(ram: f32, commit: f32) -> WallState {
+    if !ram.is_finite() || !commit.is_finite() {
         return WallState::Unconfirmed;
     }
-    let (ram, commit) = (mem.ram_usage_percent(), mem.commit_charge_pct());
     if ram >= 85.0 {
         WallState::MemoryWall
     } else if ram >= 70.0 || commit >= 80.0 {
@@ -36,6 +34,18 @@ fn evaluate_memory(mem: &MemorySnapshot) -> WallState {
     } else {
         WallState::Optimal
     }
+}
+
+fn evaluate_memory(mem: &MemorySnapshot) -> WallState {
+    // Never claim "optimal" without confirmed kernel/RAM telemetry.
+    if mem.snapshot_id == 0 || mem.ram_total_bytes == 0 || !mem.kernel_metrics_valid {
+        return WallState::Unconfirmed;
+    }
+    let (ram, commit) = (mem.ram_usage_percent(), mem.commit_charge_pct());
+    if !ram.is_finite() || !commit.is_finite() {
+        return WallState::Unconfirmed;
+    }
+    wall_from_pcts(ram, commit)
 }
 
 /// Evaluates the badge state for a telemetry snapshot.
@@ -79,7 +89,7 @@ mod tests {
     #[test]
     fn test_optimal_state_and_missing_memory() {
         assert_eq!(evaluate(&snapshot(50, 50)), WallState::Optimal);
-        assert_eq!(evaluate(&SystemSnapshot::minimal(1, 10.0)), WallState::Unconfirmed);
+        assert_eq!(evaluate(&SystemSnapshot::new(1, 10.0, None)), WallState::Unconfirmed);
         assert_eq!(WallState::Optimal.label(), "[ ● SYSTEM OPTIMAL ]");
         assert_eq!(WallState::Unconfirmed.label(), "[ ⏳ INITIALIZING TELEMETRY ]");
     }
@@ -101,5 +111,14 @@ mod tests {
         assert_eq!(evaluate_memory(&mem), WallState::Unconfirmed);
         mem.kernel_metrics_valid = true;
         assert_eq!(evaluate_memory(&mem), WallState::Optimal);
+    }
+
+    #[test]
+    fn test_non_finite_is_unconfirmed() {
+        assert_eq!(wall_from_pcts(f32::NAN, 50.0), WallState::Unconfirmed);
+        assert_eq!(wall_from_pcts(50.0, f32::NAN), WallState::Unconfirmed);
+        assert_eq!(wall_from_pcts(f32::INFINITY, 50.0), WallState::Unconfirmed);
+        assert_eq!(wall_from_pcts(50.0, f32::INFINITY), WallState::Unconfirmed);
+        assert_eq!(wall_from_pcts(f32::NEG_INFINITY, 50.0), WallState::Unconfirmed);
     }
 }

@@ -1,21 +1,16 @@
 //! Storage collector: volume metadata plus aggregated process I/O.
-
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Instant;
-
-use sysinfo::Disks;
-
 use crate::modules::cpu::model::RawProcessCpuRow;
 use crate::modules::storage::io_agg::{
-    aggregate_io, aggregate_io_by_disk, clamp_rate, volumes_from_disks,
+    aggregate_io, aggregate_io_by_disk, aggregate_io_by_letter, clamp_rate, volumes_from_disks,
 };
 use crate::modules::storage::model::{DiskVolumeInfo, IoSpikeEvent, StorageSnapshot};
 use crate::modules::storage::physical_disk;
-
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Instant;
+use sysinfo::Disks;
 #[allow(dead_code)]
 pub const IO_SPIKE_THRESHOLD_MB_S: f32 = 80.0;
-
 #[allow(dead_code)]
 pub struct StorageCollector {
     disks: Disks,
@@ -25,7 +20,6 @@ pub struct StorageCollector {
     last_scan_id: u64,
     prev_per_disk: HashMap<u32, (i64, i64, Instant)>,
 }
-
 impl StorageCollector {
     #[allow(dead_code)]
     pub fn new() -> Self {
@@ -40,23 +34,25 @@ impl StorageCollector {
     }
     #[allow(dead_code)]
     pub fn collect(&mut self, raw_processes: &[RawProcessCpuRow], scan_id: u64) -> StorageSnapshot {
+        if self.prev_per_disk.len() > 32 {
+            self.prev_per_disk.clear();
+        }
         if self.tick_counter.is_multiple_of(10) {
             self.disks.refresh_list();
             self.cached_volumes = Arc::from(volumes_from_disks(&self.disks));
         }
         let (agg_read, agg_write, top) = aggregate_io(raw_processes);
-        // Query once per physical disk: partitions share one counter set.
         let all: Vec<(String, Option<u32>)> = self
             .cached_volumes
             .iter()
             .map(|v| (v.mount_point.to_string(), v.physical_disk))
             .collect();
-        let volumes_for_rates = Arc::clone(&self.cached_volumes);
+        let vr = Arc::clone(&self.cached_volumes);
         let (read_total, write_total, per_disk) =
-            self.per_disk_rates(&all, raw_processes, &volumes_for_rates, agg_read, agg_write);
+            self.per_disk_rates(&all, raw_processes, &vr, agg_read, agg_write);
         let read_total = clamp_rate(read_total);
         let write_total = clamp_rate(write_total);
-        // Stamp every volume of a disk with its live per-disk rates.
+        let by_letter = aggregate_io_by_letter(raw_processes);
         let volumes: Arc<[DiskVolumeInfo]> = Arc::from(
             self.cached_volumes
                 .iter()
@@ -66,6 +62,16 @@ impl StorageCollector {
                         if let Some((r, w)) = per_disk.get(&d) {
                             info.read_mb_s = *r;
                             info.write_mb_s = *w;
+                        }
+                    } else if let Some(letter) = physical_disk::drive_letter(v.mount_point.as_ref())
+                    {
+                        let key = 0x8000_0000 | (letter as u32);
+                        if let Some((r, w)) = per_disk.get(&key) {
+                            info.read_mb_s = *r;
+                            info.write_mb_s = *w;
+                        } else if let Some((r, w)) = by_letter.get(&letter) {
+                            info.read_mb_s = clamp_rate(*r as f32);
+                            info.write_mb_s = clamp_rate(*w as f32);
                         }
                     }
                     info
@@ -125,17 +131,21 @@ impl StorageCollector {
         let mut sums: HashMap<u32, (i64, i64)> = HashMap::new();
         let mut visited: Vec<u32> = Vec::new();
         for (mount, disk) in all {
-            let Some(disk) = disk else { continue };
-            if visited.contains(disk) {
+            let key = match disk {
+                Some(d) => Some(*d),
+                None => physical_disk::drive_letter(mount).map(|ch| 0x8000_0000 | (ch as u32)),
+            };
+            let Some(disk) = key else { continue };
+            if visited.contains(&disk) {
                 continue;
             }
-            visited.push(*disk);
+            visited.push(disk);
             let Some((r, w)) = physical_disk::perf_counters_for_mount(mount) else { continue };
-            let e = sums.entry(*disk).or_insert((0, 0));
+            let e = sums.entry(disk).or_insert((0, 0));
             e.0 += r;
             e.1 += w;
         }
-        let (mut sum_r, mut sum_w, mut any_rate) = (0.0f32, 0.0f32, false);
+        let mut any_rate = false;
         for (disk, (new_r, new_w)) in sums {
             match self.prev_per_disk.get(&disk).copied() {
                 Some((old_r, old_w, at)) => {
@@ -145,8 +155,6 @@ impl StorageCollector {
                             let r = ((new_r - old_r) as f64 / dt / 1_048_576.0) as f32;
                             let w = ((new_w - old_w) as f64 / dt / 1_048_576.0) as f32;
                             per_disk.insert(disk, (r, w));
-                            sum_r += r;
-                            sum_w += w;
                             any_rate = true;
                         }
                         self.prev_per_disk.insert(disk, (new_r, new_w, now));
@@ -157,7 +165,6 @@ impl StorageCollector {
                 }
             }
         }
-        // Process-attributed fallback for missing/zero hardware disks.
         let fallback = aggregate_io_by_disk(raw_processes, volumes);
         for (disk, fr_fw) in fallback {
             let r = clamp_rate(fr_fw.0 as f32);
@@ -173,30 +180,42 @@ impl StorageCollector {
                 per_disk.insert(disk, (r, w));
             }
         }
+        let by_letter = aggregate_io_by_letter(raw_processes);
+        for vol in volumes {
+            if vol.physical_disk.is_some() {
+                continue;
+            }
+            if let Some(l) = physical_disk::drive_letter(vol.mount_point.as_ref()) {
+                let key = 0x8000_0000 | (l as u32);
+                let need = match per_disk.get(&key) {
+                    None => true,
+                    Some((hr, hw)) => *hr == 0.0 && *hw == 0.0,
+                };
+                if need {
+                    if let Some((r, w)) = by_letter.get(&l) {
+                        per_disk.insert(key, (clamp_rate(*r as f32), clamp_rate(*w as f32)));
+                    }
+                }
+            }
+        }
         if any_rate {
             let (mut sr, mut sw) = (0.0f32, 0.0f32);
             for (r, w) in per_disk.values() {
-                let _ = (sr, sw);
                 sr += r;
                 sw += w;
             }
-            let _ = (sum_r, sum_w);
             (clamp_rate(sr), clamp_rate(sw), per_disk)
         } else {
-            // No valid hardware deltas yet: total stays aggregate, per-disk live.
             (agg_read, agg_write, per_disk)
         }
     }
 }
-
 fn top_rw(raw: &[RawProcessCpuRow], pid: u32) -> (f32, f32) {
     raw.iter()
         .find(|r| r.pid == pid)
         .map(|r| (r.disk_read_mb_s, r.disk_write_mb_s))
         .unwrap_or((0.0, 0.0))
 }
-
-/// Keeps one mount per unique physical disk; None entries stay distinct.
 #[allow(dead_code)]
 pub(crate) fn dedupe_disk_mounts<'a>(entries: &[(&'a str, Option<u32>)]) -> Vec<&'a str> {
     let mut seen: Vec<u32> = Vec::new();
@@ -212,13 +231,11 @@ pub(crate) fn dedupe_disk_mounts<'a>(entries: &[(&'a str, Option<u32>)]) -> Vec<
     }
     out
 }
-
 impl Default for StorageCollector {
     fn default() -> Self {
         Self::new()
     }
 }
-
 #[cfg(test)]
 #[path = "collector_tests.rs"]
 mod tests;

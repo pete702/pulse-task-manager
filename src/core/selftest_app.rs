@@ -1,9 +1,9 @@
 //! Self-test GUI application for PULSE.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::Instant;
 
-use crate::core::spawn_telemetry_worker;
 use crate::core::SystemSnapshot;
 use crate::i18n::Key;
 
@@ -14,21 +14,24 @@ pub struct SelfTestApp {
     snapshot_rx: mpsc::Receiver<Arc<SystemSnapshot>>,
     latest_snapshot: Option<Arc<SystemSnapshot>>,
     started_at: Instant,
-    test_passed: bool,
+    passed: Arc<AtomicBool>,
     /// Keep the worker alive to produce snapshots.
     _worker: crate::core::TelemetryWorker,
 }
 
 impl SelfTestApp {
-    pub fn new() -> Self {
-        let (worker, snapshot_rx) = spawn_telemetry_worker();
+    pub fn new(
+        worker: crate::core::TelemetryWorker,
+        rx: mpsc::Receiver<Arc<SystemSnapshot>>,
+        passed: Arc<AtomicBool>,
+    ) -> Self {
         Self {
             frames_rendered: 0,
             snapshot_received: false,
-            snapshot_rx,
+            snapshot_rx: rx,
             latest_snapshot: None,
             started_at: Instant::now(),
-            test_passed: false,
+            passed,
             _worker: worker,
         }
     }
@@ -46,7 +49,6 @@ impl eframe::App for SelfTestApp {
         if got_snapshot {
             self.snapshot_received = true;
         }
-        let _ = self.test_passed;
 
         // Local GUI mode: wait for first snapshot, then render 5 frames, then check and close
         if self.snapshot_received {
@@ -54,7 +56,7 @@ impl eframe::App for SelfTestApp {
             if self.frames_rendered >= 5 {
                 if let Some(ref snapshot) = self.latest_snapshot {
                     if snapshot.pulse_ram_mb > 0.0 {
-                        self.test_passed = true;
+                        self.passed.store(true, Ordering::SeqCst);
                         println!("{}", Key::SelfTestPassedLive.t());
                     } else {
                         eprintln!("{}", Key::SelfTestFailed.t());

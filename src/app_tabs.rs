@@ -56,9 +56,10 @@ pub fn handle_global_hotkeys(
     memory_sub_view: &mut MemorySubView,
     table_state: &mut MemoryTableState,
     cpu_table_state: &mut CpuTableState,
+    telemetry_paused: &mut bool,
 ) -> bool {
     let wants_input = ctx.wants_keyboard_input();
-    let (ctrl_f, esc, num_idx, f5) = ctx.input(|i| {
+    let (ctrl_f, esc, num_idx, f5, f10) = ctx.input(|i| {
         let ctrl = i.modifiers.ctrl;
         let keys = [
             egui::Key::Num1,
@@ -70,11 +71,19 @@ pub fn handle_global_hotkeys(
         ];
         let num_idx = if ctrl { keys.iter().position(|k| i.key_pressed(*k)) } else { None };
         let f5 = i.key_pressed(egui::Key::F5);
-        (ctrl && i.key_pressed(egui::Key::F), i.key_pressed(egui::Key::Escape), num_idx, f5)
+        let f10 = i.key_pressed(egui::Key::F10);
+        (ctrl && i.key_pressed(egui::Key::F), i.key_pressed(egui::Key::Escape), num_idx, f5, f10)
     });
     let mut handled = false;
-    if f5 {
+    if f5 && !wants_input {
         crate::core::request_process_scan();
+        handled = true;
+    }
+    if f10 && !wants_input {
+        *telemetry_paused = !*telemetry_paused;
+        crate::core::worker_loop::set_worker_paused(crate::core::worker_loop::WorkerConfig {
+            paused: *telemetry_paused,
+        });
         handled = true;
     }
     // Ctrl+F: Focus search in the master Processes tab

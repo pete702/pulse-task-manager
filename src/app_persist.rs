@@ -68,6 +68,7 @@ impl PulseApp {
         }
         // True debounce: any change to cur restarts the 500ms window.
         if self.dirty_state_snapshot.as_ref() != Some(&cur) {
+            crate::core::persist::stage_state(&cur);
             self.dirty_state_snapshot = Some(cur.clone());
             self.dirty_since = Some(Instant::now());
             return;

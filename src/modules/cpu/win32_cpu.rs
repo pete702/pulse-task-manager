@@ -16,6 +16,26 @@ static CPU_BRAND: OnceLock<Arc<str>> = OnceLock::new();
 /// Cached base MHz (MaxMhz from CallNtPowerInformation, read once at startup).
 static BASE_MHZ: OnceLock<u64> = OnceLock::new();
 
+fn fallback_brand(sys: &System) -> String {
+    if let Some(cpu) = sys.cpus().first() {
+        let b = cpu.brand().trim();
+        if !b.is_empty() {
+            return b.to_string();
+        }
+    }
+    let b = sys.global_cpu_info().brand().trim();
+    if !b.is_empty() {
+        return b.to_string();
+    }
+    if let Ok(b) = read_cpu_brand_registry() {
+        let t = b.trim();
+        if !t.is_empty() {
+            return t.to_string();
+        }
+    }
+    "x86_64 Processor".to_string()
+}
+
 /// Initializes the CPU brand and base MHz caches. Call once at startup.
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
@@ -49,30 +69,7 @@ pub fn init_cpu_brand_and_base_mhz(sys: &mut System) {
     let _ = BASE_MHZ.set(base_mhz);
 
     // Read CPU brand string (same logic as read_cpu_brand)
-    let brand = if let Some(cpu) = sys.cpus().first() {
-        let b = cpu.brand().trim();
-        if !b.is_empty() {
-            Arc::from(b)
-        } else {
-            let b = sys.global_cpu_info().brand().trim();
-            if !b.is_empty() {
-                Arc::from(b)
-            } else if let Ok(b) = read_cpu_brand_registry() {
-                Arc::from(b.trim())
-            } else {
-                Arc::from("x86_64 Processor")
-            }
-        }
-    } else {
-        let b = sys.global_cpu_info().brand().trim();
-        if !b.is_empty() {
-            Arc::from(b)
-        } else if let Ok(b) = read_cpu_brand_registry() {
-            Arc::from(b.trim())
-        } else {
-            Arc::from("x86_64 Processor")
-        }
-    };
+    let brand = Arc::from(fallback_brand(sys));
     let _ = CPU_BRAND.set(brand);
 }
 
@@ -83,13 +80,7 @@ pub fn init_cpu_brand_and_base_mhz(sys: &mut System) {
     sys.refresh_cpu_specifics(sysinfo::CpuRefreshKind::new().with_frequency());
     let base = sys.cpus().iter().map(|c| c.frequency()).max().unwrap_or(0);
     let _ = BASE_MHZ.set(base);
-    let brand = sys
-        .cpus()
-        .first()
-        .map(|c| c.brand().trim())
-        .filter(|b| !b.is_empty())
-        .map(Arc::from)
-        .unwrap_or_else(|| Arc::from("x86_64 Processor"));
+    let brand = Arc::from(fallback_brand(sys));
     let _ = CPU_BRAND.set(brand);
 }
 
@@ -213,6 +204,7 @@ fn read_cpu_brand_registry() -> Result<String, std::io::Error> {
 
 /// Non-Windows stub: no registry on this platform.
 #[cfg(not(target_os = "windows"))]
+#[allow(dead_code)]
 fn read_cpu_brand_registry() -> Result<String, std::io::Error> {
     Err(std::io::Error::from_raw_os_error(1))
 }

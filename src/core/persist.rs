@@ -1,12 +1,29 @@
-//! App state persistence for PULSE (zero external crates, std only).
-//! Stores key=value lines in %LOCALAPPDATA%\PULSE\state.cfg.
+//! App state persistence for PULSE (std only). Stores key=value in %LOCALAPPDATA%\PULSE\state.cfg.
 use crate::app_tabs::ActiveTab;
 use crate::modules::cpu::table_state::CpuSortCol;
 use crate::modules::memory::model::ChartWindow;
 use std::io::Read;
 use std::path::PathBuf;
-
-/// Persisted UI state across restarts.
+use std::sync::{Mutex, OnceLock};
+static STAGED_STATE: OnceLock<Mutex<Option<PersistedState>>> = OnceLock::new();
+pub fn stage_state(state: &PersistedState) {
+    let slot = STAGED_STATE.get_or_init(|| Mutex::new(None));
+    *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(state.clone());
+}
+pub fn clear_staged_state() {
+    if let Some(slot) = STAGED_STATE.get() {
+        *slot.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+}
+pub fn flush_staged_state() {
+    let staged = STAGED_STATE.get().and_then(|slot| {
+        let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+        guard.take()
+    });
+    if let Some(s) = staged {
+        let _ = save_state(&s);
+    }
+}
 #[derive(Debug, Clone, PartialEq)]
 pub struct PersistedState {
     pub active_tab: u8,
@@ -25,7 +42,6 @@ pub struct PersistedState {
     pub win_w: f32,
     pub win_h: f32,
 }
-
 impl Default for PersistedState {
     fn default() -> Self {
         Self {
@@ -47,20 +63,15 @@ impl Default for PersistedState {
         }
     }
 }
-
-/// Path to state file: %LOCALAPPDATA%\PULSE\state.cfg, None when unavailable.
 pub fn state_path() -> Option<PathBuf> {
     let base = std::env::var_os("LOCALAPPDATA")?;
     Some(PathBuf::from(base).join("PULSE").join("state.cfg"))
 }
-
-/// Loads persisted state, or defaults when the file is missing or unreadable.
 pub fn load_state() -> PersistedState {
     let Some(path) = state_path() else { return PersistedState::default() };
     let Ok(file) = std::fs::File::open(&path) else { return PersistedState::default() };
     let mut buf = Vec::new();
-    let mut limited = file.take(64 * 1024);
-    if limited.read_to_end(&mut buf).is_err() {
+    if file.take(64 * 1024).read_to_end(&mut buf).is_err() {
         return PersistedState::default();
     }
     match String::from_utf8(buf) {
@@ -68,47 +79,35 @@ pub fn load_state() -> PersistedState {
         Err(_) => PersistedState::default(),
     }
 }
-
-/// Saves state to disk. No-op when LOCALAPPDATA is unavailable.
 pub fn save_state(s: &PersistedState) -> std::io::Result<()> {
     let Some(path) = state_path() else { return Ok(()) };
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let tmp_path = path.with_file_name("state.cfg.tmp");
+    if std::fs::symlink_metadata(&tmp_path).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+        return Ok(());
+    }
     std::fs::write(&tmp_path, serialize(s))?;
     if std::fs::rename(&tmp_path, &path).is_err() {
         let _ = std::fs::remove_file(&tmp_path);
         std::fs::write(&path, serialize(s))?;
     }
+    clear_staged_state();
     Ok(())
 }
-
-/// Serializes state to key=value text (fixed key order).
 pub fn serialize(s: &PersistedState) -> String {
     let win_w = if s.win_w.is_finite() { s.win_w } else { 1180.0 };
     let win_h = if s.win_h.is_finite() { s.win_h } else { 760.0 };
     format!(
         "active_tab={}\ngroup_clones={}\ncompact_rows={}\nsort_col={}\nsort_asc={}\ncpu_show_grid={}\nmem_window_secs={}\ncpu_window_secs={}\nstorage_window_secs={}\nnetwork_window_secs={}\nnetwork_chart_mode={}\nnetwork_probe_enabled={}\nprocess_quick_filter={}\nwin_w={:.1}\nwin_h={:.1}\n",
-        s.active_tab,
-        bool_str(s.group_clones),
-        bool_str(s.compact_rows),
-        sort_col_str(s.sort_col),
-        bool_str(s.sort_asc),
-        bool_str(s.cpu_show_grid),
-        s.mem_window_secs,
-        s.cpu_window_secs,
-        s.storage_window_secs,
-        s.network_window_secs,
-        s.network_chart_mode,
-        bool_str(s.network_probe_enabled),
-        s.process_quick_filter,
-        win_w.clamp(860.0, 3840.0),
+        s.active_tab.min(5), bool_str(s.group_clones), bool_str(s.compact_rows), sort_col_str(s.sort_col),
+        bool_str(s.sort_asc), bool_str(s.cpu_show_grid), s.mem_window_secs, s.cpu_window_secs,
+        s.storage_window_secs, s.network_window_secs, s.network_chart_mode.min(2),
+        bool_str(s.network_probe_enabled), s.process_quick_filter.min(3), win_w.clamp(860.0, 3840.0),
         win_h.clamp(560.0, 2160.0),
     )
 }
-
-/// Parses key=value text into state. Unknown or malformed lines are ignored.
 pub fn parse(text: &str) -> PersistedState {
     let mut s = PersistedState::default();
     for line in text.lines() {
@@ -132,28 +131,16 @@ pub fn parse(text: &str) -> PersistedState {
             "network_chart_mode" => s.network_chart_mode = v.parse::<u8>().unwrap_or(0).min(2),
             "network_probe_enabled" => s.network_probe_enabled = parse_bool(v),
             "process_quick_filter" => s.process_quick_filter = v.parse::<u8>().unwrap_or(0).min(3),
-            "win_w" => {
-                s.win_w = v
-                    .parse::<f32>()
-                    .ok()
-                    .filter(|v: &f32| v.is_finite())
-                    .unwrap_or(1180.0)
-                    .clamp(860.0, 3840.0)
-            }
-            "win_h" => {
-                s.win_h = v
-                    .parse::<f32>()
-                    .ok()
-                    .filter(|v: &f32| v.is_finite())
-                    .unwrap_or(760.0)
-                    .clamp(560.0, 2160.0)
-            }
+            "win_w" => s.win_w = parse_f32_clamp(v, 1180.0, 860.0, 3840.0),
+            "win_h" => s.win_h = parse_f32_clamp(v, 760.0, 560.0, 2160.0),
             _ => {}
         }
     }
     s
 }
-
+fn parse_f32_clamp(v: &str, def: f32, lo: f32, hi: f32) -> f32 {
+    v.parse::<f32>().ok().filter(|x: &f32| x.is_finite()).unwrap_or(def).clamp(lo, hi)
+}
 fn bool_str(b: bool) -> &'static str {
     if b {
         "1"
@@ -161,11 +148,9 @@ fn bool_str(b: bool) -> &'static str {
         "0"
     }
 }
-
 fn parse_bool(v: &str) -> bool {
     matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes")
 }
-
 fn valid_window(secs: u32) -> u32 {
     if secs == 60 || secs == 300 || secs == 900 {
         secs
@@ -173,8 +158,6 @@ fn valid_window(secs: u32) -> u32 {
         60
     }
 }
-
-/// Tab index: 0 Processes .. 5 System.
 pub fn active_tab_index(tab: ActiveTab) -> u8 {
     match tab {
         ActiveTab::Processes => 0,
@@ -185,8 +168,6 @@ pub fn active_tab_index(tab: ActiveTab) -> u8 {
         ActiveTab::System => 5,
     }
 }
-
-/// Tab from clamped index.
 pub fn active_tab_from_index(idx: u8) -> ActiveTab {
     match idx.min(5) {
         1 => ActiveTab::Memory,
@@ -197,8 +178,6 @@ pub fn active_tab_from_index(idx: u8) -> ActiveTab {
         _ => ActiveTab::Processes,
     }
 }
-
-/// Chart window from seconds.
 pub fn chart_window_from_secs(secs: u32) -> ChartWindow {
     match secs {
         300 => ChartWindow::FiveMin,
@@ -206,12 +185,9 @@ pub fn chart_window_from_secs(secs: u32) -> ChartWindow {
         _ => ChartWindow::OneMin,
     }
 }
-
-/// Seconds from chart window.
 pub fn secs_from_chart_window(w: ChartWindow) -> u32 {
     w.seconds()
 }
-
 fn sort_col_str(col: CpuSortCol) -> &'static str {
     match col {
         CpuSortCol::Pid => "pid",
@@ -223,7 +199,6 @@ fn sort_col_str(col: CpuSortCol) -> &'static str {
         CpuSortCol::DiskIo => "disk_io",
     }
 }
-
 fn sort_col_from_str(v: &str) -> CpuSortCol {
     match v.trim().to_ascii_lowercase().as_str() {
         "pid" => CpuSortCol::Pid,
@@ -235,7 +210,6 @@ fn sort_col_from_str(v: &str) -> CpuSortCol {
         _ => CpuSortCol::CpuPct,
     }
 }
-
 #[cfg(test)]
 #[path = "persist_tests.rs"]
 mod tests;

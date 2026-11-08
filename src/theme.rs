@@ -13,6 +13,8 @@ pub mod colors {
     pub const BG_CARD: Color32 = Color32::from_rgb(0x12, 0x14, 0x1C);
     /// Borders/dividers: #1F2330
     pub const BORDER: Color32 = Color32::from_rgb(0x1F, 0x23, 0x30);
+    /// Subtle separators: #1A1E2E
+    pub const BORDER_SUBTLE: Color32 = Color32::from_rgb(0x1A, 0x1E, 0x2E);
     /// Widget hover state: #1A1E2E
     pub const HOVER: Color32 = Color32::from_rgb(0x1A, 0x1E, 0x2E);
     /// Widget active state: #1F2330
@@ -50,6 +52,10 @@ pub const CRITICAL_CORAL: egui::Color32 = colors::ACCENT_RED;
 #[allow(dead_code)]
 pub const WARNING_AMBER: egui::Color32 = colors::ACCENT_AMBER;
 pub const OPTIMAL_EMERALD: egui::Color32 = egui::Color32::from_rgb(0x00, 0xE0, 0x80);
+#[allow(dead_code)]
+pub const TACTICAL_RED: egui::Color32 = colors::ACCENT_RED;
+#[allow(dead_code)]
+pub const EMERALD_GREEN: egui::Color32 = OPTIMAL_EMERALD;
 pub const TEXT_MUTED: egui::Color32 = colors::TEXT_SECONDARY;
 
 /// Traffic-light load color — returns color based on load percentage.

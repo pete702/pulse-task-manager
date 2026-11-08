@@ -1,5 +1,6 @@
 //! Storage module: volume telemetry, I/O spikes, and history.
 
+pub mod chart_tip;
 pub mod chart_view;
 pub mod collector;
 pub mod history;

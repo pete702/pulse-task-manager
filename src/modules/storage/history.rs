@@ -9,6 +9,13 @@ use crate::modules::memory::downsampling::lttb_downsample;
 
 type SeriesCache = (Option<u32>, u64, usize, Arc<Vec<[f64; 2]>>, Arc<Vec<[f64; 2]>>);
 type DiskSample = (f64, f32, f32);
+fn san_f32(v: f32) -> f32 {
+    if v.is_finite() {
+        v.max(0.0)
+    } else {
+        0.0
+    }
+}
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
@@ -34,22 +41,32 @@ impl StorageHistory {
     }
     #[allow(dead_code)]
     pub fn push(&mut self, timestamp: f64, read_mb_s: f32, write_mb_s: f32) {
+        if !timestamp.is_finite() || timestamp < 0.0 {
+            return;
+        }
         if let Some(last) = self.samples.back() {
             if timestamp <= last.0 {
                 return;
             }
         }
+        let read = if read_mb_s.is_finite() { read_mb_s.max(0.0) } else { 0.0 };
+        let write = if write_mb_s.is_finite() { write_mb_s.max(0.0) } else { 0.0 };
         if self.samples.len() == 900 {
             self.samples.pop_front();
         }
-        self.samples.push_back((timestamp, read_mb_s, write_mb_s));
+        self.samples.push_back((timestamp, read, write));
         self.revision = self.revision.wrapping_add(1);
         self.cached = None;
     }
     #[allow(dead_code)]
     pub fn push_disk(&mut self, disk: u32, timestamp: f64, read_mb_s: f32, write_mb_s: f32) {
+        if !timestamp.is_finite() || timestamp < 0.0 {
+            return;
+        }
         if self.per_disk.len() >= 32 && !self.per_disk.contains_key(&disk) {
-            self.per_disk.clear();
+            if let Some(&victim) = self.per_disk.keys().find(|&k| *k != disk) {
+                self.per_disk.remove(&victim);
+            }
         }
         let entry = self.per_disk.entry(disk).or_default();
         if let Some(last) = entry.back() {
@@ -57,10 +74,12 @@ impl StorageHistory {
                 return;
             }
         }
+        let read = if read_mb_s.is_finite() { read_mb_s.max(0.0) } else { 0.0 };
+        let write = if write_mb_s.is_finite() { write_mb_s.max(0.0) } else { 0.0 };
         if entry.len() == 900 {
             entry.pop_front();
         }
-        entry.push_back((timestamp, read_mb_s, write_mb_s));
+        entry.push_back((timestamp, read, write));
         self.revision = self.revision.wrapping_add(1);
         self.cached = None;
     }
@@ -124,13 +143,13 @@ impl StorageHistory {
         let mut write = Vec::new();
         for s in samples.iter().skip(start_idx) {
             let x = -(latest - s.0) / 60.0;
-            read.push([x, s.1 as f64]);
-            write.push([x, s.2 as f64]);
+            read.push([x, san_f32(s.1) as f64]);
+            write.push([x, san_f32(s.2) as f64]);
         }
         if start_idx > 0 && !read.is_empty() && read[0][0] > -window_min {
             let prev = samples[start_idx - 1];
-            read.insert(0, [-window_min, prev.1 as f64]);
-            write.insert(0, [-window_min, prev.2 as f64]);
+            read.insert(0, [-window_min, san_f32(prev.1) as f64]);
+            write.insert(0, [-window_min, san_f32(prev.2) as f64]);
         } else if read.len() == 1 {
             let ry = read[0][1];
             let wy = write[0][1];

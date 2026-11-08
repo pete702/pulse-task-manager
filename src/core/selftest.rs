@@ -1,6 +1,8 @@
 //! Self-test module for PULSE: headless validation, GUI self-test app, and CI/GUI dispatch.
 
 use std::env;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -50,6 +52,21 @@ pub fn run_headless_self_test() -> Result<(), String> {
         return Err(
             "pulse_ram_mb <= 0.0 (K32GetProcessMemoryInfo failed or returned zero)".to_string()
         );
+    }
+    if snap.cpu.is_none() {
+        return Err("Selftest snapshot missing CPU telemetry".to_string());
+    }
+    // storage read_bytes_per_sec / write_bytes_per_sec and network rx_bytes_per_sec / tx_bytes_per_sec
+    if !(snap.storage.read_mb_s.is_finite() && snap.storage.write_mb_s.is_finite()) {
+        return Err("Selftest storage rates are not finite".to_string());
+    }
+    if !(snap.network.rx_mbps.is_finite() && snap.network.tx_mbps.is_finite()) {
+        return Err("Selftest network rates are not finite".to_string());
+    }
+    if !((snap.os_scheduler_jitter_ms as f64).is_finite()
+        && (snap.os_scheduler_jitter_ms as f64) >= 0.0)
+    {
+        return Err("Selftest jitter is not finite".to_string());
     }
     if let Some(ref mem) = snap.memory {
         println!(
@@ -145,13 +162,21 @@ pub fn run_self_test(options: eframe::NativeOptions) -> eframe::Result<()> {
         let _ = run_headless_self_test().map_err(fail_selftest);
         return Ok(());
     }
-    let app_creator = Box::new(|cc: &eframe::CreationContext<'_>| {
+    let passed = Arc::new(AtomicBool::new(false));
+    let passed_clone = Arc::clone(&passed);
+    let app_creator = Box::new(move |cc: &eframe::CreationContext<'_>| {
         crate::theme::setup_fonts(&cc.egui_ctx);
         crate::theme::apply_obsidian_theme(&cc.egui_ctx);
-        Box::new(SelfTestApp::new()) as Box<dyn eframe::App>
+        let (worker, rx) = spawn_telemetry_worker();
+        Box::new(SelfTestApp::new(worker, rx, Arc::clone(&passed_clone))) as Box<dyn eframe::App>
     });
     match eframe::run_native("PULSE Self-Test", options, app_creator) {
-        Ok(()) => Ok(()),
+        Ok(()) => {
+            if !passed.load(Ordering::SeqCst) {
+                fail_selftest("GUI self-test did not pass validation".to_string());
+            }
+            Ok(())
+        }
         Err(e) => {
             eprintln!("[SelfTest] eframe failed: {}. Falling back to headless mode.", e);
             println!("[SelfTest] Fallback to headless self-test");

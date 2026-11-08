@@ -1,17 +1,14 @@
-//! Bottom split: selected disk details (left) + process I/O (right).
-
-use std::sync::Arc;
-
-use eframe::egui;
-
+//! Bottom: full-width top process disk activity.
+use super::view_helpers::truncate;
 use crate::modules::cpu::model::RawProcessCpuRow;
 use crate::modules::memory::formatters::format_bytes;
 use crate::modules::storage::inspector_group::{cached_consumers, filter_on, last_scan};
 use crate::modules::storage::model::{DiskVolumeInfo, StorageSnapshot};
 use crate::modules::storage::physical_disk::drive_letter;
 use crate::theme::{card_frame, colors};
-
-/// Bottom: top process activity full width (details live in disk cards).
+use eframe::egui;
+use std::sync::Arc;
+/// Full-width activity across 100% of the pane at all times.
 pub fn render_selection_split(
     ui: &mut egui::Ui,
     snap: &StorageSnapshot,
@@ -19,7 +16,6 @@ pub fn render_selection_split(
     selected: &Option<Arc<str>>,
 ) {
     let vol = snap.volumes.iter().find(|v| selected.as_ref() == Some(&v.mount_point)).cloned();
-    // All partitions sharing the selected physical disk (or just the volume).
     let disk_volumes: Vec<DiskVolumeInfo> = match vol.as_ref() {
         Some(v) => match v.physical_disk {
             Some(d) => {
@@ -32,7 +28,6 @@ pub fn render_selection_split(
     let letters = disk_letters(&disk_volumes);
     render_activity_card(ui, raw_processes, &letters, selected);
 }
-
 fn disk_letters(volumes: &[DiskVolumeInfo]) -> Vec<char> {
     let mut out: Vec<char> = Vec::new();
     for v in volumes {
@@ -44,7 +39,6 @@ fn disk_letters(volumes: &[DiskVolumeInfo]) -> Vec<char> {
     }
     out
 }
-
 fn render_activity_card(
     ui: &mut egui::Ui,
     raw: &[RawProcessCpuRow],
@@ -52,6 +46,8 @@ fn render_activity_card(
     selected: &Option<Arc<str>>,
 ) {
     card_frame().show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.set_min_height((ui.available_height() - 4.0).max(150.0));
         ui.horizontal(|ui| {
             ui.label(
                 egui::RichText::new("TOP PROCESS DISK ACTIVITY")
@@ -101,9 +97,31 @@ fn render_activity_card(
         render_consumers(ui, raw, active);
     });
 }
-
+fn draw_table_row(
+    ui: &mut egui::Ui,
+    widths: [f32; 4],
+    cells: [(&str, egui::Color32); 4],
+    is_header: bool,
+) {
+    ui.horizontal(|ui| {
+        ui.style_mut().spacing.item_spacing.x = 8.0;
+        for (i, ((text, col), col_w)) in cells.iter().zip(widths.iter()).enumerate() {
+            let layout = if i == 0 {
+                egui::Layout::left_to_right(egui::Align::Center)
+            } else {
+                egui::Layout::right_to_left(egui::Align::Center)
+            };
+            ui.allocate_ui_with_layout(egui::vec2(*col_w, 18.0), layout, |ui| {
+                ui.set_min_width(*col_w);
+                ui.set_max_width(*col_w);
+                let sz = if is_header { 10.0 } else { 11.0 };
+                ui.label(egui::RichText::new(*text).monospace().size(sz).color(*col));
+            });
+        }
+    });
+}
 fn render_consumers(ui: &mut egui::Ui, raw: &[RawProcessCpuRow], filter: Option<&[char]>) {
-    ui.set_min_height(118.0);
+    ui.set_min_height(150.0);
     let top = cached_consumers(raw, filter);
     let active = top.iter().any(|g| g.total >= 0.05);
     if !active {
@@ -113,58 +131,51 @@ fn render_consumers(ui: &mut egui::Ui, raw: &[RawProcessCpuRow], filter: Option<
             .map(|t| t.elapsed().as_secs_f64())
             .unwrap_or(-1.0);
         let ago_txt = if ago < 0.0 { "just now".to_owned() } else { format!("{ago:.0}s ago") };
-        let empty = format!("No active process disk I/O (>= 0.05 MB/s). Last scan: {ago_txt} (monitoring {} processes)", raw.len());
+        let empty = format!(
+            "No active process disk I/O (>= 0.05 MB/s). Last scan: {ago_txt} (monitoring {} processes)",
+            raw.len()
+        );
         ui.label(egui::RichText::new(empty).monospace().size(11.0).color(colors::TEXT_SECONDARY));
         return;
     }
-    ui.columns(4, |cols| {
-        cols[0].label(
-            egui::RichText::new("PROCESS").monospace().size(10.0).color(colors::TEXT_SECONDARY),
-        );
-        cols[1].label(
-            egui::RichText::new("READ MB/s").monospace().size(10.0).color(colors::TEXT_SECONDARY),
-        );
-        cols[2].label(
-            egui::RichText::new("WRITE MB/s").monospace().size(10.0).color(colors::TEXT_SECONDARY),
-        );
-        cols[3]
-            .label(egui::RichText::new("RAM").monospace().size(10.0).color(colors::TEXT_SECONDARY));
-    });
+    let row_w = ui.available_width().max(320.0);
+    let w_read = 88.0;
+    let w_write = 88.0;
+    let w_ram = 92.0;
+    let w_proc = (row_w - w_read - w_write - w_ram - 24.0).max(140.0);
+    let widths = [w_proc, w_read, w_write, w_ram];
+    draw_table_row(
+        ui,
+        widths,
+        [
+            ("PROCESS", colors::TEXT_SECONDARY),
+            ("READ MB/s", colors::TEXT_SECONDARY),
+            ("WRITE MB/s", colors::TEXT_SECONDARY),
+            ("RAM", colors::TEXT_SECONDARY),
+        ],
+        true,
+    );
+    let (sep, _) =
+        ui.allocate_exact_size(egui::vec2(row_w, 1.0), egui::Sense::focusable_noninteractive());
+    ui.painter().rect_filled(sep, 0.0, crate::theme::colors::BORDER_SUBTLE);
+    ui.add_space(4.0);
     for g in top.iter() {
         let label = if g.count > 1 { format!("{} (x{})", g.name, g.count) } else { g.name.clone() };
         let badge = g.drive.map(|d| format!(" {d}:")).unwrap_or_default();
-        let short = truncate(&format!("{label}{badge}"), 22);
-        ui.columns(4, |cols| {
-            cols[0].label(
-                egui::RichText::new(short).monospace().size(11.0).color(colors::TEXT_PRIMARY),
-            );
-            cols[1].label(
-                egui::RichText::new(format!("{:.1}", g.read))
-                    .monospace()
-                    .size(11.0)
-                    .color(colors::ACCENT_CYAN),
-            );
-            cols[2].label(
-                egui::RichText::new(format!("{:.1}", g.write))
-                    .monospace()
-                    .size(11.0)
-                    .color(colors::ACCENT_AMBER),
-            );
-            cols[3].label(
-                egui::RichText::new(format_bytes(g.ram_bytes))
-                    .monospace()
-                    .size(11.0)
-                    .color(colors::TEXT_SECONDARY),
-            );
-        });
+        let short = truncate(&format!("{label}{badge}"), 38);
+        let read_s = format!("{:.1}", g.read);
+        let write_s = format!("{:.1}", g.write);
+        let ram_s = format_bytes(g.ram_bytes);
+        draw_table_row(
+            ui,
+            widths,
+            [
+                (short.as_str(), colors::TEXT_PRIMARY),
+                (read_s.as_str(), colors::ACCENT_CYAN),
+                (write_s.as_str(), colors::ACCENT_AMBER),
+                (ram_s.as_str(), colors::TEXT_SECONDARY),
+            ],
+            false,
+        );
     }
-}
-
-fn truncate(text: &str, max_chars: usize) -> String {
-    if text.chars().count() <= max_chars {
-        return text.to_owned();
-    }
-    let mut out: String = text.chars().take(max_chars.saturating_sub(1)).collect();
-    out.push('~');
-    out
 }

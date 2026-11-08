@@ -23,14 +23,12 @@ pub struct WorkerConfig {
 }
 static WORKER_PAUSED: AtomicBool = AtomicBool::new(false);
 pub fn set_worker_paused(cfg: WorkerConfig) {
-    let was_paused = WORKER_PAUSED.swap(cfg.paused, Ordering::SeqCst);
-    if !(was_paused && !cfg.paused) {
-        return;
-    }
-    if let Some(slot) = WORKER_THREAD.get() {
-        let guard = slot.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(t) = guard.as_ref() {
-            t.unpark();
+    if WORKER_PAUSED.swap(cfg.paused, Ordering::SeqCst) && !cfg.paused {
+        if let Some(slot) = WORKER_THREAD.get() {
+            let guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(t) = guard.as_ref() {
+                t.unpark();
+            }
         }
     }
 }
@@ -58,6 +56,7 @@ pub fn spawn_worker(
     let tab_active_worker = processes_tab_active.clone();
     WORKER_ALIVE.store(true, Ordering::SeqCst);
     let handle = match thread::Builder::new().name("pulse-worker".into()).spawn(move || {
+        let _exit_guard = WorkerExitGuard;
         {
             let slot = WORKER_THREAD.get_or_init(|| Mutex::new(None));
             *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(thread::current());
@@ -77,79 +76,57 @@ pub fn spawn_worker(
         let mut last_heavy = false;
         let mut was_minimized = false;
         let mut tick: u64 = 0;
-        let mut snapshot_id: u64 = 0;
         let mut process_scan_id: u64 = 0;
         let mut paused_accum = Duration::ZERO;
         let mut last_cpu_tick = Instant::now() - Duration::from_secs(2);
         let mut last_cpu: Option<CpuSnapshot> = None;
         let mut last_timestamp_s = 0.0;
-        let mut last_tick: Option<Instant> = None;
         let mut collector_primed = false;
         loop {
             if shutdown_worker.load(Ordering::Acquire) {
-                clear_thread_slot();
                 break;
             }
-            let cfg = WorkerConfig { paused: WORKER_PAUSED.load(Ordering::Relaxed) };
-            if cfg.paused {
+            if WORKER_PAUSED.load(Ordering::Relaxed) {
                 let pause_start = Instant::now();
                 thread::park_timeout(Duration::from_millis(1000));
                 paused_accum = paused_accum.saturating_add(pause_start.elapsed());
                 continue;
             }
-            if let Some(lt) = last_tick {
-                let waited = lt.elapsed();
-                let forced = PROCESS_SCAN_REQUEST.load(Ordering::Relaxed);
-                let min = minimized_worker.load(Ordering::Relaxed);
-                let base = if min { WORKER_INTERVAL_MINIMIZED } else { WORKER_INTERVAL_VISIBLE };
-                let floor = WORKER_INTERVAL_VISIBLE.saturating_sub(Duration::from_millis(50));
-                if !forced && waited < floor {
-                    thread::park_timeout(base.saturating_sub(waited));
-                }
-            }
             let tick_start = Instant::now();
-            last_tick = Some(tick_start);
-            let uptime = System::uptime();
             let minimized = minimized_worker.load(Ordering::Relaxed);
             let wake = was_minimized && !minimized;
             let requested = take_process_scan_request();
             was_minimized = minimized;
-            let processes_tab_active = tab_active_worker.load(Ordering::Relaxed);
-            let refresh =
-                should_scan_processes(minimized, tick, wake, requested, processes_tab_active);
+            let refresh = should_scan_processes(
+                minimized,
+                tick,
+                wake,
+                requested,
+                tab_active_worker.load(Ordering::Relaxed),
+            );
             let do_refresh = refresh || (!minimized && tick == 0);
             let candidate_s = started.elapsed().saturating_sub(paused_accum).as_secs_f64();
             let due = last_cpu_tick.elapsed() >= Duration::from_millis(450);
-            let timestamp_s = if due || last_cpu.is_none() {
+            if due || last_cpu.is_none() {
                 last_timestamp_s = candidate_s;
-                candidate_s
-            } else {
-                last_timestamp_s
-            };
-            let mut cpu = if due || last_cpu.is_none() {
-                let fresh = collect_cpu(&mut sys);
+            }
+            let timestamp_s = last_timestamp_s;
+            let mut cpu = last_cpu.clone().unwrap_or_default();
+            if due || last_cpu.is_none() {
+                cpu = collect_cpu(&mut sys);
                 last_cpu_tick = Instant::now();
-                last_cpu = Some(fresh.clone());
-                fresh
-            } else {
-                last_cpu.clone().unwrap_or_default()
-            };
+                last_cpu = Some(cpu.clone());
+            }
             let logical_cores = cpu.logical_cores;
             let mut memory = collect_memory(&mut sys);
+            let mut scanned = false;
             if do_refresh {
                 let cpu_raw_rows = cpu_collector.collect_process_cpu(&mut sys, logical_cores, true);
                 if !cpu_raw_rows.is_empty() {
                     collector_primed = true;
                 }
-                let scan_ok = !cpu_raw_rows.is_empty() || !collector_primed;
-                if !scan_ok {
-                    cpu.raw_processes = Arc::clone(&last_cpu_raw_rows);
-                    memory.processes = Arc::clone(&last_processes);
-                    memory.has_heavy_process = last_heavy;
-                    if memory.ram_usage_percent() < HIGH_RAM_PRESSURE_PCT {
-                        latest_spike = None;
-                    }
-                } else {
+                if !cpu_raw_rows.is_empty() || !collector_primed {
+                    scanned = true;
                     process_scan_id += 1;
                     cpu.raw_processes = Arc::from(cpu_raw_rows);
                     last_cpu_raw_rows = Arc::clone(&cpu.raw_processes);
@@ -167,7 +144,8 @@ pub fn spawn_worker(
                     last_heavy = heavy;
                     latest_spike = spike;
                 }
-            } else {
+            }
+            if !scanned {
                 cpu.raw_processes = Arc::clone(&last_cpu_raw_rows);
                 memory.processes = Arc::clone(&last_processes);
                 memory.has_heavy_process = last_heavy;
@@ -176,32 +154,28 @@ pub fn spawn_worker(
                 }
             }
             cpu.process_count = cpu.raw_processes.len();
-            cpu.total_pct = if cpu.total_pct.is_finite() { cpu.total_pct.max(0.0) } else { 0.0 };
-            cpu.hottest_core_pct =
-                if cpu.hottest_core_pct.is_finite() { cpu.hottest_core_pct.max(0.0) } else { 0.0 };
+            cpu.total_pct = cpu.total_pct.max(0.0);
+            cpu.hottest_core_pct = cpu.hottest_core_pct.max(0.0);
             memory.latest_spike.clone_from(&latest_spike);
             memory.scan_duration_ms = tick_start.elapsed().as_secs_f32() * 1000.0;
-            let pulse_ram_mb = own_working_set_mb();
-            snapshot_id += 1;
-            memory.snapshot_id = snapshot_id;
+            memory.snapshot_id = tick + 1;
             memory.process_scan_id = process_scan_id;
             memory.sample_elapsed_secs = timestamp_s;
             memory.channel_overflows = latest_worker.overflow_count();
             let elapsed = tick_start.elapsed();
-            let interval =
-                if minimized { WORKER_INTERVAL_MINIMIZED } else { WORKER_INTERVAL_VISIBLE };
-            let requested_sleep = interval.saturating_sub(elapsed).max(Duration::from_millis(50));
+            let requested_sleep =
+                WORKER_INTERVAL_VISIBLE.saturating_sub(elapsed).max(Duration::from_millis(50));
             let before_sleep = Instant::now();
             thread::park_timeout(requested_sleep);
-            let sleep_overshoot_ms =
+            let over =
                 before_sleep.elapsed().as_millis().saturating_sub(requested_sleep.as_millis())
                     as u64;
-            let os_scheduler_jitter_ms = sleep_overshoot_ms.min(u32::MAX as u64) as u32;
+            let os_scheduler_jitter_ms = over.min(u32::MAX as u64) as u32;
             let storage = storage_collector.collect(&cpu.raw_processes, process_scan_id);
             let network = network_collector.collect();
             let mut snapshot_obj = SystemSnapshot::new_with_jitter(
-                uptime,
-                pulse_ram_mb,
+                System::uptime(),
+                own_working_set_mb(),
                 Some(memory),
                 Some(cpu),
                 os_scheduler_jitter_ms,
@@ -209,12 +183,14 @@ pub fn spawn_worker(
             snapshot_obj.storage = storage;
             snapshot_obj.network = network;
             let snapshot = Arc::new(snapshot_obj);
-            let minimized_now = minimized_worker.load(Ordering::Relaxed);
-            match publish(&tx, &latest_worker, snapshot, &wakeup_worker, minimized_now) {
-                PublishResult::Disconnected => {
-                    clear_thread_slot();
-                    break;
-                }
+            match publish(
+                &tx,
+                &latest_worker,
+                snapshot,
+                &wakeup_worker,
+                minimized_worker.load(Ordering::Relaxed),
+            ) {
+                PublishResult::Disconnected => break,
                 PublishResult::Sent | PublishResult::Full => {}
             }
             tick = tick.wrapping_add(1);
@@ -248,6 +224,14 @@ pub(crate) fn take_process_scan_request() -> bool {
 static PROCESS_SCAN_REQUEST: AtomicBool = AtomicBool::new(false);
 static WORKER_THREAD: OnceLock<Mutex<Option<thread::Thread>>> = OnceLock::new();
 static WORKER_ALIVE: AtomicBool = AtomicBool::new(false);
+struct WorkerExitGuard;
+impl Drop for WorkerExitGuard {
+    fn drop(&mut self) {
+        clear_thread_slot();
+        PROCESS_SCAN_REQUEST.store(false, Ordering::SeqCst);
+        WORKER_ALIVE.store(false, Ordering::SeqCst);
+    }
+}
 fn clear_thread_slot() {
     if let Some(slot) = WORKER_THREAD.get() {
         *slot.lock().unwrap_or_else(|e| e.into_inner()) = None;

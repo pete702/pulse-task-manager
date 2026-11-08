@@ -73,7 +73,7 @@ fn generate_icon() -> Arc<egui::IconData> {
 
 fn print_version() {
     println!("PULSE {} (pulse_manager)", env!("CARGO_PKG_VERSION"));
-    println!("Copyright (c) 2026 pete702 (PULSE Project). Licensed under MIT.");
+    println!("Copyright (c) 2026 Petro (pete702). All Rights Reserved. Proprietary.");
 }
 
 fn print_help() {
@@ -84,7 +84,7 @@ fn print_help() {
     println!("  --version, -V  Print version and exit");
     println!("  --help, -h, /? Print this help and exit");
     println!();
-    println!("Copyright (c) 2026 pete702 (PULSE Project). Licensed under MIT.");
+    println!("Copyright (c) 2026 Petro (pete702). All Rights Reserved. Proprietary.");
 }
 
 /// Force integrated GPU on NVIDIA Optimus laptops (0 = integrated, 1 = discrete).
@@ -100,8 +100,13 @@ pub static AmdPowerXpressRequestHighPerformance: i32 = 0;
 fn main() -> eframe::Result<()> {
     // Initialize panic hook
     std::panic::set_hook(Box::new(|info| {
-        let bt = std::backtrace::Backtrace::force_capture();
-        let mut msg = format!("PANIC: {}\nBacktrace: {}", info, bt);
+        crate::core::persist::flush_staged_state();
+        let bt_str = if std::env::var_os("PULSE_DEBUG_BACKTRACE").is_some() {
+            format!("{}", std::backtrace::Backtrace::force_capture())
+        } else {
+            "<set PULSE_DEBUG_BACKTRACE=1 for backtrace>".to_string()
+        };
+        let mut msg = format!("PANIC: {}\nBacktrace: {}", info, bt_str);
         if msg.len() > 65536 {
             msg = msg.chars().take(65536).collect::<String>();
         }

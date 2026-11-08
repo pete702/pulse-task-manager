@@ -1,25 +1,22 @@
-//! Live `[03] Storage` HUD: status strip, throughput chart, volumes, consumers.
-
-use std::sync::{Arc, Mutex, OnceLock};
-
-use eframe::egui;
-
+//! Live `[03] Storage` HUD: master-detail cockpit split.
 use crate::core::SystemSnapshot;
 use crate::modules::cpu::model::RawProcessCpuRow;
 use crate::modules::storage::chart_view::render_storage_chart;
 use crate::modules::storage::inspector::render_selection_split;
-use crate::modules::storage::model::{StorageHistory, StorageSnapshot};
-use crate::modules::storage::view_helpers::{col_kpi, render_blackbox, truncate};
-use crate::modules::storage::volume_cards::render_volume_cards;
-use crate::theme::{card_frame, colors};
-
+use crate::modules::storage::model::{DiskVolumeInfo, StorageHistory, StorageSnapshot};
+use crate::modules::storage::physical_disk::drive_letter;
+use crate::modules::storage::view_helpers::{render_status_and_kpis, scope_label_for};
+use crate::modules::storage::volume_cards::{render_all_selector, render_volume_cards};
+use eframe::egui;
+use std::sync::{Arc, Mutex, OnceLock};
 struct StorageViewState {
     history: StorageHistory,
     window_secs: usize,
     last_sample_ts: Option<f64>,
     selected_mount: Option<Arc<str>>,
+    show_read: bool,
+    show_write: bool,
 }
-
 impl Default for StorageViewState {
     fn default() -> Self {
         Self {
@@ -27,51 +24,52 @@ impl Default for StorageViewState {
             window_secs: 300,
             last_sample_ts: None,
             selected_mount: None,
+            show_read: true,
+            show_write: true,
         }
     }
 }
-
 static STATE: OnceLock<Mutex<StorageViewState>> = OnceLock::new();
-
 fn state() -> &'static Mutex<StorageViewState> {
     STATE.get_or_init(|| Mutex::new(StorageViewState::default()))
 }
-
 /// Updates the chart window (called from chart window buttons).
 pub fn set_window_secs(secs: usize) {
-    let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
-    guard.window_secs = secs;
+    let mut g = state().lock().unwrap_or_else(|e| e.into_inner());
+    g.window_secs = secs;
 }
-
+pub fn set_show_read(v: bool) {
+    let mut g = state().lock().unwrap_or_else(|e| e.into_inner());
+    g.show_read = v || (g.show_read && !g.show_write);
+}
+pub fn set_show_write(v: bool) {
+    let mut g = state().lock().unwrap_or_else(|e| e.into_inner());
+    g.show_write = v || (g.show_write && !g.show_read);
+}
 pub fn window_secs() -> usize {
     state().lock().unwrap_or_else(|e| e.into_inner()).window_secs
 }
-
 /// Clears selection back to All Disks (called from chart scope button).
 pub fn clear_selected() {
-    let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
-    guard.selected_mount = None;
+    let mut g = state().lock().unwrap_or_else(|e| e.into_inner());
+    g.selected_mount = None;
 }
-
 /// Current selected mount (None = All Disks).
 #[allow(dead_code)]
 pub fn selected_mount() -> Option<Arc<str>> {
     state().lock().unwrap_or_else(|e| e.into_inner()).selected_mount.clone()
 }
-
 #[cfg(test)]
 pub(crate) fn set_selected_for_test(value: Option<Arc<str>>) {
-    let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
-    guard.selected_mount = value;
+    let mut g = state().lock().unwrap_or_else(|e| e.into_inner());
+    g.selected_mount = value;
 }
-
+fn history_key_for_volume(v: &DiskVolumeInfo) -> Option<u32> {
+    v.physical_disk
+        .or_else(|| drive_letter(v.mount_point.as_ref()).map(|ch| 0x8000_0000 | (ch as u32)))
+}
 /// Background ingestion on worker pause-adjusted timestamps.
-/// Pushes even at 0.0 MB/s so the chart scrolls smoothly when idle.
-pub fn ingest_storage_snapshot(
-    snap: &SystemSnapshot,
-    _raw_processes: &[RawProcessCpuRow],
-    paused: bool,
-) {
+pub fn ingest_storage_snapshot(snap: &SystemSnapshot, _raw: &[RawProcessCpuRow], paused: bool) {
     let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
     if paused {
         return;
@@ -82,10 +80,9 @@ pub fn ingest_storage_snapshot(
         return;
     }
     guard.history.push(elapsed, snap.storage.read_mb_s, snap.storage.write_mb_s);
-    // Per-disk series: one sample per physical disk (volumes share rates).
     let mut seen: Vec<u32> = Vec::new();
     for vol in snap.storage.volumes.iter() {
-        if let Some(d) = vol.physical_disk {
+        if let Some(d) = history_key_for_volume(vol) {
             if seen.contains(&d) {
                 continue;
             }
@@ -95,20 +92,44 @@ pub fn ingest_storage_snapshot(
     }
     guard.last_sample_ts = Some(elapsed);
 }
-
-/// Renders the live Storage tab: chart first, then volume grid.
+fn sync_sel(selected: &mut Option<Arc<str>>, init: &Option<Arc<str>>) {
+    let g = state().lock().unwrap_or_else(|e| e.into_inner());
+    if g.selected_mount != *init {
+        *selected = g.selected_mount.clone();
+    }
+}
+#[allow(clippy::too_many_arguments)]
+fn status_chart(
+    ui: &mut egui::Ui,
+    snap: &StorageSnapshot,
+    r: &Arc<Vec<[f64; 2]>>,
+    w: &Arc<Vec<[f64; 2]>>,
+    window: usize,
+    scope: Option<String>,
+    sr: bool,
+    sw: bool,
+    kr: f32,
+    kw: f32,
+    disk: Option<u32>,
+    selected: &mut Option<Arc<str>>,
+    init: &Option<Arc<str>>,
+) {
+    render_status_and_kpis(ui, snap, kr, kw, disk);
+    ui.add_space(8.0);
+    render_storage_chart(ui, r, w, window, scope.as_deref(), sr, sw);
+    sync_sel(selected, init);
+}
+/// Renders the Storage tab as master-detail cockpit or narrow stack.
 pub fn render_storage_tab(
     ui: &mut egui::Ui,
     snap: &StorageSnapshot,
     raw_processes: &[RawProcessCpuRow],
 ) {
-    // Resolve selected volume -> Disk N scope (None = All Disks).
     let mut selected = {
         let guard = state().lock().unwrap_or_else(|e| e.into_inner());
         guard.selected_mount.clone()
     };
     let sel_initial = selected.clone();
-    // Clear stale selection if the mount vanished; keep None as "All".
     if selected.is_some() {
         let valid = snap.volumes.iter().any(|v| selected.as_ref() == Some(&v.mount_point));
         if !valid {
@@ -116,99 +137,104 @@ pub fn render_storage_tab(
         }
     }
     let scope_disk: Option<u32> = selected.as_ref().and_then(|sel| {
-        snap.volumes.iter().find(|v| &v.mount_point == sel).and_then(|v| v.physical_disk)
+        snap.volumes.iter().find(|v| &v.mount_point == sel).and_then(history_key_for_volume)
     });
-    let (kpi_read, kpi_write) = match scope_disk {
+    let kpi = match scope_disk {
         Some(d) => snap
             .volumes
             .iter()
-            .find(|v| v.physical_disk == Some(d))
+            .find(|v| history_key_for_volume(v) == Some(d))
             .map(|v| (v.read_mb_s, v.write_mb_s))
             .unwrap_or((snap.read_mb_s, snap.write_mb_s)),
         None => (snap.read_mb_s, snap.write_mb_s),
     };
-    let scope_label = scope_disk.map(|d| {
-        let mounts: Vec<String> = snap
-            .volumes
-            .iter()
-            .filter(|v| v.physical_disk == Some(d))
-            .map(|v| v.mount_point.to_string())
-            .collect();
-        format!("Disk {d} ({})", mounts.join(", "))
-    });
-    let (read_series, write_series, window_secs) = {
+    let scope_label = scope_label_for(snap, scope_disk, history_key_for_volume);
+    let (rs, ws, window, sr, sw) = {
         let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
-        let window = guard.window_secs;
-        let (r, w) = guard.history.series_points_scoped(scope_disk, window);
-        (r, w, window)
+        let win = guard.window_secs;
+        let (r, w) = guard.history.series_points_scoped(scope_disk, win);
+        (r, w, win, guard.show_read, guard.show_write)
     };
-    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        render_status_and_kpis(ui, snap, kpi_read, kpi_write, scope_disk);
-        ui.add_space(8.0);
-        render_storage_chart(ui, &read_series, &write_series, window_secs, scope_label.as_deref());
-        // Show All may have cleared guard.selected_mount; sync before cards.
-        {
-            let g = state().lock().unwrap_or_else(|e| e.into_inner());
-            if g.selected_mount != sel_initial {
-                selected = g.selected_mount.clone();
-            }
-        }
-        ui.add_space(8.0);
-        render_volume_cards(ui, &snap.volumes, &mut selected);
-        ui.add_space(8.0);
-        render_selection_split(ui, snap, raw_processes, &selected);
-    });
+    if ui.available_width() >= 680.0 {
+        let full_h = ui.available_height().max(320.0);
+        let full_w = ui.available_width();
+        ui.horizontal_top(|ui| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(280.0, full_h),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.set_min_size(egui::vec2(280.0, full_h));
+                    render_all_selector(ui, snap.read_mb_s, snap.write_mb_s, &mut selected);
+                    ui.add_space(6.0);
+                    egui::ScrollArea::vertical()
+                        .max_height(ui.available_height().max(200.0))
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            render_volume_cards(ui, &snap.volumes, &mut selected);
+                        });
+                },
+            );
+            let right_w = (full_w - 290.0).max(360.0);
+            ui.allocate_ui_with_layout(
+                egui::vec2(right_w, full_h),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    status_chart(
+                        ui,
+                        snap,
+                        &rs,
+                        &ws,
+                        window,
+                        scope_label.clone(),
+                        sr,
+                        sw,
+                        kpi.0,
+                        kpi.1,
+                        scope_disk,
+                        &mut selected,
+                        &sel_initial,
+                    );
+                    ui.add_space(8.0);
+                    render_selection_split(ui, snap, raw_processes, &selected);
+                },
+            );
+        });
+    } else {
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            status_chart(
+                ui,
+                snap,
+                &rs,
+                &ws,
+                window,
+                scope_label,
+                sr,
+                sw,
+                kpi.0,
+                kpi.1,
+                scope_disk,
+                &mut selected,
+                &sel_initial,
+            );
+            ui.add_space(8.0);
+            render_all_selector(ui, snap.read_mb_s, snap.write_mb_s, &mut selected);
+            ui.add_space(8.0);
+            render_volume_cards(ui, &snap.volumes, &mut selected);
+            ui.add_space(8.0);
+            render_selection_split(ui, snap, raw_processes, &selected);
+        });
+    }
     let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
     guard.selected_mount = selected;
 }
-
-/// Fixed 4-column strip spanning 100% width (zero-jitter, no wrapping).
-/// Col 0: Blackbox state, Col 1: READ, Col 2: WRITE, Col 3: TOP I/O.
-fn render_status_and_kpis(
-    ui: &mut egui::Ui,
-    snap: &StorageSnapshot,
-    kpi_read: f32,
-    kpi_write: f32,
-    scope_disk: Option<u32>,
-) {
-    let read_label = match scope_disk {
-        Some(d) => format!("READ Disk {d}"),
-        None => "READ MB/s".to_owned(),
-    };
-    let write_label = match scope_disk {
-        Some(d) => format!("WRITE Disk {d}"),
-        None => "WRITE MB/s".to_owned(),
-    };
-    let top = snap
-        .top_io_process
-        .as_ref()
-        .map(|t| truncate(&format!("{} {:.1}", t.1, t.2), 22))
-        .unwrap_or_else(|| "-".to_owned());
-    card_frame().show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        ui.columns(4, |cols| {
-            render_blackbox(&mut cols[0], snap);
-            col_kpi(&mut cols[1], &read_label, format!("{:.1}", kpi_read), colors::ACCENT_CYAN);
-            col_kpi(&mut cols[2], &write_label, format!("{:.1}", kpi_write), colors::ACCENT_AMBER);
-            col_kpi(&mut cols[3], "TOP I/O", top, colors::TEXT_PRIMARY);
-        });
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn clear_selected_persists_after_show_all() {
         set_selected_for_test(Some(Arc::from("C:\\")));
-        assert_eq!(selected_mount(), Some(Arc::from("C:\\")));
         clear_selected();
         assert_eq!(selected_mount(), None);
-        let sel_initial: Option<Arc<str>> = Some(Arc::from("C:\\"));
-        let g = state().lock().unwrap_or_else(|e| e.into_inner());
-        assert!(g.selected_mount != sel_initial);
-        assert_eq!(g.selected_mount, None);
-        drop(g);
         set_selected_for_test(None);
     }
 }

@@ -1,6 +1,6 @@
 # PULSE Architecture & Engineering Rules
 
-PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.88"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.4.29**.
+PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.88"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.4.46**.
 
 ## 1. Core Architectural Principles
 
@@ -29,9 +29,9 @@ PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and pro
 ## 3. Module Boundaries (`src/`)
 
 - `src/core/`: Worker (`worker.rs`, `worker_loop.rs`, `worker_io.rs`, `worker_policy.rs`), `SystemSnapshot` channel (`mod.rs`), state persistence (`persist.rs`, `%LOCALAPPDATA%\PULSE\state.cfg` zero-crate), CLI `--self-test` (`selftest.rs`, `selftest_app.rs`), guards (`selftest_tests.rs`).
-- `src/modules/cpu/`: Implemented `[01] CPU` - Processor cockpit, per-core grid, dual-series `1m/5m/15m` chart, single-core bottleneck alert, virtualized process table with `CPU %`, `RAM`, `Disk I/O`, `[Nx]` clone grouping, EcoQoS toggle, `Ctrl+F` search. Interned `Arc<str>` names via `util::intern_name`.
+- `src/modules/cpu/`: Implemented `[01] CPU` - Processor cockpit, per-core grid, dual-series `1m/5m/15m` chart, single-core bottleneck alert, virtualized process table with single-source 7-column engine (`table_cols.rs` `col_x/col_w`, dividers at `col_x[i+1]`, proportional resize, clipped RAM bar, dynamic PROCESS NAME expansion, compact CLONES), responsive 2-tier toolbar (single row >= 1180px, 2 rows below), `CPU %`, `RAM`, `Disk I/O`, `[Nx]` clone grouping, EcoQoS toggle, `Ctrl+F` search. Interned `Arc<str>` names via `util::intern_name`.
 - `src/modules/memory/`: Implemented `[02] Memory` - RAM/Swap collector, `K32GetPerformanceInfo` FFI, 3-segment bar (In Use / Standby Cache / Free), Commit Charge & Kernel Pools, spike blackbox, `Delta RAM/s` leak hunter, virtualized table, PID Safety Gate (`safe_handle.rs`). Cache key: `(process_scan_id, ram_total_bytes, search_query, sort_col, sort_asc, group_clones)`; `1m/5m/15m` chart with cached `PlotPoints`.
-- `src/modules/storage/`: Implemented `[03] Storage` - `\\.\PhysicalDriveN` `IOCTL_DISK_PERFORMANCE` counters, cached volume handles in `OnceLock` map (max 32), deduplicated Read/Write `MB/s` chart (`1m/5m/15m`), I/O Freeze Spike blackbox, Top-5 active I/O inspector, volume space/health cards.
+- `src/modules/storage/`: Implemented `[03] Storage` - `\\.\PhysicalDriveN` `IOCTL_DISK_PERFORMANCE` plus `IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS` fallback, cached volume handles in `OnceLock` map (max 32), per-mount hardware rates for unmapped volumes, deduplicated Read/Write `MB/s` chart (`1m/5m/15m`) with non-overlapping header, decimal Y labels, and clamped tooltips, I/O Freeze Spike blackbox, master-detail cockpit (280px full-height master, aligned KPI baselines, ultra-compact cards, detail KPI/chart/activity).
 - `src/modules/network/`: Implemented `[04] Network` - Physical NIC filtering, live RX/TX `Mbps` and Latency/Jitter (`ms`) charts with 9-step decade auto-scaling (`nice_ceiling`), adaptive 1 Hz / 5 s non-blocking TCP RTT probe, connection grade (`OPTIMAL` / `DEGRADED` / `CRITICAL`), per-adapter scope.
 - `src/ui/`: Root panel layout (`Top` to `Bottom` to `Left` to `Central`), theme, live System Telemetry TopBar (`[ CPU | RAM | UPTIME | HEALTH ]`), sidebar, status bar, Three Walls badge (`three_walls.rs`), HUD accents (`draw_cyber_corner_brackets`, `draw_tactical_ticks`, scanline).
 - `src/i18n/`: English UI strings + Win32 OS locale name (`GetUserDefaultLocaleName`).

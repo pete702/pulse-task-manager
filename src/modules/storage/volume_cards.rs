@@ -1,14 +1,96 @@
 //! Physical disk cards grouped by Disk N for `[03] Storage`.
-
-use std::sync::Arc;
-
 use crate::modules::memory::formatters::format_bytes;
 use crate::modules::storage::model::{group_physical_disks, DiskVolumeInfo, PhysicalDiskGroup};
 use crate::theme::{card_frame, colors};
 use eframe::egui;
-
-/// Renders physical disk cards grouped by `physical_disk`.
-/// Each card shows live per-disk R/W and lists its partitions.
+use std::sync::Arc;
+const LC: egui::Align2 = egui::Align2::LEFT_CENTER;
+const RC: egui::Align2 = egui::Align2::RIGHT_CENTER;
+fn pt(
+    p: &egui::Painter,
+    pos: egui::Pos2,
+    a: egui::Align2,
+    s: impl std::fmt::Display,
+    sz: f32,
+    c: egui::Color32,
+) {
+    p.text(pos, a, s, egui::FontId::monospace(sz), c);
+}
+/// Honest 3-tier health: critical -- LOW FREE, >=80% -- HIGH USE, else OK.
+#[allow(dead_code)]
+pub fn health_label(vol: &DiskVolumeInfo) -> (String, egui::Color32) {
+    let pct = vol.used_pct;
+    if vol.is_critical_space {
+        (format!("LOW FREE ({pct:.0}% USED)"), crate::theme::TACTICAL_RED)
+    } else if pct >= 80.0 {
+        (format!("HIGH USE ({pct:.0}%)"), crate::theme::WARNING_AMBER)
+    } else {
+        (format!("OK ({pct:.0}% USED)"), crate::theme::EMERALD_GREEN)
+    }
+}
+fn bar_color(vol: &DiskVolumeInfo) -> egui::Color32 {
+    if vol.used_pct >= 90.0 || vol.is_critical_space {
+        colors::ACCENT_RED
+    } else if vol.used_pct >= 80.0 {
+        colors::ACCENT_AMBER
+    } else {
+        colors::ACCENT_CYAN
+    }
+}
+fn total_gib(volumes: &[DiskVolumeInfo]) -> u64 {
+    volumes.iter().map(|v| v.total_bytes).sum::<u64>() / (1024 * 1024 * 1024)
+}
+fn disk_title(group: &PhysicalDiskGroup) -> String {
+    let gib = total_gib(&group.volumes);
+    match group.disk_index {
+        Some(d) => {
+            let badge = group.kind.badge();
+            if badge == "DISK" {
+                format!("DISK {d} ({gib}G)")
+            } else {
+                format!("DISK {d} {badge} ({gib}G)")
+            }
+        }
+        None => {
+            let m = group.volumes.first().map(|v| v.mount_point.as_ref()).unwrap_or("?");
+            format!("DISK [{}] ({gib}G)", m.trim_end_matches('\\'))
+        }
+    }
+}
+/// Full-width clickable ALL selector showing global throughput.
+pub fn render_all_selector(
+    ui: &mut egui::Ui,
+    read: f32,
+    write: f32,
+    selected_mount: &mut Option<Arc<str>>,
+) {
+    let active = selected_mount.is_none();
+    let frame = if active {
+        card_frame()
+            .stroke(egui::Stroke::new(2.0_f32, colors::ACCENT_CYAN))
+            .inner_margin(egui::Margin::symmetric(8.0, 4.0))
+    } else {
+        card_frame().inner_margin(egui::Margin::symmetric(8.0, 4.0))
+    };
+    let speed_col = if read + write > 0.05 { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
+    frame.show(ui, |ui| {
+        ui.set_min_width(ui.available_width());
+        ui.spacing_mut().item_spacing.y = 2.0;
+        let w = ui.available_width().max(120.0);
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 16.0), egui::Sense::click());
+        let p = ui.painter();
+        let spd = format!("R: {read:.1} | W: {write:.1} MB/s");
+        pt(p, rect.left_center(), LC, "ALL STORAGE DISKS", 11.0, colors::TEXT_PRIMARY);
+        pt(p, rect.right_center(), RC, spd, 10.0, speed_col);
+        if resp.clicked() {
+            *selected_mount = None;
+        }
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+    });
+}
+/// Renders physical disks as a single vertical master column.
 pub fn render_volume_cards(
     ui: &mut egui::Ui,
     volumes: &[DiskVolumeInfo],
@@ -16,6 +98,7 @@ pub fn render_volume_cards(
 ) {
     if volumes.is_empty() {
         card_frame().show(ui, |ui| {
+            ui.set_min_width(ui.available_width());
             ui.label(
                 egui::RichText::new("No volumes detected")
                     .monospace()
@@ -26,7 +109,7 @@ pub fn render_volume_cards(
         return;
     }
     let groups = group_physical_disks(volumes);
-    if ui.available_width() >= 520.0 {
+    if ui.available_width() >= 440.0 {
         for pair in groups.chunks(2) {
             ui.columns(2, |cols| {
                 render_disk_card(&mut cols[0], &pair[0], selected_mount);
@@ -34,197 +117,120 @@ pub fn render_volume_cards(
                     render_disk_card(&mut cols[1], second, selected_mount);
                 }
             });
-            ui.add_space(8.0);
+            ui.add_space(4.0);
         }
     } else {
         for group in &groups {
             render_disk_card(ui, group, selected_mount);
+            ui.add_space(4.0);
         }
     }
 }
-
-/// Honest 3-tier health: critical -> LOW (red), >=80% -> HIGH (amber),
-/// else HEALTHY (emerald). Text + color both change.
-/// The badge always carries the used percent so cards and details agree.
-pub fn health_label(vol: &DiskVolumeInfo) -> (String, egui::Color32) {
-    let pct = vol.used_pct.round() as u32;
-    if vol.is_critical_space {
-        (format!("LOW {pct}%"), colors::ACCENT_RED)
-    } else if vol.used_pct >= 80.0 {
-        (format!("HIGH {pct}%"), colors::ACCENT_AMBER)
-    } else {
-        (format!("HEALTHY {pct}%"), crate::theme::OPTIMAL_EMERALD)
-    }
-}
-
-fn bar_color(vol: &DiskVolumeInfo) -> egui::Color32 {
-    if vol.used_pct >= 90.0 || vol.is_critical_space {
-        colors::ACCENT_RED
-    } else if vol.used_pct >= 80.0 {
-        colors::ACCENT_AMBER
-    } else {
-        colors::ACCENT_CYAN
-    }
-}
-
-fn disk_title(group: &PhysicalDiskGroup) -> String {
-    let badge = group.kind.badge();
-    match group.disk_index {
-        Some(d) => {
-            if badge == "DISK" {
-                format!("DISK {d}")
-            } else {
-                format!("DISK {d} - {badge}")
-            }
-        }
-        None => {
-            let mount = group.volumes.first().map(|v| v.mount_point.as_ref()).unwrap_or("?");
-            if badge == "DISK" {
-                mount.to_owned()
-            } else {
-                format!("{mount} - {badge}")
-            }
-        }
-    }
-}
-
 fn render_disk_card(
     ui: &mut egui::Ui,
     group: &PhysicalDiskGroup,
     selected_mount: &mut Option<Arc<str>>,
 ) {
-    let is_selected = selected_mount
-        .as_ref()
-        .is_some_and(|sel| group.volumes.iter().any(|v| &v.mount_point == sel));
+    let is_selected =
+        selected_mount.as_ref().is_some_and(|s| group.volumes.iter().any(|v| &v.mount_point == s));
     let frame = if is_selected {
-        card_frame().stroke(egui::Stroke::new(2.0_f32, colors::ACCENT_CYAN))
-    } else {
         card_frame()
+            .stroke(egui::Stroke::new(2.0_f32, colors::ACCENT_CYAN))
+            .inner_margin(egui::Margin::symmetric(8.0, 4.0))
+    } else {
+        card_frame().inner_margin(egui::Margin::symmetric(8.0, 4.0))
     };
-    let mut clicked_mount: Option<Arc<str>> = None;
-    let resp_inner = frame.show(ui, |ui| {
-        render_disk_header(ui, group, is_selected);
-        ui.add_space(4.0);
-        for vol in &group.volumes {
-            let clicked = render_partition(ui, vol, selected_mount);
-            if clicked {
-                clicked_mount = Some(Arc::clone(&vol.mount_point));
-            }
-        }
-    });
-    let id = match group.disk_index {
-        Some(d) => egui::Id::new(format!("disk_card_{d}")),
-        None => egui::Id::new(format!("disk_card_{}", group.volumes[0].mount_point)),
-    };
-    let resp = ui
-        .interact(resp_inner.response.rect, id, egui::Sense::click())
-        .on_hover_cursor(egui::CursorIcon::PointingHand);
-    if let Some(mount) = clicked_mount {
-        *selected_mount = Some(mount);
-    } else if resp.clicked() {
-        if let Some(first) = group.volumes.first() {
-            *selected_mount = Some(Arc::clone(&first.mount_point));
-        }
-    }
-}
-
-fn render_disk_header(ui: &mut egui::Ui, group: &PhysicalDiskGroup, is_selected: bool) {
     let active = group.read_mb_s + group.write_mb_s > 0.05;
-    let speed_color = if active { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
-    // Worst partition drives the health badge so cards and details agree.
-    let worst = group.volumes.iter().max_by(|a, b| a.used_pct.total_cmp(&b.used_pct));
+    let speed_col = if active { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
     let title = disk_title(group);
-    ui.vertical(|ui| {
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(title).monospace().size(13.0).color(colors::TEXT_PRIMARY));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if let Some(v) = worst {
-                    let (health, color) = health_label(v);
-                    ui.label(egui::RichText::new(health).monospace().size(11.0).color(color));
+    let first_mount = group.volumes.first().map(|v| Arc::clone(&v.mount_point));
+    frame.show(ui, |ui| {
+        ui.set_min_width(ui.available_width());
+        ui.spacing_mut().item_spacing.y = 2.0;
+        let w = ui.available_width().max(120.0);
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 16.0), egui::Sense::click());
+        let p = ui.painter();
+        let spd = format!("R:{:.1} W:{:.1} MB/s", group.read_mb_s, group.write_mb_s);
+        pt(p, rect.left_center(), LC, title.clone(), 11.0, colors::TEXT_PRIMARY);
+        pt(p, rect.right_center(), RC, spd, 10.5, speed_col);
+        if resp.clicked() {
+            if let Some(first) = first_mount.as_ref() {
+                if selected_mount.as_ref() == Some(first) {
+                    *selected_mount = None;
+                } else {
+                    *selected_mount = Some(Arc::clone(first));
                 }
-            });
-        });
-        ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(format!(
-                    "R: {:.1} MB/s | W: {:.1} MB/s",
-                    group.read_mb_s, group.write_mb_s
-                ))
-                .monospace()
-                .size(11.0)
-                .color(speed_color),
-            );
-            if is_selected {
-                ui.label(
-                    egui::RichText::new("SELECTED")
-                        .monospace()
-                        .size(11.0)
-                        .color(colors::ACCENT_CYAN),
-                );
             }
-        });
+        }
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        for vol in &group.volumes {
+            render_partition(ui, vol, selected_mount);
+            ui.add_space(2.0);
+        }
     });
 }
-
 fn render_partition(
     ui: &mut egui::Ui,
     vol: &DiskVolumeInfo,
-    selected_mount: &Option<Arc<str>>,
-) -> bool {
-    let is_selected = selected_mount.as_ref() == Some(&vol.mount_point);
+    selected_mount: &mut Option<Arc<str>>,
+) {
+    let is_sel = selected_mount.as_ref() == Some(&vol.mount_point);
+    let free_gib = vol.available_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+    let used_gib =
+        vol.total_bytes.saturating_sub(vol.available_bytes) as f64 / (1024.0 * 1024.0 * 1024.0);
+    let total_gib = vol.total_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+    let narrow = ui.available_width() < 220.0;
+    let pct_s = format!("{:.0}%", vol.used_pct);
+    let cap_s = if narrow {
+        format!("{used_gib:.1}/{total_gib:.1}G - ")
+    } else {
+        format!("{used_gib:.1}/{total_gib:.1}G (Free {free_gib:.1}G) ")
+    };
+    let bc = bar_color(vol);
+    let left = format!("{} {}", vol.mount_point.trim_end_matches('\\'), vol.fs_type);
+    let col = if is_sel { colors::ACCENT_CYAN } else { colors::TEXT_PRIMARY };
     let used = vol.total_bytes.saturating_sub(vol.available_bytes);
-    let mut clicked = false;
-    ui.horizontal(|ui| {
-        let label = if is_selected {
-            format!("{} ({}) SELECTED", vol.mount_point, vol.fs_type)
+    let tip = format!(
+        "Used {} / Total {} - Free {} - {}",
+        format_bytes(used),
+        format_bytes(vol.total_bytes),
+        format_bytes(vol.available_bytes),
+        vol.fs_type
+    );
+    let w = ui.available_width().max(120.0);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 15.0), egui::Sense::click());
+    let p = ui.painter();
+    pt(p, rect.left_center(), LC, left, 11.0, col);
+    pt(p, rect.right_center(), RC, pct_s.clone(), 10.0, bc);
+    let cap_x = rect.right() - (pct_s.len() as f32) * 6.5 - 2.0;
+    pt(p, egui::pos2(cap_x, rect.center().y), RC, cap_s, 10.0, colors::TEXT_SECONDARY);
+    let clicked = resp.clicked();
+    let hovered = resp.hovered();
+    if hovered {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        resp.on_hover_text(tip);
+    }
+    if clicked {
+        if is_sel {
+            *selected_mount = None;
         } else {
-            format!("{} ({})", vol.mount_point, vol.fs_type)
-        };
-        let btn = egui::Button::new(
-            egui::RichText::new(label).monospace().size(11.0).color(if is_selected {
-                colors::ACCENT_CYAN
-            } else {
-                colors::TEXT_PRIMARY
-            }),
-        );
-        if ui.add(btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-            clicked = true;
+            *selected_mount = Some(Arc::clone(&vol.mount_point));
         }
-        ui.label(
-            egui::RichText::new(format!(
-                "{} / {} ({:.0}%)",
-                format_bytes(used),
-                format_bytes(vol.total_bytes),
-                vol.used_pct
-            ))
-            .monospace()
-            .size(10.0)
-            .color(colors::TEXT_PRIMARY),
-        );
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(
-                egui::RichText::new(format!("Free {}", format_bytes(vol.available_bytes)))
-                    .monospace()
-                    .size(10.0)
-                    .color(colors::TEXT_SECONDARY),
-            );
-        });
-    });
+    }
     render_bar(ui, vol);
-    clicked
 }
-
 fn render_bar(ui: &mut egui::Ui, vol: &DiskVolumeInfo) {
     let pct = vol.used_pct.clamp(0.0, 100.0) / 100.0;
-    let bar_w = ui.available_width().max(100.0);
+    let bar_w = ui.available_width().max(60.0);
     let (rect, _) =
-        ui.allocate_exact_size(egui::vec2(bar_w, 8.0), egui::Sense::focusable_noninteractive());
-    ui.painter().rect_filled(rect, 2.0, colors::BORDER);
+        ui.allocate_exact_size(egui::vec2(bar_w, 3.0), egui::Sense::focusable_noninteractive());
+    ui.painter().rect_filled(rect, 1.5, colors::BORDER);
     if pct > 0.0 {
         let fill = rect.width() * pct;
         let filled =
             egui::Rect::from_min_max(rect.min, egui::Pos2::new(rect.min.x + fill, rect.max.y));
         ui.painter().rect_filled(filled, 2.0, bar_color(vol));
     }
-    ui.add_space(6.0);
 }

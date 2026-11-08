@@ -1,12 +1,10 @@
 //! Architectural tests for PULSE core module.
 
-#[allow(unused_imports)]
 use std::fs;
-#[allow(unused_imports)]
 use std::path::Path;
 
 /// Hard limit for .rs file lines (architectural constraint).
-pub const MAX_RS_FILE_LINES: usize = 280;
+const MAX_RS_FILE_LINES: usize = 280;
 
 fn visit_files(dir: &Path, check: &mut dyn FnMut(&Path)) {
     if dir.is_dir() {

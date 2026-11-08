@@ -55,6 +55,9 @@ pub mod view;
 pub mod view_cards;
 pub mod win32_api;
 
+pub use crate::modules::memory::safe_handle::query_creation_time_by_pid;
+pub use crate::modules::memory::win32_api::query_process_exe_path;
+
 #[cfg(test)]
 mod actions_tests;
 

@@ -22,8 +22,9 @@ static LAST_SELF_RAM_X10: AtomicU32 = AtomicU32::new(426);
 
 fn cached_self_ram_mb(fresh: Option<f32>) -> f32 {
     if let Some(v) = fresh {
-        if v > 0.0 {
-            LAST_SELF_RAM_X10.store((v * 10.0).round() as u32, Ordering::Relaxed);
+        let clean = if v.is_finite() && v > 0.0 && v < 1_000_000.0 { v } else { 0.0 };
+        if clean > 0.0 {
+            LAST_SELF_RAM_X10.store((clean * 10.0).round() as u32, Ordering::Relaxed);
         }
     }
     LAST_SELF_RAM_X10.load(Ordering::Relaxed) as f32 / 10.0
@@ -82,15 +83,18 @@ pub fn render_top_panel(
         let telemetry = match latest_snapshot.as_ref() {
             Some(s) => match (&s.cpu, &s.memory) {
                 (Some(cpu), Some(mem)) => {
+                    let cpu_pct = if cpu.total_pct.is_finite() { cpu.total_pct.clamp(0.0, 100.0) } else { 0.0 };
+                    let ram_pct = mem.ram_usage_percent();
+                    let ram_pct = if ram_pct.is_finite() { ram_pct.clamp(0.0, 100.0) } else { 0.0 };
                     if bar_w < 960.0 {
-                        format!("[ CPU: {:.0}% | RAM: {:.0}% ]", cpu.total_pct, mem.ram_usage_percent())
+                        format!("[ CPU: {:.0}% | RAM: {:.0}% ]", cpu_pct, ram_pct)
                     } else {
                         format!(
                             "[ CPU: {:.1}% | RAM: {:.1} / {:.1} GiB ({:.0}%) ]",
-                            cpu.total_pct,
+                            cpu_pct,
                             mem.ram_used_gib(),
                             mem.ram_total_gib(),
-                            mem.ram_usage_percent()
+                            ram_pct
                         )
                     }
                 }
@@ -107,8 +111,9 @@ pub fn render_top_panel(
             os_locale_short()
         ));
 
-        // Right-aligned single System Health Pill.
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        // Right-aligned single System Health Pill (wide windows only).
+        if bar_w >= 720.0 {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if let Some(ref snapshot) = latest_snapshot {
                 let wall = crate::ui::three_walls::evaluate(snapshot);
                 let bottleneck = snapshot
@@ -151,8 +156,10 @@ pub fn render_top_panel(
                     // Tooltip built only on hover - avoids per-frame alloc.
                     let tooltip = match snapshot.memory.as_ref() {
                         Some(m) => {
-                            let cpu_pct = snapshot.cpu.as_ref().map_or(0.0, |c| c.total_pct);
-                            let hot = snapshot.cpu.as_ref().map_or(0.0, |c| c.hottest_core_pct);
+                            let cpu_raw = snapshot.cpu.as_ref().map_or(0.0, |c| c.total_pct);
+                            let cpu_pct = if cpu_raw.is_finite() { cpu_raw.clamp(0.0, 100.0) } else { 0.0 };
+                            let hot_raw = snapshot.cpu.as_ref().map_or(0.0, |c| c.hottest_core_pct);
+                            let hot = if hot_raw.is_finite() { hot_raw.clamp(0.0, 100.0) } else { 0.0 };
                             format!(
                                 "Three Walls: {}\nRAM: {:.1}% Commit: {:.1}%\nCPU: {:.1}% Hottest: {:.1}%",
                                 wall.label(),
@@ -167,13 +174,17 @@ pub fn render_top_panel(
                     resp.on_hover_text(tooltip);
                 }
             }
-        });
+            });
+        }
     });
     draw_top_scanline(ui, top_rect);
 }
 
 /// Dual-tone neon scanline along the bottom edge of the top bar.
 fn draw_top_scanline(ui: &egui::Ui, rect: egui::Rect) {
+    if rect.width() <= 0.0 || !rect.width().is_finite() {
+        return;
+    }
     let y = rect.bottom() - 0.5;
     let painter = ui.painter();
     let base = egui::Color32::from_rgba_unmultiplied(51, 65, 85, 180);
@@ -183,7 +194,7 @@ fn draw_top_scanline(ui: &egui::Ui, rect: egui::Rect) {
         egui::Stroke::new(1.0_f32, base),
     );
     painter.line_segment(
-        [egui::pos2(rect.left() + 4.0, y), egui::pos2(rect.left() + 144.0, y)],
+        [egui::pos2(rect.left() + 4.0, y), egui::pos2((rect.left() + 144.0).min(rect.right()), y)],
         egui::Stroke::new(2.0_f32, glow),
     );
 }

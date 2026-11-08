@@ -218,7 +218,21 @@ fn run_flush() {
         g.0 = DnsFlushState::Running;
         g.1 = None;
     }
-    let mut cmd = std::process::Command::new("ipconfig");
+    let mut cmd = {
+        #[cfg(target_os = "windows")]
+        {
+            let exe = std::env::var_os("SystemRoot")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Windows"))
+                .join("System32")
+                .join("ipconfig.exe");
+            std::process::Command::new(exe)
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            std::process::Command::new("ipconfig")
+        }
+    };
     cmd.args(["/flushdns"]);
     #[cfg(target_os = "windows")]
     {

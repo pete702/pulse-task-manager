@@ -19,6 +19,7 @@ use crate::modules::memory::table_state::MemoryTableState;
 
 pub struct PulseApp {
     pub(crate) snapshot_rx: mpsc::Receiver<Arc<SystemSnapshot>>,
+    #[allow(dead_code)]
     pub(crate) latest_slot: LatestSlot,
     pub(crate) latest_snapshot: Option<Arc<SystemSnapshot>>,
     pub(crate) active_tab: crate::app_tabs::ActiveTab,
@@ -146,6 +147,7 @@ impl eframe::App for PulseApp {
             &mut self.memory_sub_view,
             &mut self.table_state,
             &mut self.cpu_table_state,
+            &mut self.telemetry_paused,
         ) {
             ctx.request_repaint();
         }
@@ -180,7 +182,6 @@ impl eframe::App for PulseApp {
             self.prev_cpu_sub_view = self.cpu_sub_view;
         }
         self.frame_count = self.frame_count.wrapping_add(1);
-        self.collect_snapshots();
         let vp = ctx.input(|i| i.viewport().inner_rect.or(i.viewport().outer_rect));
         if let Some(rect) = vp {
             self.last_viewport_size = Some(rect.size());
@@ -188,8 +189,11 @@ impl eframe::App for PulseApp {
         let latest_snapshot = self.latest_snapshot.clone();
         let active_processes = latest_snapshot
             .as_ref()
-            .and_then(|s| s.memory.as_ref())
-            .map(|m| m.system_processes)
+            .map(|s| {
+                let cpu_n = s.cpu.as_ref().map(|c| c.process_count).unwrap_or(0);
+                let mem_n = s.memory.as_ref().map(|m| m.processes.len()).unwrap_or(0);
+                cpu_n.max(mem_n) as u32
+            })
             .unwrap_or(0);
         let uptime = latest_snapshot.as_ref().map(|s| s.uptime_secs).unwrap_or(0);
         render_chrome(

@@ -4,6 +4,7 @@
 pub const WORKER_INTERVAL_VISIBLE: std::time::Duration = std::time::Duration::from_millis(1000);
 
 /// Worker tick interval when UI is minimized (1 second telemetry).
+#[allow(dead_code)]
 pub const WORKER_INTERVAL_MINIMIZED: std::time::Duration = std::time::Duration::from_millis(1000);
 
 /// Full process scans run every 3rd visible tick (3 seconds when Processes sub-tab is open).

@@ -14,7 +14,6 @@ use crate::modules::memory::win32_api::{collect_windows_kernel_metrics, KernelMe
 /// Collects current system memory state into a `MemorySnapshot`.
 /// `scan_duration_ms` is left at the default here; the worker loop stamps it
 /// once with the full telemetry tick duration so the metric stays honest.
-#[allow(unused_mut)]
 #[cfg_attr(not(target_os = "windows"), allow(dead_code, unused_mut))]
 pub fn collect_memory(sys: &mut System) -> MemorySnapshot {
     sys.refresh_memory();
@@ -56,8 +55,8 @@ pub fn collect_memory(sys: &mut System) -> MemorySnapshot {
 ///
 /// Reuses `sys.processes()` when called after `collect_process_cpu` on the
 /// same worker tick (the CPU pass already refreshed with
-/// `.with_memory().with_cpu().without_exe()`); falls back to refreshing
-/// memory only when the process list is empty.
+/// `.with_memory().with_cpu().with_disk_usage().with_exe(UpdateKind::OnlyIfNotSet)`);
+/// falls back to refreshing memory only when the process list is empty.
 pub fn collect_process_memory(
     sys: &mut System,
     total_ram: u64,

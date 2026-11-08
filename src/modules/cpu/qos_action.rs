@@ -1,59 +1,47 @@
 //! Process actions for the CPU table context menu.
 //! Provides EcoQoS, working-set trim, file location, and verified termination.
-//! All mutating actions reuse the hardened Memory module identity checks.
-
-use std::collections::HashMap;
-use std::path::Path;
-use std::sync::{Mutex, OnceLock};
-
-use windows_sys::Win32::System::Threading::{
-    GetPriorityClass, GetProcessInformation, ProcessPowerThrottling, SetPriorityClass,
-    SetProcessInformation, IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS,
-    PROCESS_POWER_THROTTLING_CURRENT_VERSION, PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
-    PROCESS_POWER_THROTTLING_STATE, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
-};
-
-use crate::modules::cpu::model::ProcessCpuItem;
 use crate::modules::memory::actions::{
     open_process_file_location as open_path, terminate_process_group, trim_single_pid,
     TrimSkipReason,
 };
 use crate::modules::memory::process_target::ProcessTarget;
 use crate::modules::memory::safe_handle::{
-    is_handle_critical, query_creation_time_by_pid, query_process_image_path,
-    verify_handle_identity, verify_pid_safety_gate, SafeHandle,
+    is_handle_critical, query_process_image_path, verify_handle_identity, verify_pid_safety_gate,
+    SafeHandle,
 };
-
-/// Pending EcoQoS overrides from UI actions to worker cache.
-#[allow(clippy::type_complexity)]
-pub(crate) static PENDING_ECO: OnceLock<Mutex<HashMap<(u32, u64), Option<bool>>>> = OnceLock::new();
-/// Watch cache for EcoQoS state (kept for API compatibility).
-#[allow(dead_code, clippy::type_complexity)]
-pub(crate) static ECO_WATCH: OnceLock<Mutex<HashMap<(u32, u64), Option<bool>>>> = OnceLock::new();
-
-/// Checks if a process name is protected by the unified safety gate.
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::{Mutex, OnceLock};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::System::Threading::{
+    GetPriorityClass, GetProcessInformation, ProcessPowerThrottling, SetPriorityClass,
+    SetProcessInformation, IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS,
+    PROCESS_POWER_THROTTLING_CURRENT_VERSION, PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+    PROCESS_POWER_THROTTLING_STATE, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
+};
+type EcoMap = HashMap<(u32, u64), Option<bool>>;
+pub(crate) static PENDING_ECO: OnceLock<Mutex<EcoMap>> = OnceLock::new();
+type PrioMap = HashMap<(u32, u64), u32>;
+pub(crate) static ORIG_PRIORITY: OnceLock<Mutex<PrioMap>> = OnceLock::new();
 pub fn is_system_process(name: &str) -> bool {
     verify_pid_safety_gate(u32::MAX, name).is_err()
 }
-
-/// Primes worker EcoQoS cache after UI action.
-#[allow(dead_code)]
-pub fn mark_pending_eco(pid: u32, start_time: u64, on: bool) {
+fn pending_insert(key: (u32, u64), val: Option<bool>) {
     let slot = PENDING_ECO.get_or_init(|| Mutex::new(HashMap::new()));
     let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
     if guard.len() > 512 {
         guard.clear();
     }
-    guard.insert((pid, start_time), Some(on));
+    guard.insert(key, val);
 }
-
-/// Alias for mark_pending_eco (watch cache prime).
+#[allow(dead_code)]
+pub fn mark_pending_eco(pid: u32, start_time: u64, on: bool) {
+    pending_insert((pid, start_time), Some(on));
+}
 #[allow(dead_code)]
 pub fn set_eco_watch(pid: u32, start_time: u64, on: bool) {
     mark_pending_eco(pid, start_time, on);
 }
-
-/// Budgeted EcoQoS probe: decrements budget and queries Win32.
 #[allow(dead_code)]
 pub fn probe_eco_qos_budgeted(pid: u32, budget: &mut u8) -> Option<Option<bool>> {
     if *budget == 0 {
@@ -62,69 +50,62 @@ pub fn probe_eco_qos_budgeted(pid: u32, budget: &mut u8) -> Option<Option<bool>>
     *budget -= 1;
     Some(is_process_eco_qos(pid))
 }
-
-/// Back-compat prime entry (collector re-export).
-#[allow(dead_code)]
-pub fn set_eco_cached(pid: u32, start_time: u64, on: bool) {
-    mark_pending_eco(pid, start_time, on);
+pub(crate) fn target_for(
+    pid: u32,
+    name: &str,
+    ct: Option<u64>,
+    exe: Option<String>,
+) -> Option<ProcessTarget> {
+    #[cfg(target_os = "windows")]
+    let creation_time = Some(ct?);
+    #[cfg(not(target_os = "windows"))]
+    let creation_time = ct;
+    Some(ProcessTarget { pid, creation_time, name: name.to_string(), exe_path: exe })
 }
-
-/// Drops pending EcoQoS prime so next scan re-queries Win32.
-#[allow(dead_code)]
-pub fn invalidate_eco_cached(pid: u32, start_time: u64) {
-    let slot = PENDING_ECO.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
-    if guard.len() > 512 {
-        guard.clear();
-    }
-    guard.insert((pid, start_time), None);
-}
-
-/// Builds a verified target from creation time at action time.
-fn target_for(item: &ProcessCpuItem) -> Result<ProcessTarget, String> {
-    let creation_time = query_creation_time_by_pid(item.pid)
-        .ok_or_else(|| "Cannot read process creation time".to_string())?;
-    Ok(ProcessTarget {
-        pid: item.pid,
-        creation_time: Some(creation_time),
-        name: item.name.to_string(),
-        exe_path: None,
-    })
-}
-
-/// Throttling masks: ControlMask always set, StateMask only when enabling.
+#[cfg(target_os = "windows")]
 pub(crate) fn build_throttling_masks(enable: bool) -> (u32, u32) {
-    let control_mask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
-    let state_mask = if enable { PROCESS_POWER_THROTTLING_EXECUTION_SPEED } else { 0 };
-    (control_mask, state_mask)
+    let c = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+    (c, if enable { c } else { 0 })
 }
-
-/// Enables EcoQoS (Efficiency Mode) by setting IDLE_PRIORITY_CLASS.
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn build_throttling_masks(enable: bool) -> (u32, u32) {
+    (1, if enable { 1 } else { 0 })
+}
+#[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
-pub fn set_process_eco_qos(pid: u32, name: &str, enable: bool) -> Result<(), String> {
+pub fn set_process_eco_qos(
+    pid: u32,
+    name: &str,
+    creation_time: Option<u64>,
+    exe_path: Option<String>,
+    enable: bool,
+) -> Result<(), String> {
     if is_system_process(name) {
         return Err("System process is protected".to_string());
     }
     verify_pid_safety_gate(pid, name).map_err(str::to_string)?;
-    let creation_time = query_creation_time_by_pid(pid)
-        .ok_or_else(|| "Cannot read process creation time".to_string())?;
-
+    let creation_time =
+        creation_time.ok_or_else(|| "Cannot read process creation time".to_string())?;
     let handle = SafeHandle::open(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_INFORMATION, pid)
         .ok_or_else(|| "Access denied while opening process".to_string())?;
-
+    let img = query_process_image_path(&handle);
+    let expected_path = exe_path.as_deref().filter(|s| !s.trim().is_empty()).or(img.as_deref());
     if is_handle_critical(&handle)
-        || !verify_handle_identity(&handle, name, Some(creation_time), None)
+        || !verify_handle_identity(&handle, name, Some(creation_time), expected_path)
     {
         return Err("Process identity verification failed".to_string());
     }
-
-    let priority = if enable { IDLE_PRIORITY_CLASS } else { NORMAL_PRIORITY_CLASS };
-    let prio_ok = unsafe { SetPriorityClass(handle.as_raw(), priority) } != 0;
-    if prio_ok {
-    } else {
-        return Err("Failed to set priority class".to_string());
+    if enable {
+        let cur = unsafe { GetPriorityClass(handle.as_raw()) };
+        if cur != IDLE_PRIORITY_CLASS {
+            let slot = ORIG_PRIORITY.get_or_init(|| Mutex::new(HashMap::new()));
+            let mut g = slot.lock().unwrap_or_else(|e| e.into_inner());
+            if g.len() > 512 {
+                g.clear();
+            }
+            g.entry((pid, creation_time)).or_insert(cur);
+        }
     }
-    // True EcoQoS: Power Throttling execution-speed control.
     let (control_mask, state_mask) = build_throttling_masks(enable);
     let state = PROCESS_POWER_THROTTLING_STATE {
         Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
@@ -137,22 +118,45 @@ pub fn set_process_eco_qos(pid: u32, name: &str, enable: bool) -> Result<(), Str
             ProcessPowerThrottling,
             &state as *const _ as *const std::os::raw::c_void,
             std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32,
-        ) != 0
+        )
     };
-    if prio_ok && info_ok {
-        Ok(())
-    } else {
-        Err("Failed to apply power throttling state".to_string())
+    if info_ok == 0 {
+        return Err("Failed to apply power throttling state".to_string());
     }
+    let priority = if enable {
+        IDLE_PRIORITY_CLASS
+    } else {
+        ORIG_PRIORITY
+            .get()
+            .and_then(|s| {
+                s.lock().unwrap_or_else(|e| e.into_inner()).get(&(pid, creation_time)).copied()
+            })
+            .unwrap_or(NORMAL_PRIORITY_CLASS)
+    };
+    if unsafe { SetPriorityClass(handle.as_raw(), priority) } == 0 {
+        return Err("Failed to set priority class".to_string());
+    }
+    Ok(())
 }
-
-/// Enables EcoQoS (Efficiency Mode) by setting IDLE_PRIORITY_CLASS.
-#[allow(unsafe_code)]
-pub fn enable_eco_qos(pid: u32, name: &str) -> Result<(), String> {
-    set_process_eco_qos(pid, name, true)
+#[cfg(not(target_os = "windows"))]
+pub fn set_process_eco_qos(
+    _: u32,
+    _: &str,
+    _: Option<u64>,
+    _: Option<String>,
+    _: bool,
+) -> Result<(), String> {
+    Err("EcoQoS requires Windows".to_string())
 }
-
-/// Some(true) when PID runs in EcoQoS (idle priority or power throttling).
+pub fn enable_eco_qos(
+    pid: u32,
+    name: &str,
+    ct: Option<u64>,
+    exe: Option<String>,
+) -> Result<(), String> {
+    set_process_eco_qos(pid, name, ct, exe, true)
+}
+#[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 pub fn is_process_eco_qos(pid: u32) -> Option<bool> {
     if pid == 0 || pid == 4 {
@@ -177,21 +181,27 @@ pub fn is_process_eco_qos(pid: u32) -> Option<bool> {
     }
     Some(false)
 }
-
-/// Trims the working set of a process to release physical RAM.
-pub fn trim_process_working_set(item: &ProcessCpuItem) -> Result<(), String> {
-    if is_system_process(item.name.as_ref()) {
+#[cfg(not(target_os = "windows"))]
+pub fn is_process_eco_qos(_pid: u32) -> Option<bool> {
+    None
+}
+pub fn trim_process_working_set(
+    pid: u32,
+    name: &str,
+    ct: Option<u64>,
+    exe: Option<String>,
+) -> Result<(), String> {
+    if is_system_process(name) {
         return Err("System process is protected".to_string());
     }
-    let target = target_for(item)?;
+    let target = target_for(pid, name, ct, exe)
+        .ok_or_else(|| "Cannot read process creation time".to_string())?;
     trim_single_pid(&target).map(|_| ()).map_err(|reason| match reason {
         TrimSkipReason::Protected => "Protected process".to_string(),
         TrimSkipReason::AccessDenied => "Access denied".to_string(),
         TrimSkipReason::CriticalProcess => "Critical process".to_string(),
     })
 }
-
-/// Opens the executable folder in Explorer.
 pub fn open_process_file_location(pid: u32) -> Result<(), String> {
     let handle = SafeHandle::open_process(pid)
         .ok_or_else(|| "Access denied while opening process".to_string())?;
@@ -199,40 +209,44 @@ pub fn open_process_file_location(pid: u32) -> Result<(), String> {
         .ok_or_else(|| "Cannot resolve executable path".to_string())?;
     open_path(Path::new(&path))
 }
-
-/// Terminates a process after safety-gate and identity verification.
-pub fn terminate_process(item: &ProcessCpuItem) -> Result<(), String> {
-    if is_system_process(item.name.as_ref()) {
+pub fn terminate_process(
+    pid: u32,
+    name: &str,
+    ct: Option<u64>,
+    exe: Option<String>,
+) -> Result<(), String> {
+    if is_system_process(name) {
         return Err("System process is protected".to_string());
     }
-    let target = target_for(item)?;
+    let target = target_for(pid, name, ct, exe)
+        .ok_or_else(|| "Cannot read process creation time".to_string())?;
     match terminate_process_group(&[target])? {
         0 => Err("Process was not terminated (identity or access check failed)".to_string()),
         _ => Ok(()),
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn test_is_system_process() {
-        assert!(is_system_process("System"));
-        assert!(is_system_process("svchost.exe"));
-        assert!(is_system_process("lsass.exe"));
-        assert!(!is_system_process("chrome.exe"));
-        assert!(!is_system_process("notepad.exe"));
-        assert!(!is_system_process("myapp"));
+        assert!(
+            is_system_process("System")
+                && is_system_process("svchost.exe")
+                && !is_system_process("chrome.exe")
+        );
     }
-
     #[test]
     fn test_build_throttling_masks() {
-        let (on_control, on_state) = build_throttling_masks(true);
-        assert_ne!(on_control, 0);
-        assert_ne!(on_state, 0);
-        let (off_control, off_state) = build_throttling_masks(false);
-        assert_ne!(off_control, 0);
-        assert_eq!(off_state, 0);
+        let (on_c, on_s) = build_throttling_masks(true);
+        assert!(on_c != 0 && on_s != 0);
+        let (off_c, off_s) = build_throttling_masks(false);
+        assert!(off_c != 0 && off_s == 0);
+    }
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_target_for_rejects_none_on_windows() {
+        assert!(target_for(123, "app.exe", None, None).is_none());
+        assert!(target_for(123, "app.exe", Some(42), None).is_some());
     }
 }

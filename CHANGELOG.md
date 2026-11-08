@@ -2,103 +2,109 @@
 
 All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
 
-## [0.4.29] - 2026-03-31
+## [0.4.46] - 2026-03-31
 
-- **Safe Font Fallback**: `setup_fonts` starts from `FontDefinitions::default`, inserts Segoe UI and Consolas only when read cleanly and <= 16 MB, removed broken `default` pushes.
-- **Hotkeys & Focus**: F5 triggers scan, `Ctrl+F` gated by `!wants_input`, Esc surrenders focus when search is empty, hotkey doc updated.
-- **Startup & Repaint**: trim delayed to frame 60 with snapshot ready, redundant repaint removed, focus-aware 2000/5000 ms heartbeat, `collect_persisted` sanitizes non-finite win size.
-- **CLI & NaN Guards**: console attach only for `--version`/`-V`/`--help`/`-h`/`--self-test`, panic log symlink check and 65536 cap, `sanitize_f32`/`sanitize_f64` helpers, `load_color` returns secondary on NaN.
-- **Version bump to 0.4.29**.
+- **Single-Source Layout**: `table_body.rs` computes `col_w/col_x` once per frame; headers, cells, and dividers at `col_x[i+1]` share exact X positions; `TableBuilder` removed; cells inset 6px, RAM bar capped in `widths[4]`.
+- **Proportional Fit**: `fit_column_widths` scales slack above min widths to keep `sum == avail`; `MIN_COL_W` tightened; divider 1 left distributes to right columns (no giant CLONES).
+- **Version bump to 0.4.46**.
 
-## [0.4.28] - 2026-03-31
+## [0.4.45] - 2026-03-31
 
-- **FIFO Ring Buffer**: `LatestSlot` holds `VecDeque` capped at 960 samples, `store` pushes back, `take` pops newest, `drain_all` returns chronological order and resets overflows.
-- **Chronological Ingest**: `poll_snapshots` batches `snapshot_rx` plus `drain_overflow_snapshots`, sorts by `sample_elapsed_secs`, ingests every sample; called before the minimized early exit.
-- **1 Hz Minimized Telemetry**: `WORKER_INTERVAL_MINIMIZED` set to 1000 ms, process scans stay paused while minimized, CPU refresh runs every tick, no repaint while minimized.
-- **Version bump to 0.4.28**.
+- **Toolbar 2-Tier**: `table.rs` uses 1 row >= 1180px with 300px reserved right region; below it uses badge/filter/pills row + group/density + Purge/Pause/counter row, no Pause/Purge overlap.
+- **Draggable Columns**: new `table_cols.rs` 7-column engine with min widths, sum == avail, ResizeHorizontal dividers, drag cascade, double-click autofit; CLONES compact, PROCESS NAME takes remainder.
+- **Dynamic Truncation**: name chars = `((w-16)/7.2)` min 12, RAM bar fits inside `widths[4]`, separators align header/body.
+- **Version bump to 0.4.45**.
 
-## [0.4.27] - 2026-03-31
+## [0.4.44] - 2026-03-31
 
-- **CPU Async Menu**: Trim/EcoQoS/Open/Terminate spawn via `spawn_menu_action`, `poll_menu_action` sets message with timestamp, applies `eco_overrides` and `mark_pending_eco`, requests scan.
-- **Unified Safety & EcoQoS**: `is_system_process` delegates to `verify_pid_safety_gate`, `SetProcessInformation` result checked via `info_ok`, End Task adds access-denied suffix when zero terminated.
-- **Collector Budget**: `PENDING_ECO`/`ECO_WATCH`/`mark_pending_eco`/`set_eco_watch`/`probe_eco_qos_budgeted` moved to `qos_action.rs`, collector 239 and qos 238 lines.
-- **Version bump to 0.4.27**.
+- **KPI Staircase**: single `34px` strip paints headers at `top_y` and values at `val_y` via `painter().text`, deterministic `x0..x3` offsets, `proportional(10.0)` / `monospace(13.0)`.
+- **Synthetic ID**: `scope_label_for` decodes `>= 0x8000_0000` to `Disk [L:]` (letter from low byte), never prints `2147483724`; test asserts no `214748` substring.
+- **Header Title**: full `DISK THROUGHPUT` kept when `header_rect.width() >= 380.0`, short `THROUGHPUT` only below `380px`.
+- **Bar-Matched Pct**: partition capacity in `TEXT_SECONDARY`, percentage in `bar_color` (Cyan/Amber/Red) matching the bar below.
+- **Version bump to 0.4.44**.
 
-## [0.4.26] - 2026-03-31
+## [0.4.43] - 2026-03-31
 
-- **UI-Thread Syscalls Removed**: `ProcessTarget::from_raw` and `resolve_selection` do zero Win32 calls; `first_exe_path`/`first_pid` resolve lazily on the background thread via `query_process_exe_path`.
-- **Context Menu Non-Blocking**: Open/Trim/Terminate route through `action_bar.spawn`, double-click spawns resolution, no per-frame `query_process_exe_path`.
-- **Actions & Win32 Cleanup**: `open_process_file_location` merges test guards and returns `Failed to launch Explorer` errors; `query_process_exe_path` uses `SafeHandle` + `query_process_image_path`.
-- **Version bump to 0.4.26**.
+- **Header Overlap**: chart header split into `header_rect` left/right zones, right controls first (`15m 5m 1m` + `[ Disk 0 x ]` chip), left title clipped to `(width - controls - 8).max(120)`, short title below 460px.
+- **Y Decimals**: ceiling `< 10.0` prints `{:.1}` ticks (`1.0 MB/s, 0.8, 0.5, 0.3`) instead of `1, 1, 0, 0`.
+- **KPI Alignment**: short `BLACKBOX/READ MB/s/WRITE MB/s/TOP I/O` headers, `10/13` fonts on one baseline, widths `(w*0.18).clamp(68,95)`, short `Disk 0` scope max 14 chars.
+- **Ultra-Compact Disks**: `Margin(8,4)`, `16px` header, `15px` partitions, `3px` bars, `H: NTFS` + `used/total (Free) %`, 2-column `chunks(2)` when `>= 440px`.
+- **Version bump to 0.4.43**.
 
-## [0.4.25] - 2026-03-31
+## [0.4.42] - 2026-03-31
 
-- **Docs Modernization**: README and ARCHITECTURE rewritten for `[01]-[05]` (CPU, Memory, Storage, Network, System & GPU), strict ASCII-only, CPU/EcoQoS, Storage Freeze Hunter, and Ping/Jitter Radar marked Implemented [OK].
-- **Deep Audit P3 Cleanups**: `worker.rx` uses `expect`, direct `worker_io` imports, `with_worker_and_state` avoids double `load_state`, true debounce via `dirty_state_snapshot`, `pulse_ram_mb` error clarifies `K32GetProcessMemoryInfo`.
-- **ASCII Guard**: `docs_guard` verifies README, ARCHITECTURE, and CHANGELOG are strict ASCII (`is_ascii`).
-- **Version bump to 0.4.25**.
+- **Master Height**: `horizontal_top` with 280px full-height master, pinned ALL selector outside scroll, `.max_height(full)` scroll, `set_min_width` full-width cards, right pane `(full_w - 290px)`.
+- **Activity Columns**: `draw_table_row` with `set_min/max_width` fixed columns (`88/88/92px` + remainder), header separator `BORDER_SUBTLE`, card fills remaining height.
+- **KPI Single Line**: `TOP I/O` gets remainder width after 3x `110px` columns, value uses `Label::truncate(true)` so it never wraps.
+- **Version bump to 0.4.42**.
 
-## [0.4.24] - 2026-03-31
+## [0.4.41] - 2026-03-31
 
-- **Viewport Guard**: `last_viewport_size` only updates when rect exists -- no more `ZERO` shrink to 860x560; `set_minimized` encapsulation on worker.
-- **Release Console**: `AttachConsole(u32::MAX)` on Windows for CLI flags, `args_os` lossy parsing, panic backtrace, `--self-test` help clarified.
-- **Worker Tightening**: 950 ms floor via interval minus 50, `minimized_now` re-read before publish, explicit `collector_primed` latch, Builder spawn error resets `WORKER_ALIVE`, loop trimmed to 255 lines.
-- **SelfTest Hardening**: shared `fail_selftest` helper, `started_at` 10 s timeout, theme re-applied only once, `serialize` NaN/Inf test.
-- **Version bump to 0.4.24**.
+- **Master-Detail Cockpit**: `render_storage_tab` splits at `>= 680px` into 275px master (ALL selector + vertical physical cards) and detail (KPI/chart/activity); narrow windows fall back to vertical stack.
+- **Master Clickability**: disk headers and each partition use `Sense::click()`, two-item headers never collide, partition right text colored by `health_label`.
+- **Dedup Inspector**: removed `SELECTED PARTITION` duplicate box; activity is always 100% width with `All Drives` / `On X:` toggle kept.
+- **Tooltip Fix**: storage series renamed to `Read` / `Write`, custom clamped 240px hover box shows `Write: 9.5 MB/s (3.2m ago)` inside `plot_rect`, default rulers disabled.
+- **Version bump to 0.4.41**.
 
-## [0.4.23] - 2026-03-31
+## [0.4.40] - 2026-03-31
 
-- **Ping Ladder**: `nice_ceiling` upgraded to 9-step ladder `[1.0,1.5,2.0,2.5,3.0,4.0,5.0,7.5,10.0]` with 5% tolerance; latency floor 10.0 to 5.0 -- 12 ms snaps to 15.0, 23 ms to 25.0, 95..105 Mbps stays at 100.0.
-- **Name Interning**: `util::intern_name` shares one `Arc<str>` per process name across CPU and Memory collectors, capped at 512 entries.
-- **Disk Handle Cache**: physical disk handles cached in `OnceLock` map (max 32), evicted and closed on `DeviceIoControl` failure -- no more per-tick `CreateFileW`/`CloseHandle`.
-- **Test Polish**: uptime tests merged to table-driven, `test_colors_constants` removed, PID 0/4 handle tests merged, `is_app_elevated` determinism asserted; CI gets concurrency cancel and msrv reduced to `cargo check`.
-- **Version bump to 0.4.23**.
+- **Extents Fallback**: `IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS` maps volumes when `STORAGE_DEVICE_NUMBER` fails; per-mount `DISK_PERFORMANCE` keyed `0x8000_0000 | letter` covers unmapped `L:\`.
+- **Physical Disk Cards**: 2-column grid with compact 68px cards, header `DISK N (partitions/GiB)` + `R/W` + worst badge, partitions horizontal via `ui.columns`.
+- **Activity Width**: full-width `TOP PROCESS DISK ACTIVITY` when `selected is None`, else 58/42 split with `Clear Selection / Show All` inspector.
+- **Version bump to 0.4.40**.
 
-## [0.4.22] - 2026-03-31
+## [0.4.39] - 2026-03-31
 
-- **Chart Ceiling Fit**: removed `peak * 1.15` pre-scale and added 5% boundary tolerance in `nice_ceiling` -- 90..105 Mbps locks to 100.0, 900..1050 Mbps locks to 1000.0, no more ceiling jump to 200/2000.
-- **Startup Unpark Race**: `request_process_scan()` now returns `bool` and clears `WORKER_THREAD` on exit; `TelemetryWorker` falls back to `thread_handle` unpark when the worker thread has not registered yet.
-- **Core Cleanup**: `serialize()` guards non-finite window size, rename failure removes tmp, unused `headless` field dropped from `SelfTestApp`, duplicate `visit_dirs` merged into one helper.
-- **Version bump to 0.4.22**.
+- **Compact Volume Rows**: replaced tall 2-column disk boxes with sleek single-row strips, `Margin::symmetric(10.0, 6.0)`, spacing 4.0, slim 5px bars, one-line `R/W` + `Used/Total` + badge.
+- **Badge Wording**: critical `LOW FREE (% USED)`, `>=80%` `HIGH USE`, else `OK (% USED)`; `None` title `VOLUME L:` without verbatim `L:\` duplicate.
+- **Process Table**: idle groups filtered, top-8 retained, `scan_key` hardened, KPI truncate 32, process column 48% with truncate 38, dedup truncate.
+- **Version bump to 0.4.39**.
 
-## [0.4.21] - 2026-03-31
+## [0.4.38] - 2026-03-31
 
-- **Ctrl+F Deadlock Fix**: `handle_global_hotkeys` snapshots keys outside `ctx.input` closure -- no `ctx.*`/`ui.*` calls while the input lock is held, eliminating the freeze on `Ctrl+F` and arrow navigation.
-- **UI Shell 860px Fix**: top bar fixed at 36px height, compact `[ CPU: x% | RAM: x% ]` telemetry below 960px, status bar hides `Windows Kernel Monitor` and `OS Jitter` on narrow widths, zero-copy `Arc<str>` labels.
-- **Sidebar Stabilization**: Storage/Network accents use 0.15/0.05 hysteresis instead of a single 0.1 threshold -- no more color flicker near idle; unused `_ping_ms`/`_volumes` args dropped.
-- **Worker Startup Latch**: `WORKER_ALIVE` is set before `spawn()` so early `request_process_scan` calls are never dropped; dead `draw_mini_sparkline` and Three Walls helpers removed.
-- **Line Ceiling**: `cpu/history.rs` 280 to 250, `cpu/qos_action.rs` 280 to 207.
-- **Version bump to 0.4.21**.
+- **Handle Cache**: evicted handles closed before clear, race-safe insert closes displaced handle, non-Windows stubs for Win32 IOCTL mapping.
+- **Unmapped Volume**: per-letter process I/O stamps `physical_disk == None` volumes like `L:\` live, no Disk 0 inflation, `prev_per_disk` pruned, unmapped totals included.
+- **History Scope**: timestamp finite guards, single-key eviction, synthetic `0x8000_0000` key scopes unmapped chart series, per-letter aggregate test added.
+- **Version bump to 0.4.38**.
 
-## [0.4.20] - 2026-03-31
+## [0.4.37] - 2026-03-31
 
-- **Config Hardening**: `state.cfg` capped at 64 KB, `win_w`/`win_h` reject `NaN`/`inf` via finite check, no unbounded read on UI thread.
-- **Hotkey Stability**: no early blank frame on hotkey, `wants_keyboard_input` gates tab shortcuts while typing, `Ctrl+F` and search `Esc` still work.
-- **Worker Cadence**: single `unpark`, startup scan only at `tick == 0` when not minimized, minimum 50 ms yield, `worker_loop.rs` trimmed to 258 lines.
-- **Core Cleanup**: `LatestSlot::store` poison-tolerant, test-only helpers gated with `cfg(test)`, dead `SCAN_TICKS_STORAGE` removed.
-- **Version bump to 0.4.20**.
+- **Interactive Legend**: Storage Read/Write toggles with at-least-one guard, ceiling rescales to enabled series only.
+- **Live Header**: throughput readout `R: X MB/s | W: Y MB/s`, time labels backed so fill never obscures text.
+- **NaN Guards**: history and chart sanitize non-finite throughput to zero, toggle peak test added.
+- **Version bump to 0.4.37**.
 
-## [0.4.19] - 2026-03-31
+## [0.4.36] - 2026-03-31
 
-- **Pause-Safe History Sync**: Storage and Network ingest use worker `sample_elapsed_secs` with a `> last` gate only, so 995 ms ticks are never dropped; Storage pushes hardware rates even with no fresh process scan.
-- **Disk I/O Dedup**: `per_disk_rates` queries each physical disk once via visited set, `aggregate_io` tie-breaks by name then pid, inspector reserves 118 px so top-5 never jumps.
-- **1 Hz Probe**: fast ping interval 2000 to 1000 ms, jitter resets on timeout, delta tracker resets baseline after `dt > 15.0` s.
-- **Version bump to 0.4.19**.
+- **Chrome Harden**: self-RAM sanitized, CPU pcts clamped, health pill hidden below 720px, scanline guarded/clamped.
+- **Status & Walls**: diag sanitized, width measured before horizontal, Three Walls NaN/Inf rejected, i18n pcts clamped.
+- **Unified Count**: sidebar and status bar both use cpu.process_count.max(processes.len()).
+- **Version bump to 0.4.36**.
 
-## [0.4.18] - 2026-03-31
+## [0.4.35] - 2026-03-31
 
-- **Clean Chart Startup**: CPU and Memory no longer insert a fake full-width flat line when history is younger than the window; left-edge continuity only when `start_idx > 0` with prior sample.
-- **Storage and Network Stabilization**: monotonic `push` guards, LTTB 300 to 920, removed single-sample stretch hack, stable `storage_io_plot` and `network_io_plot` IDs with forced `set_plot_bounds`.
-- **Version bump to 0.4.18**.
+- **NaN Geometry Guard**: `primitives.rs` early-returns on non-finite/tiny rects, sanitizes ratios, verifies inner size before clamp, `cyber_accent` sanitizes input.
+- **Sidebar Unload**: badge painting moved to `sidebar_badges.rs::draw_tab_badge`, width clamped, keyboard input hoisted, badges hidden below 140px.
+- **Badge Sanitization**: cached formatters and hysteresis clamp non-finite inputs to zero, NaN/Inf never latches state.
+- **Version bump to 0.4.35**.
 
-<!-- rotated -->
+## [0.4.34] - 2026-03-31
 
+- **Storage Attribution**: CPU scan uses `with_exe(UpdateKind::OnlyIfNotSet)` for one-time exe queries, disk guards test-only, brand fallback deduped.
+- **Table Split**: bottom action bar moved to `table_menu.rs`, both table files under 235 lines.
+- **Non-Windows Stubs**: `SafeHandle` and EcoQoS Win32 calls gated with fail-closed stubs for clean Linux linking.
+- **License**: Proprietary notice permits personal non-commercial binary use, strict source/binary restrictions otherwise, `publish = false`.
+- **Version bump to 0.4.34**.
 
+## [0.4.33] - 2026-03-31
 
+- **GUI Self-Test Exit**: `SelfTestApp` stores `passed: Arc<AtomicBool>` on valid snapshot, headless checks storage/network/jitter finiteness, GUI failure exits 1.
+- **Worker Cleanup**: `WorkerExitGuard` resets scan request, removed redundant interval branches and pre-tick wait, `worker_loop` 240 lines.
+- **Persist & Ingest**: `serialize` clamps tab/chart/filter fields, test constant private, `poll_snapshots` uses `worker.drain_overflow_snapshots` in both branches.
+- **Version bump to 0.4.33**.
 
+## [0.4.32] - 2026-03-31
 
-
-
-
-
-
+- Switched repository and binary license to strict Proprietary (`All Rights Reserved`, explicit written permission required) with `publish = false` in `Cargo.toml`.
+- Gated `F5` refresh hotkey behind `!wants_keyboard_input()` in `src/app_tabs.rs` and compacted `src/core/persist.rs`.
+- **Version bump to 0.4.32**.

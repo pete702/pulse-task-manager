@@ -5,7 +5,7 @@ A native Windows 10/11 task manager in pure Rust + `egui` for real-time CPU, RAM
 [Download Latest Portable .exe (Windows 10/11 x64)](https://github.com/pete702/pulse-task-manager/releases/latest)
 
 [![CI](https://github.com/pete702/pulse-task-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/pete702/pulse-task-manager/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Proprietary -- All Rights Reserved](https://img.shields.io/badge/License-Proprietary--All_Rights_Reserved-red.svg)](LICENSE)
 [![Platform: Windows 10/11 x64](https://img.shields.io/badge/Platform-Windows%2010%2F11%20x64-0078D4.svg)](https://github.com/pete702/pulse-task-manager/releases)
 
 **Single-file portable widget-free HUD - no service, no installer.**
@@ -16,16 +16,16 @@ Standard Windows Task Manager shows total RAM usage, but rarely tells you **whic
 
 PULSE provides a dark-mode telemetry HUD with a **Memory Spike Blackbox**, a **3-Segment RAMMap Composition Bar**, and a **Real-Time Leak Hunter (Delta RAM/s, dt-normalized)**.
 
-## Open-Core & Privacy
+## Proprietary & Privacy
 
-Free MIT core forever ([01]-[05] telemetry, PID Safety Gate, zero network).
+Proprietary core forever ([01]-[05] telemetry, PID Safety Gate, zero network).
 Future Pro extensions (24h history, automation rules) will be optional offline modules with zero telemetry.
 
 ## Layout
 
-- **`[01] CPU` -- Processor & Processes Cockpit**: per-core load grid, 1m/5m/15m dual-series chart, single-core bottleneck alert, virtualized process table (CPU %, RAM, Disk I/O, clone grouping `[Nx]`, Win32 EcoQoS toggle, Standby/Working Set purge, End Task, `Ctrl+F` search).
+- **`[01] CPU` -- Processor & Processes Cockpit**: per-core load grid, 1m/5m/15m dual-series chart, single-core bottleneck alert, virtualized process table (single-source 7-column layout `col_x/col_w`, draggable dividers at `col_x[i+1]`, compact CLONES, proportional scaling, clipped RAM bar, dynamic PROCESS NAME expansion, CPU %, RAM, Disk I/O, clone grouping `[Nx]`, Win32 EcoQoS toggle, Standby/Working Set purge, End Task, `Ctrl+F` search) with responsive 2-tier toolbar (single row >= 1180px, two rows below; right controls reserved).
 - **`[02] Memory` -- RAM Composition & Leak Hunter**: Physical RAM 3-segment bar (In Use / Standby Cache / Free), Commit Charge & Kernel Pools (Paged / Non-Paged), 1m/5m/15m utilization chart, Memory Spike Blackbox, and per-process Working Set / Peak / Delta (`MB/s`) table with safe RAM Trim.
-- **`[03] Storage` -- Physical Disk I/O & Freeze Hunter**: `\\.\PhysicalDriveN` `IOCTL_DISK_PERFORMANCE` counters with cached volume handles, deduplicated Read/Write MB/s chart (`1m/5m/15m`), I/O Freeze Spike blackbox, Top-5 active I/O processes inspector, and volume space/health cards.
+- **`[03] Storage` -- Physical Disk I/O & Freeze Hunter**: `\\.\PhysicalDriveN` `IOCTL_DISK_PERFORMANCE` counters plus `IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS` fallback, deduplicated Read/Write MB/s chart (`1m/5m/15m`) with non-overlapping header and decimal Y labels, I/O Freeze Spike blackbox, master-detail cockpit, aligned single-baseline KPIs, ultra-compact disk cards with bar-matched percentages, fixed-width Top-8 activity table, and clamped Read/Write hover tooltips.
 - **`[04] Network` -- Adapter Throughput & Ping/Jitter Radar**: Physical NIC filtering, live RX/TX Mbps and Latency/Jitter (`ms`) charts (`1m/5m/15m`) with 9-step decade auto-scaling, adaptive 1 Hz / 5 s non-blocking TCP RTT probe, connection grade (`OPTIMAL` / `DEGRADED` / `CRITICAL`), and per-adapter traffic scope.
 - **`[05] System & GPU` -- Hardware Topology, DXGI GPU VRAM & Diagnostic Report (`Planned v0.5.0`)**.
 
@@ -78,7 +78,7 @@ cargo run --release
 ## CLI Flags
 
 ```powershell
-pulse_manager.exe --version   # Prints: PULSE v0.4.29 (pulse_manager)
+pulse_manager.exe --version   # Prints: PULSE v0.4.46 (pulse_manager)
 pulse_manager.exe --help      # Prints usage
 pulse_manager.exe --self-test # Headless CI self-test
 ```
@@ -87,4 +87,5 @@ pulse_manager.exe --self-test # Headless CI self-test
 
 For developers: [Architecture & Engineering Rules](ARCHITECTURE.md) - [Changelog](CHANGELOG.md)
 
-Open-Source under the MIT License. Copyright (c) 2026 Petro (pete702) - PULSE Project.
+Proprietary -- Copyright (c) 2026 Petro (pete702). All Rights Reserved.
+All source code and architecture belong exclusively to Petro (pete702). Copying, modifying, redistributing, or reusing the source code or binaries in any form without explicit written permission from the author is strictly prohibited. Free personal non-commercial use of official unmodified binaries only. See LICENSE for full terms.

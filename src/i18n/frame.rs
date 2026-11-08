@@ -109,6 +109,7 @@ pub mod locale {
 /// Formats the system-cache subtitle, e.g. "OS Reserve • 13.4% of RAM".
 #[allow(dead_code)]
 pub fn system_cache_subtitle(pct: f64) -> String {
+    let pct = if pct.is_finite() { pct.clamp(0.0, 100.0) } else { 0.0 };
     format!("OS Reserve • {pct:.1}% of RAM")
 }
 
@@ -121,6 +122,7 @@ pub fn kernel_pool_detail(paged: &str, nonpaged: &str) -> String {
 /// Formats the commit limit line with its usage percentage.
 #[allow(dead_code)]
 pub fn commit_limit_label(limit: &str, pct: f32) -> String {
+    let pct = if pct.is_finite() { pct.clamp(0.0, 100.0) } else { 0.0 };
     format!("Limit: {limit} ({pct:.1}%)")
 }
 

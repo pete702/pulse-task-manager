@@ -74,9 +74,11 @@ pub fn aggregate_io(raw: &[RawProcessCpuRow]) -> (f32, f32, Option<(u32, Arc<str
     let mut write_total = 0.0f32;
     let mut top: Option<(u32, Arc<str>, f32)> = None;
     for row in raw {
-        read_total += row.disk_read_mb_s;
-        write_total += row.disk_write_mb_s;
-        let sum = row.disk_read_mb_s + row.disk_write_mb_s;
+        let rr = clamp_rate(row.disk_read_mb_s);
+        let ww = clamp_rate(row.disk_write_mb_s);
+        read_total += rr;
+        write_total += ww;
+        let sum = rr + ww;
         if sum > TOP_IO_MIN_MB_S {
             let is_better = top.as_ref().is_some_and(|(best_pid, best_name, best)| {
                 if sum != *best {
@@ -98,7 +100,7 @@ pub fn aggregate_io(raw: &[RawProcessCpuRow]) -> (f32, f32, Option<(u32, Arc<str
 }
 
 /// Per-physical-disk process I/O fallback when IOCTL counters are missing.
-/// Unresolved drives attribute to the lowest physical disk so IO is never lost.
+/// Known letters of unmapped volumes never fall through to Disk 0.
 #[allow(dead_code)]
 #[allow(clippy::type_complexity)]
 pub fn aggregate_io_by_disk(
@@ -106,32 +108,60 @@ pub fn aggregate_io_by_disk(
     volumes: &[DiskVolumeInfo],
 ) -> HashMap<u32, (f64, f64)> {
     let mut drive_to_disk: HashMap<char, u32> = HashMap::new();
+    let mut unmapped: Vec<char> = Vec::new();
     let mut first_disk: Option<u32> = None;
     for vol in volumes {
+        let letter = crate::modules::storage::physical_disk::drive_letter(vol.mount_point.as_ref());
         if let Some(disk) = vol.physical_disk {
             if first_disk.is_none_or(|f| disk < f) {
                 first_disk = Some(disk);
             }
-            if let Some(letter) =
-                crate::modules::storage::physical_disk::drive_letter(vol.mount_point.as_ref())
-            {
+            if let Some(letter) = letter {
                 drive_to_disk.entry(letter).or_insert(disk);
             }
+        } else if let Some(letter) = letter {
+            unmapped.push(letter);
         }
     }
     let default_disk = first_disk.unwrap_or(0);
     let mut out: HashMap<u32, (f64, f64)> = HashMap::new();
     for row in raw {
-        let r = f64::from(row.disk_read_mb_s);
-        let w = f64::from(row.disk_write_mb_s);
+        let r = f64::from(clamp_rate(row.disk_read_mb_s));
+        let w = f64::from(clamp_rate(row.disk_write_mb_s));
         if r + w <= 0.0 {
             continue;
         }
         let letter = row.drive_letter.map(|b| (b as char).to_ascii_uppercase());
+        if let Some(l) = letter {
+            if unmapped.contains(&l) {
+                continue;
+            }
+        }
         let disk = letter.and_then(|l| drive_to_disk.get(&l).copied()).unwrap_or(default_disk);
         let entry = out.entry(disk).or_insert((0.0, 0.0));
         entry.0 += r;
         entry.1 += w;
+    }
+    out
+}
+
+#[allow(dead_code)]
+pub(super) fn aggregate_io_by_letter(raw: &[RawProcessCpuRow]) -> HashMap<char, (f64, f64)> {
+    let mut out: HashMap<char, (f64, f64)> = HashMap::new();
+    for row in raw {
+        let Some(b) = row.drive_letter else { continue };
+        let letter = (b as char).to_ascii_uppercase();
+        if !letter.is_ascii_alphabetic() {
+            continue;
+        }
+        let r = f64::from(clamp_rate(row.disk_read_mb_s));
+        let w = f64::from(clamp_rate(row.disk_write_mb_s));
+        if r + w <= 0.0 {
+            continue;
+        }
+        let e = out.entry(letter).or_insert((0.0, 0.0));
+        e.0 += r;
+        e.1 += w;
     }
     out
 }

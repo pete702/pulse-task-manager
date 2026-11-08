@@ -82,6 +82,45 @@ fn dedup_selects_one_per_disk() {
     assert!(unique2.contains(&"H:\\"));
 }
 #[test]
+fn unmapped_volume_gets_per_letter_rates_without_disk0_inflation() {
+    use crate::modules::storage::io_agg::{aggregate_io_by_disk, aggregate_io_by_letter};
+    use crate::modules::storage::model::{DiskMediaKind, DiskVolumeInfo};
+    let gb = 1024 * 1024 * 1024u64;
+    let mk = |m: &str| {
+        DiskVolumeInfo::new(
+            Arc::from(m),
+            Arc::from(m),
+            Arc::from("NTFS"),
+            DiskMediaKind::Ssd,
+            100 * gb,
+            50 * gb,
+        )
+    };
+    let mut c = mk("C:\\");
+    c.physical_disk = Some(0);
+    let mut l = mk("L:\\");
+    l.physical_disk = None;
+    let volumes = vec![c.clone(), l.clone()];
+    let mut row = raw(9, "game.exe", 5.0, 2.0);
+    row.drive_letter = Some(b'L');
+    let by_letter = aggregate_io_by_letter(&[row.clone()]);
+    assert_eq!(by_letter.get(&'L'), Some(&(5.0, 2.0)));
+    let by_disk = aggregate_io_by_disk(&[row], &volumes);
+    let disk0_read = by_disk.get(&0).map(|v| v.0).unwrap_or(0.0);
+    assert!(disk0_read < 1.0);
+    let mut collector = StorageCollector::new();
+    collector.tick_counter = 1;
+    collector.cached_volumes = Arc::from(vec![c, l]);
+    let mut hot = raw(9, "game.exe", 5.0, 2.0);
+    hot.drive_letter = Some(b'L');
+    let snap = collector.collect(&[hot], 99);
+    let l_vol = snap.volumes.iter().find(|v| v.mount_point.as_ref() == "L:\\").unwrap();
+    assert!((l_vol.read_mb_s - 5.0).abs() < 0.5);
+    assert!((l_vol.write_mb_s - 2.0).abs() < 0.5);
+    let c_vol = snap.volumes.iter().find(|v| v.mount_point.as_ref() == "C:\\").unwrap();
+    assert!(c_vol.read_mb_s < 1.0);
+}
+#[test]
 fn volume_low_space_detection() {
     use crate::modules::storage::model::{is_critical_space, used_pct_for};
     let gb = 1024 * 1024 * 1024u64;

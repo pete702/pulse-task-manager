@@ -1,16 +1,28 @@
 //! Physical disk mapping via Win32 IOCTLs (zero admin rights).
 //! Maps volume mount point to STORAGE_DEVICE_NUMBER + DISK_PERFORMANCE.
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
 };
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::System::IO::DeviceIoControl;
 
+#[cfg(target_os = "windows")]
 const IOCTL_STORAGE_GET_DEVICE_NUMBER: u32 = 0x002D1080;
+#[cfg(target_os = "windows")]
 const IOCTL_DISK_PERFORMANCE: u32 = 0x00070020;
+#[cfg(target_os = "windows")]
+const IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS: u32 = 0x0056_0000;
+#[cfg(target_os = "windows")]
 const INVALID_HANDLE: HANDLE = -1isize as HANDLE;
 
+#[cfg(target_os = "windows")]
 #[repr(C)]
 #[derive(Default)]
 struct StorageDeviceNumber {
@@ -29,7 +41,9 @@ pub fn drive_letter(mount: &str) -> Option<char> {
     }
 }
 
+#[cfg(target_os = "windows")]
 struct VolumeHandle(HANDLE);
+#[cfg(target_os = "windows")]
 impl Drop for VolumeHandle {
     #[allow(unsafe_code)]
     fn drop(&mut self) {
@@ -41,14 +55,13 @@ impl Drop for VolumeHandle {
     }
 }
 
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
-
+#[cfg(target_os = "windows")]
 fn handle_cache() -> &'static Mutex<HashMap<char, isize>> {
     static CACHE: OnceLock<Mutex<HashMap<char, isize>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+#[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 fn cached_volume(letter: char) -> Option<isize> {
     {
@@ -61,13 +74,27 @@ fn cached_volume(letter: char) -> Option<isize> {
     let raw = volume.0;
     std::mem::forget(volume);
     let mut cache = handle_cache().lock().unwrap_or_else(|e| e.into_inner());
-    if cache.len() >= 32 {
+    if cache.len() >= 32 && !cache.contains_key(&letter) {
+        for handle in cache.values() {
+            if *handle != 0 && *handle != INVALID_HANDLE {
+                unsafe {
+                    CloseHandle(*handle as HANDLE);
+                }
+            }
+        }
         cache.clear();
     }
-    cache.insert(letter, raw);
+    if let Some(old) = cache.insert(letter, raw) {
+        if old != raw {
+            unsafe {
+                CloseHandle(old as HANDLE);
+            }
+        }
+    }
     Some(raw)
 }
 
+#[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 fn evict_handle(letter: char) {
     let mut cache = handle_cache().lock().unwrap_or_else(|e| e.into_inner());
@@ -78,6 +105,7 @@ fn evict_handle(letter: char) {
     }
 }
 
+#[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 fn open_volume(letter: char) -> Option<VolumeHandle> {
     let path = format!("\\\\.\\{}:", letter);
@@ -101,6 +129,7 @@ fn open_volume(letter: char) -> Option<VolumeHandle> {
 }
 
 /// Returns (physical_disk, partition) for a mount point, or None on failure.
+#[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 pub fn physical_disk_for_mount(mount: &str) -> Option<(u32, u32)> {
     let letter = drive_letter(mount)?;
@@ -120,6 +149,27 @@ pub fn physical_disk_for_mount(mount: &str) -> Option<(u32, u32)> {
         )
     };
     if ok == 0 || returned < 12 {
+        let mut buf = [0u8; 32];
+        let mut returned2: u32 = 0;
+        let ok2 = unsafe {
+            DeviceIoControl(
+                handle,
+                IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS,
+                std::ptr::null(),
+                0,
+                buf.as_mut_ptr() as *mut _,
+                buf.len() as u32,
+                &mut returned2,
+                std::ptr::null_mut(),
+            )
+        };
+        if ok2 != 0 && returned2 >= 12 {
+            let num_extents = u32::from_ne_bytes(buf[0..4].try_into().unwrap_or([0; 4]));
+            let disk_num = u32::from_ne_bytes(buf[8..12].try_into().unwrap_or([0; 4]));
+            if num_extents >= 1 {
+                return Some((disk_num, 0));
+            }
+        }
         evict_handle(letter);
         return None;
     }
@@ -127,6 +177,7 @@ pub fn physical_disk_for_mount(mount: &str) -> Option<(u32, u32)> {
 }
 
 /// Returns (bytes_read, bytes_written) counters from DISK_PERFORMANCE, if any.
+#[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 pub fn perf_counters_for_mount(mount: &str) -> Option<(i64, i64)> {
     let letter = drive_letter(mount)?;
@@ -156,6 +207,7 @@ pub fn perf_counters_for_mount(mount: &str) -> Option<(i64, i64)> {
 
 /// Sums hardware counters across mounts using IOCTL_DISK_PERFORMANCE.
 #[allow(dead_code)]
+#[cfg(target_os = "windows")]
 pub fn sum_perf_counters(mounts: &[&str]) -> Option<(i64, i64)> {
     let mut read: i64 = 0;
     let mut written: i64 = 0;
@@ -169,6 +221,22 @@ pub fn sum_perf_counters(mounts: &[&str]) -> Option<(i64, i64)> {
     }
     any.then_some((read, written))
 }
+
+#[cfg(not(target_os = "windows"))]
+pub fn physical_disk_for_mount(_mount: &str) -> Option<(u32, u32)> {
+    None
+}
+#[cfg(not(target_os = "windows"))]
+pub fn perf_counters_for_mount(_mount: &str) -> Option<(i64, i64)> {
+    None
+}
+#[allow(dead_code)]
+#[cfg(not(target_os = "windows"))]
+pub fn sum_perf_counters(_mounts: &[&str]) -> Option<(i64, i64)> {
+    None
+}
+#[cfg(not(target_os = "windows"))]
+fn evict_handle(_letter: char) {}
 
 #[cfg(test)]
 #[path = "physical_disk_tests.rs"]

@@ -70,20 +70,6 @@ impl SystemSnapshot {
             os_scheduler_jitter_ms: jitter_ms,
         }
     }
-
-    #[cfg(test)]
-    #[inline]
-    pub fn minimal(uptime_secs: u64, pulse_ram_mb: f32) -> Self {
-        Self {
-            uptime_secs,
-            pulse_ram_mb,
-            memory: None,
-            cpu: None,
-            storage: StorageSnapshot::default(),
-            network: NetworkSnapshot::default(),
-            os_scheduler_jitter_ms: 0,
-        }
-    }
 }
 
 /// Channel type for snapshot transmission: `Sender` in background thread, `Receiver` in UI.
@@ -113,6 +99,17 @@ impl LatestSlot {
         if !queue.is_empty() {
             self.overflows.fetch_add(1, Ordering::Relaxed);
         }
+        if let Some(prev) = queue.back_mut() {
+            if Arc::strong_count(prev) == 1 {
+                let prev_mut = Arc::make_mut(prev);
+                if let Some(mem) = &mut prev_mut.memory {
+                    mem.processes = Arc::new(Vec::new());
+                }
+                if let Some(cpu) = &mut prev_mut.cpu {
+                    cpu.raw_processes = Arc::from(&[][..]);
+                }
+            }
+        }
         if queue.len() >= 960 {
             queue.pop_front();
         }
@@ -126,7 +123,7 @@ impl LatestSlot {
     }
 
     /// Takes the newest value, marking it as read and clearing the queue.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn take(&self) -> Option<Arc<SystemSnapshot>> {
         let mut queue = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let last = queue.pop_back();

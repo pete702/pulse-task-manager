@@ -13,8 +13,9 @@ pub fn cached_exe_path(pid: u32, start_time: u64) -> String {
             return v.clone();
         }
     }
-    let v = crate::modules::memory::win32_api::query_process_exe_path(pid)
-        .unwrap_or_else(|| format!("PID {pid}"));
+    let Some(v) = crate::modules::memory::query_process_exe_path(pid) else {
+        return format!("PID {pid}");
+    };
     {
         let mut g = slot.lock().unwrap_or_else(|e| e.into_inner());
         if g.len() >= 2048 {

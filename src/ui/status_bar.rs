@@ -44,12 +44,11 @@ fn cached_status_compact(active_processes: u32) -> Arc<str> {
 
 /// Cached diagnostics keyed by (RAM tenths, UI-hundredths): idle frames reuse the Arc.
 fn cached_diag(pulse_ram_mb: f32, last_ui_ms: f32) -> Arc<str> {
+    let ram = if pulse_ram_mb.is_finite() { pulse_ram_mb.max(0.0) } else { 0.0 };
+    let ui_ms = if last_ui_ms.is_finite() { last_ui_ms.max(0.0) } else { 0.0 };
     type Key2 = (u32, u32);
     static CACHE: OnceLock<Mutex<(Key2, Arc<str>)>> = OnceLock::new();
-    let key: Key2 = (
-        (pulse_ram_mb * 10.0).round().max(0.0) as u32,
-        (last_ui_ms * 100.0).round().max(0.0) as u32,
-    );
+    let key: Key2 = ((ram * 10.0).round().max(0.0) as u32, (ui_ms * 100.0).round().max(0.0) as u32);
     let mut cache = CACHE
         .get_or_init(|| Mutex::new(((u32::MAX, u32::MAX), Arc::from(""))))
         .lock()
@@ -58,8 +57,8 @@ fn cached_diag(pulse_ram_mb: f32, last_ui_ms: f32) -> Arc<str> {
         cache.0 = key;
         cache.1 = Arc::from(format!(
             "PULSE: {:.1} MB | UI: {:.2} ms | OS: {}",
-            pulse_ram_mb,
-            last_ui_ms,
+            ram,
+            ui_ms,
             os_locale_short()
         ));
     }
@@ -87,6 +86,7 @@ pub fn render_status_bar(
     snapshot: &Option<Arc<SystemSnapshot>>,
     last_ui_ms: f32,
 ) {
+    let bar_w = ui.available_width().max(0.0);
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new(Key::StatusReady.t())
@@ -95,7 +95,7 @@ pub fn render_status_bar(
                 .color(colors::ACCENT_CYAN),
         );
         ui.separator();
-        let wide = ui.available_width() >= 960.0;
+        let wide = bar_w >= 960.0;
         let status_text = if wide {
             cached_status(active_processes)
         } else {
