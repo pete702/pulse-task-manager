@@ -2,6 +2,12 @@
 
 Archived entries from 0.1.x. Recent 0.2.x entries live in CHANGELOG.md.
 
+## [0.4.32] - 2026-03-31
+
+- Switched repository and binary license to strict Proprietary (`All Rights Reserved`, explicit written permission required) with `publish = false` in `Cargo.toml`.
+- Gated `F5` refresh hotkey behind `!wants_keyboard_input()` in `src/app_tabs.rs` and compacted `src/core/persist.rs`.
+- **Version bump to 0.4.32**.
+
 ## [0.4.31] - 2026-03-31
 
 - **Deduplicate Poll**: `update` polls once before minimized check, duplicate `collect_snapshots` removed, `poll_snapshots` returns early on empty batch and sorts only when len > 1.

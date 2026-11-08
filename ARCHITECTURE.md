@@ -1,6 +1,6 @@
 # PULSE Architecture & Engineering Rules
 
-PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.88"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.4.46**.
+PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.88"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.4.47**.
 
 ## 1. Core Architectural Principles
 
@@ -39,7 +39,7 @@ PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and pro
 ## 4. Win32 FFI & Safety Invariants
 
 - `#![deny(unsafe_code)]` at crate root. Localized `#[allow(unsafe_code)]` blocks for: `K32GetPerformanceInfo`, `K32GetProcessMemoryInfo`, `K32EmptyWorkingSet`, `OpenProcess`, `IsProcessCritical`, `QueryFullProcessImageNameW`, `OpenProcessToken`, `GetTokenInformation`, `CloseHandle`, `TerminateProcess`, `GetUserDefaultLocaleName`, `AttachConsole` (verified v0.1.1).
-- Every FFI block isolated in helper functions with return-code checks, `std::mem::zeroed()` init.
+- Every FFI block isolated in helper functions with return-code checks, `std::mem::zeroed()` init. Cross-target: `HANDLE` is `isize` on Windows and non-Windows, Windows-only imports `cfg`-gated, fail-closed stubs keep Linux Clippy clean.
 - **TOCTOU Handle Identity**: `trim_single_pid` / `terminate_process_group` enforce `IsProcessCritical` + `QueryFullProcessImageNameW` via `verify_handle_identity` before mutation. Fail closed.
 - **Win11 x64 CFG Normalization**: `virtual_memory() >= 1 TiB` normalized to working set for realistic commit on grouped system services.
 

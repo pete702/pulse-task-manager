@@ -1,7 +1,9 @@
 //! Physical disk mapping via Win32 IOCTLs (zero admin rights).
 //! Maps volume mount point to STORAGE_DEVICE_NUMBER + DISK_PERFORMANCE.
 
+#[cfg(target_os = "windows")]
 use std::collections::HashMap;
+#[cfg(target_os = "windows")]
 use std::sync::{Mutex, OnceLock};
 
 #[cfg(target_os = "windows")]
@@ -235,6 +237,7 @@ pub fn perf_counters_for_mount(_mount: &str) -> Option<(i64, i64)> {
 pub fn sum_perf_counters(_mounts: &[&str]) -> Option<(i64, i64)> {
     None
 }
+#[allow(dead_code)]
 #[cfg(not(target_os = "windows"))]
 fn evict_handle(_letter: char) {}
 

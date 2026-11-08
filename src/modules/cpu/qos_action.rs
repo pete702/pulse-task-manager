@@ -5,9 +5,10 @@ use crate::modules::memory::actions::{
     TrimSkipReason,
 };
 use crate::modules::memory::process_target::ProcessTarget;
+#[cfg(target_os = "windows")]
+use crate::modules::memory::safe_handle::{is_handle_critical, verify_handle_identity};
 use crate::modules::memory::safe_handle::{
-    is_handle_critical, query_process_image_path, verify_handle_identity, verify_pid_safety_gate,
-    SafeHandle,
+    query_process_image_path, verify_pid_safety_gate, SafeHandle,
 };
 use std::collections::HashMap;
 use std::path::Path;

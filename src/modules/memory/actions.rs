@@ -2,15 +2,21 @@
 //! Provides verified working set trim, batch operations, termination, and file location opening.
 
 use std::path::Path;
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::Foundation::{GetLastError, HANDLE};
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::System::ProcessStatus::{
     K32EmptyWorkingSet, K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
 };
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Threading::{
     TerminateProcess, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
 };
 
 use crate::modules::memory::process_target::ProcessTarget;
+#[cfg(not(target_os = "windows"))]
+use crate::modules::memory::safe_handle::verify_pid_safety_gate;
+#[cfg(target_os = "windows")]
 use crate::modules::memory::safe_handle::{
     is_handle_critical, verify_handle_identity, verify_pid_safety_gate, SafeHandle,
 };
@@ -33,6 +39,7 @@ pub enum TrimSkipReason {
 }
 
 /// Queries the working set size of a process via K32GetProcessMemoryInfo.
+#[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 unsafe fn query_working_set(handle: HANDLE) -> Option<u64> {
     let mut pmc: PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
@@ -49,11 +56,13 @@ unsafe fn query_working_set(handle: HANDLE) -> Option<u64> {
     }
 }
 
+#[cfg(target_os = "windows")]
 fn identity_matches(handle: &SafeHandle, target: &ProcessTarget) -> bool {
     verify_handle_identity(handle, &target.name, target.creation_time, target.exe_path.as_deref())
 }
 
 /// Per-process verified working set trim with TOCTOU identity verification.
+#[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 pub fn trim_single_pid(target: &ProcessTarget) -> Result<u64, TrimSkipReason> {
     if verify_pid_safety_gate(target.pid, &target.name).is_err() {
@@ -82,6 +91,13 @@ pub fn trim_single_pid(target: &ProcessTarget) -> Result<u64, TrimSkipReason> {
         unsafe { query_working_set(handle.as_raw()) }.ok_or(TrimSkipReason::AccessDenied)?;
     Ok(ws_before.saturating_sub(ws_after))
 }
+#[cfg(not(target_os = "windows"))]
+pub fn trim_single_pid(target: &ProcessTarget) -> Result<u64, TrimSkipReason> {
+    if verify_pid_safety_gate(target.pid, &target.name).is_err() {
+        return Err(TrimSkipReason::Protected);
+    }
+    Err(TrimSkipReason::AccessDenied)
+}
 
 /// Batch trim for verified process targets.
 pub fn trim_process_group(targets: &[ProcessTarget]) -> ReclaimReport {
@@ -107,6 +123,7 @@ pub fn purge_system_working_sets(targets: &[ProcessTarget]) -> ReclaimReport {
 }
 
 /// Terminates verified targets. Returns the count terminated, or a gate error.
+#[cfg(target_os = "windows")]
 pub fn terminate_process_group(targets: &[ProcessTarget]) -> Result<usize, String> {
     for target in targets {
         if let Err(reason) = verify_pid_safety_gate(target.pid, &target.name) {
@@ -127,6 +144,15 @@ pub fn terminate_process_group(targets: &[ProcessTarget]) -> Result<usize, Strin
         }
     }
     Ok(terminated)
+}
+#[cfg(not(target_os = "windows"))]
+pub fn terminate_process_group(targets: &[ProcessTarget]) -> Result<usize, String> {
+    for target in targets {
+        if let Err(reason) = verify_pid_safety_gate(target.pid, &target.name) {
+            return Err(format!("PID {} ({}): {}", target.pid, target.name, reason));
+        }
+    }
+    Ok(0)
 }
 
 /// Opens the containing folder of an executable in Explorer with the file selected.

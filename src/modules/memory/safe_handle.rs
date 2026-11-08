@@ -14,7 +14,7 @@ use windows_sys::Win32::System::Threading::{
     PROCESS_QUERY_LIMITED_INFORMATION,
 };
 #[cfg(not(target_os = "windows"))]
-pub type HANDLE = *mut std::os::raw::c_void;
+pub type HANDLE = isize;
 
 pub struct SafeHandle(HANDLE);
 impl SafeHandle {

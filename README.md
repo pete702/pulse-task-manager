@@ -58,6 +58,7 @@ Future Pro extensions (24h history, automation rules) will be optional offline m
 - **PID Safety Gate**: Blocks PID 0, PID 4, self-PID, 31 critical OS processes, and 11 known anti-cheat processes before any mutating action.
 - **3-Point Process Identity**: `basename + creation_time + full_path` verification before any mutating action; frozen target list on `[ End Task ]` confirmation.
 - **Three Walls Badge**: Live `SYSTEM OPTIMAL` / `RAM ELEVATED` / `MEMORY WALL` indicator driven by RAM and Commit pressure.
+- **Cross-Target CI**: Linux Clippy clean with `HANDLE` as `isize` on all targets, `cfg`-gated imports in `qos_action.rs`, `physical_disk.rs`, `safe_handle.rs`, `actions.rs`, fail-closed stubs for non-Windows.
 
 ## Keyboard Shortcuts
 
@@ -78,7 +79,7 @@ cargo run --release
 ## CLI Flags
 
 ```powershell
-pulse_manager.exe --version   # Prints: PULSE v0.4.46 (pulse_manager)
+pulse_manager.exe --version   # Prints: PULSE v0.4.47 (pulse_manager)
 pulse_manager.exe --help      # Prints usage
 pulse_manager.exe --self-test # Headless CI self-test
 ```

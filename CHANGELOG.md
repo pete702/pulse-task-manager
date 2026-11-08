@@ -2,6 +2,11 @@
 
 All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
 
+## [0.4.47] - 2026-03-31
+
+- **Linux CI Clean**: `cfg`-gated Windows imports in `qos_action.rs` and `physical_disk.rs`; `HANDLE` unified to `isize` in `safe_handle.rs`; Win32 calls wrapped with non-Windows stubs in `actions.rs`.
+- **Version bump to 0.4.47**.
+
 ## [0.4.46] - 2026-03-31
 
 - **Single-Source Layout**: `table_body.rs` computes `col_w/col_x` once per frame; headers, cells, and dividers at `col_x[i+1]` share exact X positions; `TableBuilder` removed; cells inset 6px, RAM bar capped in `widths[4]`.
@@ -102,9 +107,3 @@ All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGEL
 - **Worker Cleanup**: `WorkerExitGuard` resets scan request, removed redundant interval branches and pre-tick wait, `worker_loop` 240 lines.
 - **Persist & Ingest**: `serialize` clamps tab/chart/filter fields, test constant private, `poll_snapshots` uses `worker.drain_overflow_snapshots` in both branches.
 - **Version bump to 0.4.33**.
-
-## [0.4.32] - 2026-03-31
-
-- Switched repository and binary license to strict Proprietary (`All Rights Reserved`, explicit written permission required) with `publish = false` in `Cargo.toml`.
-- Gated `F5` refresh hotkey behind `!wants_keyboard_input()` in `src/app_tabs.rs` and compacted `src/core/persist.rs`.
-- **Version bump to 0.4.32**.
