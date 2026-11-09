@@ -2,6 +2,56 @@
 
 Archived entries from 0.1.x. Recent 0.2.x entries live in CHANGELOG.md.
 
+## [0.4.39] - 2026-03-31
+
+- **Compact Volume Rows**: replaced tall 2-column disk boxes with sleek single-row strips, `Margin::symmetric(10.0, 6.0)`, spacing 4.0, slim 5px bars, one-line `R/W` + `Used/Total` + badge.
+- **Badge Wording**: critical `LOW FREE (% USED)`, `>=80%` `HIGH USE`, else `OK (% USED)`; `None` title `VOLUME L:` without verbatim `L:\` duplicate.
+- **Process Table**: idle groups filtered, top-8 retained, `scan_key` hardened, KPI truncate 32, process column 48% with truncate 38, dedup truncate.
+- **Version bump to 0.4.39**.
+
+## [0.4.38] - 2026-03-31
+
+- **Handle Cache**: evicted handles closed before clear, race-safe insert closes displaced handle, non-Windows stubs for Win32 IOCTL mapping.
+- **Unmapped Volume**: per-letter process I/O stamps `physical_disk == None` volumes like `L:\` live, no Disk 0 inflation, `prev_per_disk` pruned, unmapped totals included.
+- **History Scope**: timestamp finite guards, single-key eviction, synthetic `0x8000_0000` key scopes unmapped chart series, per-letter aggregate test added.
+- **Version bump to 0.4.38**.
+
+## [0.4.37] - 2026-03-31
+
+- **Interactive Legend**: Storage Read/Write toggles with at-least-one guard, ceiling rescales to enabled series only.
+- **Live Header**: throughput readout `R: X MB/s | W: Y MB/s`, time labels backed so fill never obscures text.
+- **NaN Guards**: history and chart sanitize non-finite throughput to zero, toggle peak test added.
+- **Version bump to 0.4.37**.
+
+## [0.4.36] - 2026-03-31
+
+- **Chrome Harden**: self-RAM sanitized, CPU pcts clamped, health pill hidden below 720px, scanline guarded/clamped.
+- **Status & Walls**: diag sanitized, width measured before horizontal, Three Walls NaN/Inf rejected, i18n pcts clamped.
+- **Unified Count**: sidebar and status bar both use cpu.process_count.max(processes.len()).
+- **Version bump to 0.4.36**.
+
+## [0.4.35] - 2026-03-31
+
+- **NaN Geometry Guard**: `primitives.rs` early-returns on non-finite/tiny rects, sanitizes ratios, verifies inner size before clamp, `cyber_accent` sanitizes input.
+- **Sidebar Unload**: badge painting moved to `sidebar_badges.rs::draw_tab_badge`, width clamped, keyboard input hoisted, badges hidden below 140px.
+- **Badge Sanitization**: cached formatters and hysteresis clamp non-finite inputs to zero, NaN/Inf never latches state.
+- **Version bump to 0.4.35**.
+
+## [0.4.34] - 2026-03-31
+
+- **Storage Attribution**: CPU scan uses `with_exe(UpdateKind::OnlyIfNotSet)` for one-time exe queries, disk guards test-only, brand fallback deduped.
+- **Table Split**: bottom action bar moved to `table_menu.rs`, both table files under 235 lines.
+- **Non-Windows Stubs**: `SafeHandle` and EcoQoS Win32 calls gated with fail-closed stubs for clean Linux linking.
+- **License**: Proprietary notice permits personal non-commercial binary use, strict source/binary restrictions otherwise, `publish = false`.
+- **Version bump to 0.4.34**.
+
+## [0.4.33] - 2026-03-31
+
+- **GUI Self-Test Exit**: `SelfTestApp` stores `passed: Arc<AtomicBool>` on valid snapshot, headless checks storage/network/jitter finiteness, GUI failure exits 1.
+- **Worker Cleanup**: `WorkerExitGuard` resets scan request, removed redundant interval branches and pre-tick wait, `worker_loop` 240 lines.
+- **Persist & Ingest**: `serialize` clamps tab/chart/filter fields, test constant private, `poll_snapshots` uses `worker.drain_overflow_snapshots` in both branches.
+- **Version bump to 0.4.33**.
+
 ## [0.4.32] - 2026-03-31
 
 - Switched repository and binary license to strict Proprietary (`All Rights Reserved`, explicit written permission required) with `publish = false` in `Cargo.toml`.

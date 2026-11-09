@@ -36,3 +36,35 @@ fn test_process_cpu_item_formatting() {
     item.update_formatted();
     assert_eq!(item.clone_text.as_ref(), "[5]x");
 }
+#[test]
+fn item_clamps_nonfinite_cpu() {
+    for v in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -5.0] {
+        let item = ProcessCpuItem::new(1, Arc::from("a.exe"), v, 1024, None);
+        assert!(item.cpu_pct >= 0.0 && item.cpu_pct <= 100.0, "v={v}");
+    }
+    let nan = ProcessCpuItem::new(1, Arc::from("a.exe"), f32::NAN, 1024, None);
+    assert_eq!(nan.cpu_pct, 0.0);
+    assert_eq!(nan.cpu_text.as_ref(), "0.0%");
+    let neg = ProcessCpuItem::new(1, Arc::from("a.exe"), -5.0, 1024, None);
+    assert_eq!(neg.cpu_pct, 0.0);
+    let raw = RawProcessCpuRow {
+        pid: 2,
+        name: Arc::from("b.exe"),
+        cpu_usage: f32::INFINITY,
+        ram_bytes: 2048,
+        disk_read_mb_s: 0.0,
+        disk_write_mb_s: 0.0,
+        eco_qos: None,
+        exe_path: None,
+        drive_letter: None,
+        creation_time: None,
+        start_time: 0,
+    };
+    let item = ProcessCpuItem::from_raw(&raw);
+    assert_eq!(item.cpu_pct, 0.0);
+    assert_eq!(item.cpu_text.as_ref(), "0.0%");
+    let raw2 = RawProcessCpuRow { cpu_usage: 150.0, ..raw.clone() };
+    let item2 = ProcessCpuItem::from_raw(&raw2);
+    assert_eq!(item2.cpu_pct, 100.0);
+    assert_eq!(item2.cpu_text.as_ref(), "100.0%");
+}

@@ -19,15 +19,10 @@ pub fn render_quick_filters(ui: &mut egui::Ui, state: &mut CpuTableState) -> boo
                 egui::Color32::TRANSPARENT
             },
         );
-        if ui.add(btn).clicked() {
+        if ui.add(btn).clicked() && !active {
             state.set_quick_filter(f);
             changed = true;
         }
     }
     changed
-}
-/// Returns true when a raw row passes the quick filter.
-#[allow(dead_code)]
-pub fn passes(f: ProcessQuickFilter, cpu_pct: f32, ram: u64, io: f32, eco: Option<bool>) -> bool {
-    f.matches(cpu_pct, ram, io, eco)
 }

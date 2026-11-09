@@ -23,3 +23,10 @@ fn pid_reuse_with_new_start_time_is_new() {
     assert!(c.is_new(100, 2));
     assert!(c.is_new(101, 1));
 }
+#[test]
+fn disk_rate_uses_production_helper() {
+    assert_eq!(CpuCollector::disk_rate(200, 100, 1.0), 100);
+    assert_eq!(CpuCollector::disk_rate(100, 200, 1.0), 0);
+    assert_eq!(CpuCollector::disk_rate(200, 100, 0.0), 0);
+    assert_eq!(CpuCollector::disk_rate(1_000_000, 0, 2.0), 500_000);
+}

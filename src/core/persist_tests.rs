@@ -24,6 +24,7 @@ fn roundtrip_custom() {
         process_quick_filter: 0,
         win_w: 1920.0,
         win_h: 1080.0,
+        cpu_col_widths: None,
     };
     assert_eq!(parse(&serialize(&s)), s);
 }
@@ -82,4 +83,13 @@ fn parse_nan_inf_win_fallback() {
     assert!(s.win_h.is_finite());
     assert_eq!(s.win_w, 1180.0);
     assert_eq!(s.win_h, 760.0);
+}
+#[test]
+fn roundtrip_cpu_col_widths() {
+    let s = PersistedState {
+        cpu_col_widths: Some([56.0, 210.0, 64.0, 78.0, 140.0, 96.0, 88.0]),
+        ..Default::default()
+    };
+    let r = parse(&serialize(&s));
+    assert_eq!(r.cpu_col_widths, Some([56.0, 210.0, 64.0, 78.0, 140.0, 96.0, 88.0]));
 }

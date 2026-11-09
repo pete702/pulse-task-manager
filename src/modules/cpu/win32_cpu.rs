@@ -16,6 +16,11 @@ static CPU_BRAND: OnceLock<Arc<str>> = OnceLock::new();
 /// Cached base MHz (MaxMhz from CallNtPowerInformation, read once at startup).
 static BASE_MHZ: OnceLock<u64> = OnceLock::new();
 
+pub(crate) fn decode_utf16_cstr(buf: &[u16]) -> String {
+    let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    String::from_utf16_lossy(&buf[..end]).trim().to_string()
+}
+
 fn fallback_brand(sys: &System) -> String {
     if let Some(cpu) = sys.cpus().first() {
         let b = cpu.brand().trim();
@@ -107,15 +112,6 @@ pub struct ProcessorPowerInfo {
     pub current_idle_state: u32,
 }
 
-/// Live CPU telemetry read from Win32 APIs.
-#[derive(Clone, Debug, Default)]
-#[allow(dead_code)]
-pub struct CpuWin32Telemetry {
-    pub base_mhz: u64,
-    pub current_mhz: u64,
-    pub brand: Arc<str>,
-}
-
 /// Reads live CPU current frequency (CurrentMhz) per core.
 /// Returns current_mhz where current_mhz reflects Turbo Boost / SpeedShift.
 /// Base MHz is read from the cached BASE_MHZ (initialized once at startup).
@@ -199,7 +195,7 @@ fn read_cpu_brand_registry() -> Result<String, std::io::Error> {
         return Err(std::io::Error::from_raw_os_error(result as i32));
     }
     let len = (buf_size / 2) as usize;
-    Ok(String::from_utf16_lossy(&buf[..len.min(buf.len())]))
+    Ok(decode_utf16_cstr(&buf[..len.min(buf.len())]))
 }
 
 /// Non-Windows stub: no registry on this platform.
@@ -214,4 +210,16 @@ pub fn warmup_cpu_refresh(sys: &mut System) {
     sys.refresh_cpu_specifics(sysinfo::CpuRefreshKind::new().with_cpu_usage());
     std::thread::yield_now();
     sys.refresh_cpu_specifics(sysinfo::CpuRefreshKind::new().with_cpu_usage());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn strips_nul_and_spaces() {
+        let buf: Vec<u16> = "  AMD Ryzen 9 \0\0".encode_utf16().collect();
+        assert_eq!(decode_utf16_cstr(&buf), "AMD Ryzen 9");
+        let buf2: Vec<u16> = "abc\0def".encode_utf16().collect();
+        assert_eq!(decode_utf16_cstr(&buf2), "abc");
+    }
 }

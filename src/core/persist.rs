@@ -41,6 +41,7 @@ pub struct PersistedState {
     pub process_quick_filter: u8,
     pub win_w: f32,
     pub win_h: f32,
+    pub cpu_col_widths: Option<[f32; 7]>,
 }
 impl Default for PersistedState {
     fn default() -> Self {
@@ -60,6 +61,7 @@ impl Default for PersistedState {
             process_quick_filter: 0,
             win_w: 1180.0,
             win_h: 760.0,
+            cpu_col_widths: None,
         }
     }
 }
@@ -99,14 +101,21 @@ pub fn save_state(s: &PersistedState) -> std::io::Result<()> {
 pub fn serialize(s: &PersistedState) -> String {
     let win_w = if s.win_w.is_finite() { s.win_w } else { 1180.0 };
     let win_h = if s.win_h.is_finite() { s.win_h } else { 760.0 };
-    format!(
+    let mut out = format!(
         "active_tab={}\ngroup_clones={}\ncompact_rows={}\nsort_col={}\nsort_asc={}\ncpu_show_grid={}\nmem_window_secs={}\ncpu_window_secs={}\nstorage_window_secs={}\nnetwork_window_secs={}\nnetwork_chart_mode={}\nnetwork_probe_enabled={}\nprocess_quick_filter={}\nwin_w={:.1}\nwin_h={:.1}\n",
         s.active_tab.min(5), bool_str(s.group_clones), bool_str(s.compact_rows), sort_col_str(s.sort_col),
         bool_str(s.sort_asc), bool_str(s.cpu_show_grid), s.mem_window_secs, s.cpu_window_secs,
         s.storage_window_secs, s.network_window_secs, s.network_chart_mode.min(2),
         bool_str(s.network_probe_enabled), s.process_quick_filter.min(3), win_w.clamp(860.0, 3840.0),
         win_h.clamp(560.0, 2160.0),
-    )
+    );
+    if let Some(w) = s.cpu_col_widths {
+        out.push_str(&format!(
+            "cpu_col_widths={:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1}\n",
+            w[0], w[1], w[2], w[3], w[4], w[5], w[6]
+        ));
+    }
+    out
 }
 pub fn parse(text: &str) -> PersistedState {
     let mut s = PersistedState::default();
@@ -133,10 +142,19 @@ pub fn parse(text: &str) -> PersistedState {
             "process_quick_filter" => s.process_quick_filter = v.parse::<u8>().unwrap_or(0).min(3),
             "win_w" => s.win_w = parse_f32_clamp(v, 1180.0, 860.0, 3840.0),
             "win_h" => s.win_h = parse_f32_clamp(v, 760.0, 560.0, 2160.0),
+            "cpu_col_widths" => s.cpu_col_widths = parse_col_widths(v),
             _ => {}
         }
     }
     s
+}
+fn parse_col_widths(v: &str) -> Option<[f32; 7]> {
+    let parts: Vec<f32> =
+        v.split(',').map(|p| p.trim().parse::<f32>().unwrap_or(f32::NAN)).collect();
+    if parts.len() != 7 || !parts.iter().all(|x| x.is_finite() && *x >= 32.0) {
+        return None;
+    }
+    Some([parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]])
 }
 fn parse_f32_clamp(v: &str, def: f32, lo: f32, hi: f32) -> f32 {
     v.parse::<f32>().ok().filter(|x: &f32| x.is_finite()).unwrap_or(def).clamp(lo, hi)

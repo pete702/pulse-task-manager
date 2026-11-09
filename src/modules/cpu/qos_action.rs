@@ -5,10 +5,9 @@ use crate::modules::memory::actions::{
     TrimSkipReason,
 };
 use crate::modules::memory::process_target::ProcessTarget;
-#[cfg(target_os = "windows")]
-use crate::modules::memory::safe_handle::{is_handle_critical, verify_handle_identity};
 use crate::modules::memory::safe_handle::{
-    query_process_image_path, verify_pid_safety_gate, SafeHandle,
+    is_handle_critical, query_process_image_path, verify_handle_identity, verify_pid_safety_gate,
+    SafeHandle,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -30,8 +29,8 @@ pub fn is_system_process(name: &str) -> bool {
 fn pending_insert(key: (u32, u64), val: Option<bool>) {
     let slot = PENDING_ECO.get_or_init(|| Mutex::new(HashMap::new()));
     let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
-    if guard.len() > 512 {
-        guard.clear();
+    if guard.len() >= 512 {
+        guard.keys().next().copied().map(|k| guard.remove(&k));
     }
     guard.insert(key, val);
 }
@@ -40,16 +39,12 @@ pub fn mark_pending_eco(pid: u32, start_time: u64, on: bool) {
     pending_insert((pid, start_time), Some(on));
 }
 #[allow(dead_code)]
-pub fn set_eco_watch(pid: u32, start_time: u64, on: bool) {
-    mark_pending_eco(pid, start_time, on);
-}
-#[allow(dead_code)]
-pub fn probe_eco_qos_budgeted(pid: u32, budget: &mut u8) -> Option<Option<bool>> {
-    if *budget == 0 {
+pub fn probe_eco_qos_budgeted(pid: u32, budget: &mut u8) -> Option<bool> {
+    if pid == 0 || pid == 4 || *budget == 0 {
         return None;
     }
     *budget -= 1;
-    Some(is_process_eco_qos(pid))
+    is_process_eco_qos(pid)
 }
 pub(crate) fn target_for(
     pid: u32,
@@ -58,10 +53,8 @@ pub(crate) fn target_for(
     exe: Option<String>,
 ) -> Option<ProcessTarget> {
     #[cfg(target_os = "windows")]
-    let creation_time = Some(ct?);
-    #[cfg(not(target_os = "windows"))]
-    let creation_time = ct;
-    Some(ProcessTarget { pid, creation_time, name: name.to_string(), exe_path: exe })
+    ct?;
+    Some(ProcessTarget { pid, creation_time: ct, name: name.to_string(), exe_path: exe })
 }
 #[cfg(target_os = "windows")]
 pub(crate) fn build_throttling_masks(enable: bool) -> (u32, u32) {
@@ -89,24 +82,29 @@ pub fn set_process_eco_qos(
         creation_time.ok_or_else(|| "Cannot read process creation time".to_string())?;
     let handle = SafeHandle::open(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_INFORMATION, pid)
         .ok_or_else(|| "Access denied while opening process".to_string())?;
-    let img = query_process_image_path(&handle);
-    let expected_path = exe_path.as_deref().filter(|s| !s.trim().is_empty()).or(img.as_deref());
+    let expected_path = exe_path.as_deref().filter(|s| !s.trim().is_empty());
     if is_handle_critical(&handle)
         || !verify_handle_identity(&handle, name, Some(creation_time), expected_path)
     {
         return Err("Process identity verification failed".to_string());
     }
-    if enable {
+    let priority = if enable {
         let cur = unsafe { GetPriorityClass(handle.as_raw()) };
-        if cur != IDLE_PRIORITY_CLASS {
+        if cur != 0 && cur != IDLE_PRIORITY_CLASS {
             let slot = ORIG_PRIORITY.get_or_init(|| Mutex::new(HashMap::new()));
             let mut g = slot.lock().unwrap_or_else(|e| e.into_inner());
-            if g.len() > 512 {
-                g.clear();
+            if g.len() >= 512 {
+                g.keys().next().copied().map(|k| g.remove(&k));
             }
             g.entry((pid, creation_time)).or_insert(cur);
         }
-    }
+        IDLE_PRIORITY_CLASS
+    } else {
+        ORIG_PRIORITY
+            .get()
+            .and_then(|s| s.lock().unwrap_or_else(|e| e.into_inner()).remove(&(pid, creation_time)))
+            .unwrap_or(NORMAL_PRIORITY_CLASS)
+    };
     let (control_mask, state_mask) = build_throttling_masks(enable);
     let state = PROCESS_POWER_THROTTLING_STATE {
         Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
@@ -124,16 +122,6 @@ pub fn set_process_eco_qos(
     if info_ok == 0 {
         return Err("Failed to apply power throttling state".to_string());
     }
-    let priority = if enable {
-        IDLE_PRIORITY_CLASS
-    } else {
-        ORIG_PRIORITY
-            .get()
-            .and_then(|s| {
-                s.lock().unwrap_or_else(|e| e.into_inner()).get(&(pid, creation_time)).copied()
-            })
-            .unwrap_or(NORMAL_PRIORITY_CLASS)
-    };
     if unsafe { SetPriorityClass(handle.as_raw(), priority) } == 0 {
         return Err("Failed to set priority class".to_string());
     }
@@ -149,14 +137,6 @@ pub fn set_process_eco_qos(
 ) -> Result<(), String> {
     Err("EcoQoS requires Windows".to_string())
 }
-pub fn enable_eco_qos(
-    pid: u32,
-    name: &str,
-    ct: Option<u64>,
-    exe: Option<String>,
-) -> Result<(), String> {
-    set_process_eco_qos(pid, name, ct, exe, true)
-}
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 pub fn is_process_eco_qos(pid: u32) -> Option<bool> {
@@ -164,9 +144,9 @@ pub fn is_process_eco_qos(pid: u32) -> Option<bool> {
         return Some(false);
     }
     let handle = SafeHandle::open(PROCESS_QUERY_LIMITED_INFORMATION, pid)?;
-    let priority = unsafe { GetPriorityClass(handle.as_raw()) };
-    if priority == IDLE_PRIORITY_CLASS {
-        return Some(true);
+    let prio = unsafe { GetPriorityClass(handle.as_raw()) };
+    if prio == 0 {
+        return None;
     }
     let mut state: PROCESS_POWER_THROTTLING_STATE = unsafe { std::mem::zeroed() };
     let ok = unsafe {
@@ -178,9 +158,13 @@ pub fn is_process_eco_qos(pid: u32) -> Option<bool> {
         )
     };
     if ok != 0 {
-        return Some(state.StateMask & PROCESS_POWER_THROTTLING_EXECUTION_SPEED != 0);
+        return Some(
+            (state.ControlMask & PROCESS_POWER_THROTTLING_EXECUTION_SPEED) != 0
+                && (state.StateMask & PROCESS_POWER_THROTTLING_EXECUTION_SPEED) != 0
+                || prio == IDLE_PRIORITY_CLASS,
+        );
     }
-    Some(false)
+    Some(prio == IDLE_PRIORITY_CLASS)
 }
 #[cfg(not(target_os = "windows"))]
 pub fn is_process_eco_qos(_pid: u32) -> Option<bool> {
@@ -203,10 +187,34 @@ pub fn trim_process_working_set(
         TrimSkipReason::CriticalProcess => "Critical process".to_string(),
     })
 }
-pub fn open_process_file_location(pid: u32) -> Result<(), String> {
+pub fn open_process_file_location(
+    pid: u32,
+    name: &str,
+    creation_time: Option<u64>,
+    exe_path: Option<&str>,
+) -> Result<(), String> {
+    if is_system_process(name) {
+        return Err("System process is protected".to_string());
+    }
+    if verify_pid_safety_gate(pid, name).is_err() {
+        return Err("Process is protected by safety gate".to_string());
+    }
     let handle = SafeHandle::open_process(pid)
         .ok_or_else(|| "Access denied while opening process".to_string())?;
-    let path = query_process_image_path(&handle)
+    if is_handle_critical(&handle)
+        || !verify_handle_identity(
+            &handle,
+            name,
+            creation_time,
+            exe_path.filter(|s| !s.trim().is_empty()),
+        )
+    {
+        return Err("Blocked by process identity or safety check".to_string());
+    }
+    let path = exe_path
+        .filter(|s| !s.trim().is_empty())
+        .map(str::to_owned)
+        .or_else(|| query_process_image_path(&handle))
         .ok_or_else(|| "Cannot resolve executable path".to_string())?;
     open_path(Path::new(&path))
 }
@@ -236,9 +244,6 @@ mod tests {
                 && is_system_process("svchost.exe")
                 && !is_system_process("chrome.exe")
         );
-    }
-    #[test]
-    fn test_build_throttling_masks() {
         let (on_c, on_s) = build_throttling_masks(true);
         assert!(on_c != 0 && on_s != 0);
         let (off_c, off_s) = build_throttling_masks(false);
@@ -249,5 +254,9 @@ mod tests {
     fn test_target_for_rejects_none_on_windows() {
         assert!(target_for(123, "app.exe", None, None).is_none());
         assert!(target_for(123, "app.exe", Some(42), None).is_some());
+    }
+    #[test]
+    fn open_location_rejects_system_pid_4() {
+        assert!(open_process_file_location(4, "System", None, None).is_err());
     }
 }

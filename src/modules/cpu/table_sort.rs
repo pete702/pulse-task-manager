@@ -19,18 +19,7 @@ pub fn contains_ci(haystack: &str, needle: &str) -> bool {
 
 /// Builds one display item from a raw row plus its RAM delta.
 pub fn item_from_raw_cpu(row: &RawProcessCpuRow, delta: i64) -> ProcessCpuItem {
-    let mut item = ProcessCpuItem::new(
-        row.pid,
-        Arc::clone(&row.name),
-        row.cpu_usage.clamp(0.0, 100.0),
-        row.ram_bytes,
-        row.creation_time,
-    );
-    item.start_time = row.start_time;
-    item.drive_letter = row.drive_letter;
-    item.exe_path = row.exe_path.clone().unwrap_or_default();
-    item.disk_read_mb_s = row.disk_read_mb_s;
-    item.disk_write_mb_s = row.disk_write_mb_s;
+    let mut item = ProcessCpuItem::from_raw(row);
     item.ram_delta_10s = delta;
     item.update_formatted();
     item
@@ -38,20 +27,24 @@ pub fn item_from_raw_cpu(row: &RawProcessCpuRow, delta: i64) -> ProcessCpuItem {
 
 /// Filters rows, merges clone groups, then sorts the result.
 /// `query_lower` is pre-lowercased once by the caller.
+#[allow(clippy::too_many_arguments)]
 pub fn filter_group_and_sort(
     processes: &[RawProcessCpuRow],
+    deltas: &HashMap<(u32, u64), i64>,
     query_lower: &str,
     quick_filter: crate::modules::cpu::table_state::ProcessQuickFilter,
     group_clones: bool,
     sort_col: CpuSortCol,
     sort_asc: bool,
-    deltas: &HashMap<(u32, u64), i64>,
+    eco_overrides: &HashMap<(u32, u64), bool>,
 ) -> Vec<ProcessCpuItem> {
     let mut items: Vec<ProcessCpuItem> = processes
         .iter()
         .filter(|row| {
+            let effective_eco =
+                eco_overrides.get(&(row.pid, row.start_time)).copied().or(row.eco_qos);
             let io = row.disk_read_mb_s + row.disk_write_mb_s;
-            let quick_ok = quick_filter.matches(row.cpu_usage, row.ram_bytes, io, row.eco_qos);
+            let quick_ok = quick_filter.matches(row.cpu_usage, row.ram_bytes, io, effective_eco);
             if !quick_ok {
                 return false;
             }
@@ -61,7 +54,11 @@ pub fn filter_group_and_sort(
         })
         .map(|row| {
             let delta = deltas.get(&(row.pid, row.start_time)).copied().unwrap_or(0);
-            item_from_raw_cpu(row, delta)
+            let mut item = item_from_raw_cpu(row, delta);
+            let effective_eco =
+                eco_overrides.get(&(row.pid, row.start_time)).copied().or(row.eco_qos);
+            item.eco_qos = effective_eco;
+            item
         })
         .collect();
     if group_clones {
@@ -71,7 +68,10 @@ pub fn filter_group_and_sort(
             grouped
                 .entry(key)
                 .and_modify(|ex| {
-                    ex.cpu_pct += item.cpu_pct;
+                    let add_cpu =
+                        if item.cpu_pct.is_finite() { item.cpu_pct.clamp(0.0, 100.0) } else { 0.0 };
+                    ex.cpu_pct = (ex.cpu_pct + add_cpu).clamp(0.0, 100.0);
+                    ex.is_cpu_hog |= add_cpu >= crate::modules::cpu::model::CPU_HOG_THRESHOLD_PCT;
                     ex.ram_bytes = ex.ram_bytes.saturating_add(item.ram_bytes);
                     ex.disk_read_mb_s += item.disk_read_mb_s;
                     ex.disk_write_mb_s += item.disk_write_mb_s;
@@ -98,7 +98,12 @@ pub fn filter_group_and_sort(
 pub fn sort_slice(items: &mut [ProcessCpuItem], col: CpuSortCol, asc: bool) {
     items.sort_by(|a, b| {
         let ord = match col {
-            CpuSortCol::Name => a.name.cmp(&b.name),
+            CpuSortCol::Name => a
+                .name
+                .as_bytes()
+                .iter()
+                .map(u8::to_ascii_lowercase)
+                .cmp(b.name.as_bytes().iter().map(u8::to_ascii_lowercase)),
             CpuSortCol::Pid => a.pid.cmp(&b.pid),
             CpuSortCol::RamBytes => a.ram_bytes.cmp(&b.ram_bytes),
             CpuSortCol::CloneCount => a.clone_count.cmp(&b.clone_count),
@@ -147,26 +152,29 @@ mod table_sort_tests {
         let rows =
             [raw(1, "a.exe", 10.0, 5.0), raw(2, "a.exe", 1.0, 2.0), raw(3, "b.exe", 10.0, 10.0)];
         let deltas = HashMap::new();
+        let eco: HashMap<(u32, u64), bool> = HashMap::new();
         let grouped = filter_group_and_sort(
             &rows,
+            &deltas,
             "",
             crate::modules::cpu::table_state::ProcessQuickFilter::All,
             true,
             CpuSortCol::DiskIo,
             false,
-            &deltas,
+            &eco,
         );
         assert_eq!(grouped.len(), 2);
         assert_eq!(grouped[0].name.as_ref(), "b.exe");
         assert_eq!(grouped[1].disk_read_mb_s + grouped[1].disk_write_mb_s, 18.0);
         let flat = filter_group_and_sort(
             &rows,
+            &deltas,
             "",
             crate::modules::cpu::table_state::ProcessQuickFilter::All,
             false,
             CpuSortCol::DiskIo,
             true,
-            &deltas,
+            &eco,
         );
         assert_eq!(flat[0].pid, 2);
     }
@@ -181,24 +189,27 @@ mod table_sort_tests {
         assert!(!pid_contains(12345, "999"));
         let rows = [raw(12345, "Chrome.exe", 0.0, 0.0), raw(1, "notepad.exe", 0.0, 0.0)];
         let deltas = HashMap::new();
+        let eco: HashMap<(u32, u64), bool> = HashMap::new();
         let hit = filter_group_and_sort(
             &rows,
+            &deltas,
             "chrome",
             crate::modules::cpu::table_state::ProcessQuickFilter::All,
             false,
             CpuSortCol::Name,
             true,
-            &deltas,
+            &eco,
         );
         assert_eq!(hit.len(), 1);
         let hit_pid = filter_group_and_sort(
             &rows,
+            &deltas,
             "234",
             crate::modules::cpu::table_state::ProcessQuickFilter::All,
             false,
             CpuSortCol::Name,
             true,
-            &deltas,
+            &eco,
         );
         assert_eq!(hit_pid.len(), 1);
     }

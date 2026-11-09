@@ -1,6 +1,16 @@
 //! Interactive resizable column engine for the CPU process table.
 use crate::modules::cpu::model::ProcessCpuItem;
 use eframe::egui;
+use std::sync::{Mutex, OnceLock};
+
+static PERSISTED_WIDTHS: OnceLock<Mutex<Option<[f32; 7]>>> = OnceLock::new();
+pub fn get_persisted_col_widths() -> Option<[f32; 7]> {
+    PERSISTED_WIDTHS.get().and_then(|m| *m.lock().unwrap_or_else(|e| e.into_inner()))
+}
+pub fn set_persisted_col_widths(w: Option<[f32; 7]>) {
+    *PERSISTED_WIDTHS.get_or_init(|| Mutex::new(None)).lock().unwrap_or_else(|e| e.into_inner()) =
+        w;
+}
 
 pub const MIN_COL_W: [f32; 7] = [52.0, 125.0, 60.0, 66.0, 126.0, 90.0, 82.0];
 const MIN_SUM: f32 = 601.0;
@@ -61,25 +71,6 @@ pub fn apply_drag(widths: &mut [f32; 7], i: usize, dx: f32) {
             need -= t;
         }
         widths[i] += dx - need;
-    } else if i == 1 {
-        let mut need = -dx;
-        let mut freed = 0.0;
-        for k in (0..=i).rev() {
-            if need <= 0.0 {
-                break;
-            }
-            let s = (widths[k] - MIN_COL_W[k]).max(0.0);
-            let t = s.min(need);
-            widths[k] -= t;
-            freed += t;
-            need -= t;
-        }
-        let sum_r: f32 = (2..7).map(|k| widths[k]).sum();
-        if sum_r > 0.0 && freed > 0.0 {
-            for k in 2..7 {
-                widths[k] += freed * widths[k] / sum_r;
-            }
-        }
     } else {
         let mut need = -dx;
         let mut freed = 0.0;
@@ -136,23 +127,24 @@ pub fn autofit_widths(widths: &mut [f32; 7], i: usize, rows: &[ProcessCpuItem]) 
     }
     clamp_min(widths);
 }
-pub fn truncate_name(name: &str, w: f32) -> String {
+pub fn truncate_name(name: &str, w: f32) -> std::borrow::Cow<'_, str> {
     let m = (((w - 14.0) / 7.1).floor() as usize).max(12);
     if name.chars().count() <= m {
-        return name.to_owned();
+        return std::borrow::Cow::Borrowed(name);
     }
     let mut s: String = name.chars().take(m.saturating_sub(1)).collect();
     s.push('~');
-    s
+    std::borrow::Cow::Owned(s)
 }
 pub fn col_widths(ui: &mut egui::Ui, avail_w: f32) -> [f32; 7] {
     let id = egui::Id::new("pulse_cpu_table_col_widths");
-    let stored = ui
-        .ctx()
-        .data_mut(|d| *d.get_temp_mut_or_insert_with(id, || (default_widths(avail_w), avail_w)));
-    let mut w = stored.0;
+    let mut w = ui.ctx().data_mut(|d| {
+        *d.get_temp_mut_or_insert_with(id, || {
+            get_persisted_col_widths().unwrap_or_else(|| default_widths(avail_w))
+        })
+    });
     fit_column_widths(&mut w, avail_w);
-    ui.ctx().data_mut(|d| d.insert_temp(id, (w, avail_w)));
+    ui.ctx().data_mut(|d| d.insert_temp(id, w));
     w
 }
 #[allow(clippy::needless_range_loop)]
@@ -181,10 +173,12 @@ pub fn draw_separators(
         let dx = resp.drag_delta().x;
         if dx != 0.0 && resp.dragged() {
             apply_drag(widths, i, dx);
+            set_persisted_col_widths(Some(*widths));
             ui.ctx().request_repaint();
         }
         if resp.double_clicked() {
             autofit_widths(widths, i, rows);
+            set_persisted_col_widths(Some(*widths));
             ui.ctx().request_repaint();
         }
         let col =
@@ -196,7 +190,7 @@ pub fn draw_separators(
         );
     }
     let id = egui::Id::new("pulse_cpu_table_col_widths");
-    ui.ctx().data_mut(|d| d.insert_temp(id, (*widths, rect.width())));
+    ui.ctx().data_mut(|d| d.insert_temp(id, *widths));
 }
 #[cfg(test)]
 mod tests {
@@ -228,12 +222,27 @@ mod tests {
         for i in 0..6 {
             assert!((x[i + 1] - (x[i] + w[i])).abs() < 0.001);
         }
-        let before = w[2];
+        let before0 = w[0];
+        let before1 = w[1];
+        let before2 = w[2];
+        let before_rest = [w[3], w[4], w[5], w[6]];
         apply_drag(&mut w, 1, -40.0);
-        assert!(w[2] - before < 40.0);
+        let freed = (before0 - w[0]) + (before1 - w[1]);
+        assert_eq!([w[3], w[4], w[5], w[6]], before_rest);
+        assert!((w[2] - before2 - freed).abs() < 0.01);
         assert_eq!(
-            truncate_name("PULSE_v0.4.46_windows_x64.exe", 260.0),
+            truncate_name("PULSE_v0.4.46_windows_x64.exe", 260.0).as_ref(),
             "PULSE_v0.4.46_windows_x64.exe"
         );
+    }
+    #[test]
+    fn drag_separator_1_left_gives_to_immediate_neighbor() {
+        let mut w = default_widths(1000.0);
+        fit_column_widths(&mut w, 1000.0);
+        let before = w;
+        apply_drag(&mut w, 1, -40.0);
+        let freed = (before[0] - w[0]) + (before[1] - w[1]);
+        assert!((w[2] - before[2] - freed).abs() < 0.01);
+        assert_eq!([w[3], w[4], w[5], w[6]], [before[3], before[4], before[5], before[6]]);
     }
 }

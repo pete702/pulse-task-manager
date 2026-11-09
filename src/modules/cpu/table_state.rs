@@ -78,17 +78,19 @@ pub struct CpuTableState {
     pub sort_col: CpuSortCol,
     pub sort_asc: bool,
     pub selected_pid: Option<u32>,
+    pub selected_start_time: Option<u64>,
     pub selected_name: Option<String>,
     pub paused: bool,
     pub last_action_msg: Option<(String, Instant)>,
     pub action_rx: Option<std::sync::mpsc::Receiver<(String, Option<(u32, u64, bool)>)>>,
     pub eco_overrides: HashMap<(u32, u64), bool>,
     pub confirm_kill: Option<(u32, Instant)>,
+    pub baseline_scan_gen: u64,
     dirty: bool,
     cached_rows: Option<Arc<[ProcessCpuItem]>>,
     cache_key: Option<CpuTableCacheKey>,
     cached_scan_generation: u64,
-    ram_baseline: HashMap<(u32, u64), (u64, Instant)>,
+    ram_baseline: HashMap<(u32, u64), (u64, Instant, i64)>,
 }
 
 impl Default for CpuTableState {
@@ -102,6 +104,7 @@ impl Default for CpuTableState {
             sort_col: CpuSortCol::CpuPct,
             sort_asc: false,
             selected_pid: None,
+            selected_start_time: None,
             selected_name: None,
             paused: false,
             last_action_msg: None,
@@ -112,6 +115,7 @@ impl Default for CpuTableState {
             cached_rows: None,
             cache_key: None,
             cached_scan_generation: 0,
+            baseline_scan_gen: 0,
             ram_baseline: HashMap::new(),
         }
     }
@@ -126,69 +130,87 @@ impl CpuTableState {
             return false;
         }
         let first_build = self.cached_rows.is_none();
-        let cached_empty = self.cached_rows.as_ref().is_some_and(|r| r.is_empty());
-        let needs_data = cached_empty && !raw_rows.is_empty();
-        if raw_rows.is_empty() && !first_build {
+        if raw_rows.is_empty() && !first_build && scan_generation == 0 {
             return false;
         }
-        if !first_build
-            && !needs_data
-            && scan_generation != 0
-            && self.cached_scan_generation == scan_generation
-            && !self.dirty
-        {
-            return false;
-        }
+        let query_lower = self.search_query.trim().to_ascii_lowercase();
         let new_key = CpuTableCacheKey(
             scan_generation,
-            self.search_query.clone(),
+            query_lower.clone(),
             self.sort_col,
             self.sort_asc,
             self.group_clones,
             self.quick_filter.to_u8(),
         );
-        if !first_build && !needs_data && self.cache_key.as_ref() == Some(&new_key) {
-            self.cached_scan_generation = scan_generation;
+        if !first_build
+            && !self.dirty
+            && scan_generation != 0
+            && self.cached_scan_generation == scan_generation
+        {
+            return false;
+        }
+        if !first_build && !self.dirty && self.cache_key.as_ref() == Some(&new_key) {
+            return false;
+        }
+        if !first_build && self.cache_key.as_ref() == Some(&new_key) {
             self.dirty = false;
             return false;
         }
-        let query_lower = self.search_query.trim().to_ascii_lowercase();
-        let deltas = self.compute_ram_deltas(raw_rows);
+        let scan_changed = first_build
+            || self.baseline_scan_gen != scan_generation
+            || self.ram_baseline.is_empty();
+        let ram_deltas =
+            self.compute_ram_deltas(raw_rows, Instant::now(), scan_changed, scan_generation);
         let rows: Arc<[ProcessCpuItem]> = filter_group_and_sort(
             raw_rows,
+            &ram_deltas,
             &query_lower,
             self.quick_filter,
             self.group_clones,
             self.sort_col,
             self.sort_asc,
-            &deltas,
+            &self.eco_overrides,
         )
         .into();
         self.preserve_selection(&rows);
         self.cached_rows = Some(Arc::clone(&rows));
         self.cache_key = Some(new_key);
         self.cached_scan_generation = scan_generation;
-        self.dirty = false;
+        self.dirty = raw_rows.is_empty() && first_build;
         true
     }
 
     fn preserve_selection(&mut self, rows: &[ProcessCpuItem]) {
-        self.selected_pid = self.selected_pid.filter(|&pid| rows.iter().any(|r| r.pid == pid));
-        if self.selected_pid.is_none() {
-            // No auto-select: only follow a name match, never rows[0].
-            self.selected_pid = self
+        if let Some(pid) = self.selected_pid {
+            if let Some(found) = rows.iter().find(|r| r.pid == pid) {
+                if self.selected_start_time.is_some_and(|st| st != found.start_time) {
+                    self.selected_pid = None;
+                    self.selected_start_time = None;
+                    self.selected_name = None;
+                    self.confirm_kill = None;
+                    return;
+                }
+                self.selected_pid = Some(found.pid);
+                self.selected_start_time = Some(found.start_time);
+                self.selected_name = Some(found.name.to_string());
+                return;
+            }
+        }
+        if self.group_clones {
+            if let Some(found) = self
                 .selected_name
                 .as_ref()
                 .and_then(|n| rows.iter().find(|r| r.name.eq_ignore_ascii_case(n)))
-                .map(|r| r.pid);
-            if self.selected_pid.is_none() {
-                self.selected_name = None;
+            {
+                self.selected_pid = Some(found.pid);
+                self.selected_start_time = Some(found.start_time);
+                self.selected_name = Some(found.name.to_string());
+                return;
             }
         }
-        self.selected_name = self
-            .selected_pid
-            .and_then(|pid| rows.iter().find(|r| r.pid == pid))
-            .map(|r| r.name.to_string());
+        self.selected_pid = None;
+        self.selected_start_time = None;
+        self.selected_name = None;
     }
     pub fn cached_rows(&self) -> Option<Arc<[ProcessCpuItem]>> {
         self.cached_rows.clone()
@@ -200,6 +222,12 @@ impl CpuTableState {
             self.sort_col = col;
             self.sort_asc = matches!(col, CpuSortCol::Name | CpuSortCol::Pid);
         }
+        self.apply_sort_in_place();
+    }
+    #[allow(dead_code)]
+    pub fn ensure_sort(&mut self, col: CpuSortCol, asc: bool) {
+        self.sort_col = col;
+        self.sort_asc = asc;
         self.apply_sort_in_place();
     }
     pub fn apply_sort_in_place(&mut self) {
@@ -238,34 +266,6 @@ impl CpuTableState {
     }
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
-    }
-    pub fn spawn_menu_action(
-        &mut self,
-        job: impl FnOnce() -> (String, Option<(u32, u64, bool)>) + Send + 'static,
-    ) {
-        if self.action_rx.is_some() {
-            return;
-        }
-        let (tx, rx) = std::sync::mpsc::channel();
-        self.action_rx = Some(rx);
-        std::thread::spawn(move || {
-            let _ = tx.send(job());
-        });
-    }
-    pub fn poll_menu_action(&mut self) {
-        if let Some(rx) = self.action_rx.take() {
-            if let Ok((msg, eco)) = rx.try_recv() {
-                self.last_action_msg = Some((msg, Instant::now()));
-                if let Some((pid, st, on)) = eco {
-                    self.eco_overrides.insert((pid, st), on);
-                    crate::modules::cpu::collector::mark_pending_eco(pid, st, on);
-                }
-                crate::core::request_process_scan();
-                self.dirty = true;
-            } else {
-                self.action_rx = Some(rx);
-            }
-        }
     }
 }
 

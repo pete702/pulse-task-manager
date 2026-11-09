@@ -1,6 +1,6 @@
 # PULSE Architecture & Engineering Rules
 
-PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.88"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.4.47**.
+PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.88"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.4.54**.
 
 ## 1. Core Architectural Principles
 

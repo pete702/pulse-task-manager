@@ -1,15 +1,14 @@
 //! Virtualized CPU process table with search, clone grouping, sorting, and actions.
-use crate::modules::cpu::model::{CpuSnapshot, ProcessCpuItem};
+use crate::modules::cpu::model::{CpuSnapshot, ProcessCpuItem, RawProcessCpuRow};
 use crate::modules::cpu::qos_action::trim_process_working_set;
 use crate::modules::cpu::table_body::render_virtualized_table;
-use crate::modules::cpu::table_menu::{action_button, exe_opt};
+use crate::modules::cpu::table_menu::action_button;
 use crate::modules::cpu::table_state::CpuTableState;
 use crate::modules::memory::safe_handle::is_app_elevated;
 use crate::theme::{card_frame, colors};
 use eframe::egui;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
-use std::time::Instant;
 static ELEVATED: OnceLock<bool> = OnceLock::new();
 static PURGE_RUNNING: AtomicBool = AtomicBool::new(false);
 struct PurgeGuard;
@@ -32,10 +31,10 @@ pub fn render_cpu_table(
     let rows = state.cached_rows().unwrap_or_default();
     let total_processes = cpu_snapshot.process_count;
     let shown_rows = rows.len();
-    let clone_groups = rows.iter().filter(|row| row.clone_count > 1).count();
+    let raw_rows = cpu_snapshot.processes_raw();
     card_frame().show(ui, |ui| {
         ui.vertical(|ui| {
-            render_toolbar(ui, total_processes, shown_rows, clone_groups, state, &rows);
+            render_toolbar(ui, total_processes, shown_rows, state, &rows, raw_rows);
             ui.add_space(6.0);
             if rows.is_empty() {
                 ui.centered_and_justified(|ui| {
@@ -90,34 +89,43 @@ fn clear_btn(ui: &mut egui::Ui, state: &mut CpuTableState) {
     }
 }
 fn group_density(ui: &mut egui::Ui, state: &mut CpuTableState) {
-    let old = state.group_clones;
-    if ui.checkbox(&mut state.group_clones, "Group Clones").changed() {
-        let new_group = state.group_clones;
-        state.group_clones = old;
-        state.set_group_clones(new_group);
+    let mut group = state.group_clones;
+    if ui.checkbox(&mut group, "Group Clones").changed() {
+        state.set_group_clones(group);
     }
     let label = if state.comfort_density { "[ Comfort ]" } else { "[ Compact ]" };
     if action_button(ui, true, label, colors::TEXT_SECONDARY).clicked() {
         state.comfort_density = !state.comfort_density;
     }
 }
-fn do_purge(rows: &[ProcessCpuItem], state: &mut CpuTableState) -> bool {
+fn do_purge(raw_rows: &[RawProcessCpuRow], state: &mut CpuTableState) -> bool {
     if !PURGE_RUNNING.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_ok() {
         return false;
     }
-    let mut heavy: Vec<ProcessCpuItem> =
-        rows.iter().filter(|item| item.ram_bytes >= 10 * 1024 * 1024).cloned().collect();
+    if state.action_rx.is_some() {
+        PURGE_RUNNING.store(false, Ordering::SeqCst);
+        return false;
+    }
+    let mut heavy: Vec<RawProcessCpuRow> =
+        raw_rows.iter().filter(|r| r.ram_bytes >= 10 * 1024 * 1024).cloned().collect();
     heavy.sort_by_key(|a| std::cmp::Reverse(a.ram_bytes));
     heavy.truncate(64);
-    let owned: Vec<ProcessCpuItem> = heavy;
-    state.last_action_msg = Some(("Purging RAM...".to_owned(), Instant::now()));
-    std::thread::spawn(move || {
+    let total = heavy.len();
+    let targets: Vec<(u32, String, Option<u64>, Option<String>)> = heavy
+        .iter()
+        .map(|r| {
+            (r.pid, r.name.to_string(), r.creation_time, r.exe_path.as_deref().map(str::to_owned))
+        })
+        .collect();
+    state.spawn_menu_action(move || {
         let _guard = PurgeGuard;
-        for item in &owned {
-            let exe = exe_opt(item);
-            let _ = trim_process_working_set(item.pid, &item.name, item.creation_time, exe);
+        let mut ok = 0;
+        for (pid, name, ct, exe) in targets {
+            if trim_process_working_set(pid, &name, ct, exe).is_ok() {
+                ok += 1;
+            }
         }
-        crate::core::request_process_scan();
+        (format!("Purged RAM ({ok}/{total} processes)"), None)
     });
     true
 }
@@ -125,12 +133,13 @@ fn right_controls(
     ui: &mut egui::Ui,
     total: usize,
     shown: usize,
-    rows: &[ProcessCpuItem],
+    raw_rows: &[RawProcessCpuRow],
     state: &mut CpuTableState,
 ) {
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        if action_button(ui, !rows.is_empty(), "[ Purge All RAM ]", colors::ACCENT_CYAN).clicked() {
-            do_purge(rows, state);
+        let purge_ok = !state.paused && state.action_rx.is_none() && !raw_rows.is_empty();
+        if action_button(ui, purge_ok, "[ Purge All RAM ]", colors::ACCENT_CYAN).clicked() {
+            do_purge(raw_rows, state);
         }
         ui.add_space(8.0);
         let pause_label = if state.paused { "> Resume" } else { "|| Pause" };
@@ -150,11 +159,11 @@ fn render_toolbar(
     ui: &mut egui::Ui,
     total: usize,
     shown: usize,
-    _clone_groups: usize,
     state: &mut CpuTableState,
     rows: &[ProcessCpuItem],
+    raw_rows: &[RawProcessCpuRow],
 ) {
-    let selected = state.selected_pid.and_then(|pid| rows.iter().find(|row| row.pid == pid));
+    let selected_row = state.selected_pid.and_then(|pid| rows.iter().find(|row| row.pid == pid));
     let avail_w = ui.available_width();
     if avail_w >= 1180.0 {
         ui.horizontal(|ui| {
@@ -177,10 +186,12 @@ fn render_toolbar(
                 egui::vec2(right_w, 0.0),
                 egui::Layout::right_to_left(egui::Align::Center),
                 |ui| {
-                    if action_button(ui, !rows.is_empty(), "[ Purge All RAM ]", colors::ACCENT_CYAN)
+                    let purge_ok =
+                        !state.paused && state.action_rx.is_none() && !raw_rows.is_empty();
+                    if action_button(ui, purge_ok, "[ Purge All RAM ]", colors::ACCENT_CYAN)
                         .clicked()
                     {
-                        do_purge(rows, state);
+                        do_purge(raw_rows, state);
                     }
                     ui.add_space(8.0);
                     let pause_label = if state.paused { "> Resume" } else { "|| Pause" };
@@ -210,9 +221,9 @@ fn render_toolbar(
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 group_density(ui, state);
-                right_controls(ui, total, shown, rows, state);
+                right_controls(ui, total, shown, raw_rows, state);
             });
         });
     }
-    crate::modules::cpu::table_menu::render_bottom_action_bar(ui, state, selected);
+    crate::modules::cpu::table_menu::render_bottom_action_bar(ui, selected_row, raw_rows, state);
 }

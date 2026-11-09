@@ -1,21 +1,21 @@
 //! OS CPU collector for PULSE: gathers real CPU metrics via sysinfo
 //! and computes per-process CPU percentages in a single pass.
 pub use crate::modules::cpu::collector_cpu::{collect_cpu, warmup_cpu};
+use crate::modules::cpu::collector_eco;
 use crate::modules::cpu::model::RawProcessCpuRow;
-use crate::modules::cpu::qos_action::probe_eco_qos_budgeted;
 #[allow(unused_imports)]
-pub use crate::modules::cpu::qos_action::{mark_pending_eco, set_eco_watch};
+pub use crate::modules::cpu::qos_action::mark_pending_eco;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use sysinfo::{ProcessRefreshKind, System, UpdateKind};
-static LAST_SCAN: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 #[allow(dead_code)]
 pub struct CpuCollector {
     pub seen_pids: HashSet<(u32, u64)>,
-    eco_cache: HashMap<(u32, u64), (Option<bool>, Instant)>,
+    eco_cache: HashMap<(u32, u64), (bool, Instant)>,
+    eco_cursor: usize,
     prev_disk: HashMap<(u32, u64), (u64, u64, Option<u64>)>,
     creation_cache: HashMap<(u32, u64), Option<u64>>,
+    last_scan: Option<Instant>,
 }
 impl CpuCollector {
     #[allow(dead_code)]
@@ -23,8 +23,10 @@ impl CpuCollector {
         Self {
             seen_pids: HashSet::new(),
             eco_cache: HashMap::new(),
+            eco_cursor: 0,
             prev_disk: HashMap::new(),
             creation_cache: HashMap::new(),
+            last_scan: None,
         }
     }
     #[allow(dead_code)]
@@ -32,7 +34,7 @@ impl CpuCollector {
         if self.eco_cache.len() > 512 {
             self.eco_cache.clear();
         }
-        self.eco_cache.insert((pid, start_time), (Some(on), Instant::now()));
+        self.eco_cache.insert((pid, start_time), (on, Instant::now()));
     }
     #[allow(dead_code)]
     pub fn invalidate_eco(&mut self, pid: u32, start_time: u64) {
@@ -47,11 +49,7 @@ impl CpuCollector {
         &mut self,
         sys: &mut System,
         logical_cores: usize,
-        refresh_processes: bool,
     ) -> Vec<RawProcessCpuRow> {
-        if !refresh_processes {
-            return Vec::new();
-        }
         sys.refresh_processes_specifics(
             ProcessRefreshKind::new()
                 .with_memory()
@@ -59,17 +57,10 @@ impl CpuCollector {
                 .with_disk_usage()
                 .with_exe(UpdateKind::OnlyIfNotSet),
         );
-        let elapsed_secs = elapsed_since_last_scan();
+        let elapsed_secs = self.elapsed_since_last_scan();
         let mut live: HashSet<(u32, u64)> = HashSet::with_capacity(sys.processes().len());
-        let rate = |b: u64| {
-            let v = b as f32 / (elapsed_secs * 1_048_576.0);
-            if v.is_finite() {
-                v.clamp(0.0, f32::MAX)
-            } else {
-                0.0
-            }
-        };
         let cores = logical_cores.max(1) as f32;
+        let mut creation_probes: usize = 0;
         let mut raw_rows: Vec<RawProcessCpuRow> = Vec::with_capacity(sys.processes().len());
         for (pid, process) in sys.processes().iter() {
             let pid_u32 = pid.as_u32();
@@ -92,25 +83,32 @@ impl CpuCollector {
             let tot_r = du.total_read_bytes;
             let tot_w = du.total_written_bytes;
             let prev = self.prev_disk.get(&key).copied();
-            let creation_time = if let Some(ct) = self.creation_cache.get(&key).copied() {
-                ct
-            } else if let Some((_, _, ct)) = prev {
-                self.creation_cache.insert(key, ct);
-                ct
-            } else {
-                let ct = crate::modules::memory::query_creation_time_by_pid(pid_u32);
-                if self.creation_cache.len() > 512 {
-                    self.creation_cache.clear();
-                }
-                self.creation_cache.insert(key, ct);
-                ct
-            };
+            let creation_time =
+                if let Some(cached) = self.creation_cache.get(&key).copied().flatten() {
+                    Some(cached)
+                } else if pid_u32 != 0 && pid_u32 != 4 && creation_probes < 64 {
+                    creation_probes += 1;
+                    if let Some(ct) = crate::modules::memory::query_creation_time_by_pid(pid_u32) {
+                        if self.creation_cache.len() > 512 {
+                            self.creation_cache.clear();
+                        }
+                        self.creation_cache.insert(key, Some(ct));
+                        Some(ct)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
             let (r_mb, w_mb) = match prev {
-                Some((pr, pw, _)) => {
-                    (rate(tot_r.saturating_sub(pr)), rate(tot_w.saturating_sub(pw)))
-                }
+                Some((pr, pw, _)) => (
+                    Self::disk_rate(tot_r, pr, elapsed_secs as f64) as f32 / 1_048_576.0,
+                    Self::disk_rate(tot_w, pw, elapsed_secs as f64) as f32 / 1_048_576.0,
+                ),
                 None => (0.0, 0.0),
             };
+            let exe_path =
+                exe.and_then(|p| p.to_str()).filter(|s| !s.is_empty()).map(std::sync::Arc::from);
             self.prev_disk.insert(key, (tot_r, tot_w, creation_time));
             raw_rows.push(RawProcessCpuRow {
                 pid: pid_u32,
@@ -120,7 +118,7 @@ impl CpuCollector {
                 disk_read_mb_s: r_mb,
                 disk_write_mb_s: w_mb,
                 eco_qos: None,
-                exe_path: None,
+                exe_path,
                 drive_letter: drive,
                 creation_time,
                 start_time,
@@ -135,7 +133,6 @@ impl CpuCollector {
         raw_rows
     }
     fn fill_eco_qos(&mut self, rows: &mut [RawProcessCpuRow]) {
-        let mut budget: u8 = 12;
         let pending: HashMap<(u32, u64), Option<bool>> =
             crate::modules::cpu::qos_action::PENDING_ECO
                 .get()
@@ -146,28 +143,30 @@ impl CpuCollector {
                 row.eco_qos = Some(false);
                 continue;
             }
-            let key = (row.pid, row.start_time);
-            if let Some(primed) = pending.get(&key).copied() {
-                self.eco_cache.insert(key, (primed, Instant::now()));
-                row.eco_qos = primed;
-                continue;
-            }
-            let fresh = self
-                .eco_cache
-                .get(&key)
-                .is_some_and(|(_, at)| at.elapsed() < Duration::from_secs(30));
-            if fresh {
-                row.eco_qos = self.eco_cache.get(&key).map(|(v, _)| *v).unwrap_or(None);
-            } else if let Some(v) = probe_eco_qos_budgeted(row.pid, &mut budget) {
-                self.eco_cache.insert(key, (v, Instant::now()));
-                row.eco_qos = v;
-            } else {
-                row.eco_qos = None;
+            if let Some(primed) = pending.get(&(row.pid, row.start_time)).copied() {
+                if let Some(v) = primed {
+                    self.eco_cache.insert((row.pid, row.start_time), (v, Instant::now()));
+                    row.eco_qos = primed;
+                }
             }
         }
-        if self.eco_cache.len() > 512 {
-            self.eco_cache.clear();
+        collector_eco::fill_eco_qos(rows, &mut self.eco_cache, &mut self.eco_cursor);
+    }
+    pub(crate) fn disk_rate(cur: u64, prev: u64, dt: f64) -> u64 {
+        if dt <= 1e-6 {
+            0
+        } else {
+            (cur.saturating_sub(prev) as f64 / dt) as u64
         }
+    }
+    fn elapsed_since_last_scan(&mut self) -> f32 {
+        let now = std::time::Instant::now();
+        let elapsed = match self.last_scan {
+            Some(prev) => now.duration_since(prev).as_secs_f32().max(0.2),
+            None => 1.0,
+        };
+        self.last_scan = Some(now);
+        elapsed
     }
 }
 impl Default for CpuCollector {
@@ -200,19 +199,26 @@ pub(crate) fn first_sample_disk_bytes(
 ) -> (u64, u64) {
     guarded_disk_bytes(read, written, total_read, total_written, true)
 }
-fn elapsed_since_last_scan() -> f32 {
-    let slot = LAST_SCAN.get_or_init(|| Mutex::new(None));
-    let now = std::time::Instant::now();
-    let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
-    let elapsed = match *guard {
-        Some(prev) => now.duration_since(prev).as_secs_f32().max(0.2),
-        None => 1.0,
-    };
-    *guard = Some(now);
-    elapsed
-}
 pub(crate) fn pid_contains(pid: u32, needle: &str) -> bool {
-    pid.to_string().contains(needle)
+    if needle.is_empty() || !needle.bytes().all(|b| b.is_ascii_digit()) {
+        return false;
+    }
+    let mut buf = [0u8; 10];
+    let mut n = pid;
+    let mut len = 0usize;
+    if n == 0 {
+        buf[0] = b'0';
+        len = 1;
+    } else {
+        while n > 0 {
+            buf[len] = b'0' + (n % 10) as u8;
+            n /= 10;
+            len += 1;
+        }
+        buf[..len].reverse();
+    }
+    let s = std::str::from_utf8(&buf[..len]).unwrap_or("");
+    s.contains(needle)
 }
 #[cfg(test)]
 #[path = "collector_tests.rs"]

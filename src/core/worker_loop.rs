@@ -121,7 +121,7 @@ pub fn spawn_worker(
             let mut memory = collect_memory(&mut sys);
             let mut scanned = false;
             if do_refresh {
-                let cpu_raw_rows = cpu_collector.collect_process_cpu(&mut sys, logical_cores, true);
+                let cpu_raw_rows = cpu_collector.collect_process_cpu(&mut sys, logical_cores);
                 if !cpu_raw_rows.is_empty() {
                     collector_primed = true;
                 }

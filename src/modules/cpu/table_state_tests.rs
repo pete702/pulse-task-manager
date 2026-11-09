@@ -10,14 +10,13 @@ fn raw(pid: u32, name: &str, cpu: f32, ram: u64) -> RawProcessCpuRow {
         name: Arc::from(name),
         cpu_usage: cpu,
         ram_bytes: ram,
-        disk_read_mb_s: 0.0,
-        disk_write_mb_s: 0.0,
-        eco_qos: None,
-        exe_path: None,
-        drive_letter: None,
-        creation_time: None,
-        start_time: 0,
+        ..Default::default()
     }
+}
+fn raw_st(pid: u32, name: &str, cpu: f32, ram: u64, st: u64) -> RawProcessCpuRow {
+    let mut r = raw(pid, name, cpu, ram);
+    r.start_time = st;
+    r
 }
 
 #[test]
@@ -160,5 +159,119 @@ fn pid_contains_edges() {
     assert!(!pid_contains(12, "123"));
     assert!(pid_contains(0, "0"));
     assert!(!pid_contains(100, "9"));
-    assert!(pid_contains(99999, ""));
+    assert!(!pid_contains(99999, ""));
+}
+
+#[test]
+fn empty_filter_result_caches_without_rebuild_storm() {
+    let mut state =
+        CpuTableState { search_query: "zzzz_no_match".to_owned(), ..Default::default() };
+    let rows = vec![raw(1, "a.exe", 1.0, 10)];
+    assert!(state.rebuild_if_needed(1, &rows));
+    let cached = state.cached_rows().expect("rows cached");
+    assert!(cached.is_empty());
+    assert!(!state.rebuild_if_needed(1, &rows));
+}
+
+#[test]
+fn normalized_search_key_caches_whitespace_and_case() {
+    let mut state = CpuTableState::default();
+    let rows = vec![raw(1, "Chrome.exe", 1.0, 10), raw(2, "other.exe", 1.0, 10)];
+    state.search_query = "Chrome".to_owned();
+    assert!(state.rebuild_if_needed(1, &rows));
+    state.search_query = " chrome ".to_owned();
+    state.mark_dirty();
+    assert!(!state.rebuild_if_needed(1, &rows));
+}
+
+#[test]
+fn ensure_sort_keeps_direction() {
+    let mut state = CpuTableState::default();
+    state.ensure_sort(CpuSortCol::CpuPct, false);
+    assert!(!state.sort_asc);
+    state.ensure_sort(CpuSortCol::CpuPct, false);
+    assert!(!state.sort_asc);
+    state.ensure_sort(CpuSortCol::CpuPct, true);
+    assert!(state.sort_asc);
+}
+
+#[test]
+fn pid_reuse_clears_selection() {
+    let mut state = CpuTableState {
+        selected_pid: Some(100),
+        selected_start_time: Some(10),
+        selected_name: Some("app.exe".to_owned()),
+        ..Default::default()
+    };
+    let rows = vec![raw_st(100, "app.exe", 1.0, 10, 99)];
+    assert!(state.rebuild_if_needed(1, &rows));
+    assert_eq!(state.selected_pid, None);
+    assert_eq!(state.selected_start_time, None);
+}
+
+#[test]
+fn disconnected_action_channel_recovers() {
+    let mut state = CpuTableState::default();
+    let (tx, rx) = std::sync::mpsc::channel();
+    drop(tx);
+    state.action_rx = Some(rx);
+    state.poll_menu_action();
+    assert!(state.action_rx.is_none());
+    let msg = state.last_action_msg.as_ref().expect("msg set");
+    assert!(msg.0.contains("disconnected"));
+}
+
+#[test]
+fn context_menu_kill_arms_confirmation_without_spawning() {
+    use crate::modules::cpu::model::ProcessCpuItem;
+    use crate::modules::cpu::table_menu::arm_context_menu_kill;
+    let mut state = CpuTableState::default();
+    let mut item = ProcessCpuItem::new(42, Arc::from("app.exe"), 1.0, 100, None);
+    item.start_time = 7;
+    arm_context_menu_kill(&mut state, &item);
+    assert_eq!(state.selected_pid, Some(42));
+    assert_eq!(state.selected_start_time, Some(7));
+    assert!(state.confirm_kill.is_some());
+    assert!(state.action_rx.is_none());
+}
+
+#[test]
+fn resolve_group_targets_collects_all_clones() {
+    use crate::modules::cpu::model::ProcessCpuItem;
+    use crate::modules::cpu::table_menu::resolve_group_targets;
+    let mut item = ProcessCpuItem::new(10, Arc::from("chrome.exe"), 1.0, 100, None);
+    item.start_time = 1;
+    item.clone_count = 3;
+    let rows = vec![
+        raw_st(10, "chrome.exe", 1.0, 100, 1),
+        raw_st(11, "Chrome.exe", 1.0, 100, 2),
+        raw_st(12, "chrome.exe", 1.0, 100, 3),
+        raw_st(13, "other.exe", 1.0, 100, 4),
+    ];
+    let grouped = resolve_group_targets(&item, &rows, true);
+    assert_eq!(grouped.len(), 3);
+    let mut pids: Vec<_> = grouped.iter().map(|(pid, _, _, _)| *pid).collect();
+    pids.sort_unstable();
+    assert_eq!(pids, vec![10, 11, 12]);
+    let single = resolve_group_targets(&item, &rows, false);
+    assert_eq!(single.len(), 1);
+    assert_eq!(single[0].0, 10);
+}
+
+#[test]
+fn grouped_idle_clones_not_cpu_hog_but_hot_clone_is() {
+    let mut state = CpuTableState::default();
+    let rows: Vec<RawProcessCpuRow> = (0..20).map(|i| raw(100 + i, "clone.exe", 1.5, 10)).collect();
+    state.rebuild_if_needed(1, &rows);
+    let cached = state.cached_rows().expect("rows cached");
+    assert_eq!(cached.len(), 1);
+    assert!((cached[0].cpu_pct - 30.0).abs() < 0.001);
+    assert_eq!(cached[0].clone_count, 20);
+    assert!(!cached[0].is_cpu_hog);
+    let mut state2 = CpuTableState::default();
+    let rows2 = vec![raw(1, "hot.exe", 1.0, 10), raw(2, "hot.exe", 26.0, 10)];
+    state2.rebuild_if_needed(1, &rows2);
+    let cached2 = state2.cached_rows().expect("rows cached");
+    assert_eq!(cached2.len(), 1);
+    assert!(cached2[0].is_cpu_hog);
 }

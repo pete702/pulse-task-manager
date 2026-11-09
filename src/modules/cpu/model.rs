@@ -67,7 +67,8 @@ impl ProcessCpuItem {
         ram_bytes: u64,
         creation_time: Option<u64>,
     ) -> Self {
-        let cpu_text = Arc::from(format!("{cpu_pct:.1}%"));
+        let safe_cpu = if cpu_pct.is_finite() { cpu_pct.clamp(0.0, 100.0) } else { 0.0 };
+        let cpu_text = Arc::from(format!("{safe_cpu:.1}%"));
         let ram_text = Arc::from(crate::modules::memory::formatters::format_bytes(ram_bytes));
         let pid_text = Arc::from(pid.to_string());
         let delta_text = Arc::from("Stable");
@@ -80,14 +81,14 @@ impl ProcessCpuItem {
             drive_letter: None,
             name: Arc::clone(&name),
             exe_path: Arc::from(""),
-            cpu_pct,
+            cpu_pct: safe_cpu,
             ram_bytes,
             disk_read_mb_s: 0.0,
             disk_write_mb_s: 0.0,
             eco_qos: None,
             ram_delta_10s: 0,
             clone_count: 1,
-            is_cpu_hog: cpu_pct >= CPU_HOG_THRESHOLD_PCT,
+            is_cpu_hog: safe_cpu >= CPU_HOG_THRESHOLD_PCT,
             pid_text,
             cpu_text,
             ram_text,
@@ -102,11 +103,31 @@ impl ProcessCpuItem {
             last_fmt_io_total: f32::MAX,
         }
     }
+    pub(crate) fn from_raw(raw: &RawProcessCpuRow) -> Self {
+        let mut item = Self::new(
+            raw.pid,
+            Arc::clone(&raw.name),
+            raw.cpu_usage,
+            raw.ram_bytes,
+            raw.creation_time,
+        );
+        item.start_time = raw.start_time;
+        item.drive_letter = raw.drive_letter;
+        item.disk_read_mb_s = raw.disk_read_mb_s;
+        item.disk_write_mb_s = raw.disk_write_mb_s;
+        item.eco_qos = raw.eco_qos;
+        item.exe_path = raw.exe_path.clone().unwrap_or_default();
+        // Seed fmt trackers so cpu/ram are not reformatted a second time.
+        item.last_fmt_cpu_pct = item.cpu_pct;
+        item.last_fmt_ram_bytes = item.ram_bytes;
+        item.update_formatted();
+        item
+    }
 
     /// Updates pre-formatted fields only when underlying numeric values change.
     /// Avoids allocating new `Arc<str>` on every scan for stable processes.
     pub fn update_formatted(&mut self) {
-        let new_is_hog = self.cpu_pct >= CPU_HOG_THRESHOLD_PCT;
+        self.cpu_pct = if self.cpu_pct.is_finite() { self.cpu_pct.clamp(0.0, 100.0) } else { 0.0 };
 
         // Compute change flags BEFORE updating tracking fields
         let cpu_changed = (self.cpu_pct - self.last_fmt_cpu_pct).abs() > f32::EPSILON;
@@ -155,28 +176,10 @@ impl ProcessCpuItem {
             self.last_fmt_io_total = io_total;
         }
 
-        self.is_cpu_hog = new_is_hog;
+        if self.clone_count <= 1 {
+            self.is_cpu_hog = self.cpu_pct >= CPU_HOG_THRESHOLD_PCT;
+        }
     }
-}
-
-/// Builds a display item from one raw process CPU row.
-#[allow(dead_code)]
-pub fn item_from_raw_cpu(row: &RawProcessCpuRow) -> ProcessCpuItem {
-    let mut item = ProcessCpuItem::new(
-        row.pid,
-        Arc::clone(&row.name),
-        row.cpu_usage,
-        row.ram_bytes,
-        row.creation_time,
-    );
-    item.start_time = row.start_time;
-    item.drive_letter = row.drive_letter;
-    item.disk_read_mb_s = row.disk_read_mb_s;
-    item.disk_write_mb_s = row.disk_write_mb_s;
-    item.eco_qos = row.eco_qos;
-    item.exe_path = row.exe_path.clone().unwrap_or_default();
-    item.update_formatted();
-    item
 }
 
 /// A single snapshot of system CPU state.

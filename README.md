@@ -79,7 +79,7 @@ cargo run --release
 ## CLI Flags
 
 ```powershell
-pulse_manager.exe --version   # Prints: PULSE v0.4.47 (pulse_manager)
+pulse_manager.exe --version   # Prints: PULSE v0.4.54 (pulse_manager)
 pulse_manager.exe --help      # Prints usage
 pulse_manager.exe --self-test # Headless CI self-test
 ```

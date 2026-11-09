@@ -23,6 +23,7 @@ impl PulseApp {
         crate::modules::network::view::set_window_secs(s.network_window_secs as usize);
         crate::modules::network::view::set_chart_mode_value(s.network_chart_mode);
         crate::modules::network::latency_probe::set_probe_enabled(s.network_probe_enabled);
+        crate::modules::cpu::table_cols::set_persisted_col_widths(s.cpu_col_widths);
         self.last_saved = s.clone();
     }
 
@@ -44,6 +45,7 @@ impl PulseApp {
             network_chart_mode: crate::modules::network::view::chart_mode_value(),
             network_probe_enabled: crate::modules::network::latency_probe::probe_enabled(),
             process_quick_filter: self.cpu_table_state.quick_filter.to_u8(),
+            cpu_col_widths: crate::modules::cpu::table_cols::get_persisted_col_widths(),
             win_w: (wx.clamp(860.0, 3840.0) * 10.0).round() / 10.0,
             win_h: (wy.clamp(560.0, 2160.0) * 10.0).round() / 10.0,
         }

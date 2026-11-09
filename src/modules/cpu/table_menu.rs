@@ -2,14 +2,48 @@
 //! Split from table_body.rs for line-limit compliance.
 use std::time::Instant;
 
-use crate::modules::cpu::model::ProcessCpuItem;
+use crate::modules::cpu::model::{ProcessCpuItem, RawProcessCpuRow};
 use crate::modules::cpu::qos_action::{
-    enable_eco_qos, open_process_file_location, terminate_process, trim_process_working_set,
+    open_process_file_location, set_process_eco_qos, terminate_process, trim_process_working_set,
 };
 use crate::modules::cpu::table_state::CpuTableState;
 use crate::theme::colors;
 use eframe::egui;
 
+pub fn arm_context_menu_kill(state: &mut CpuTableState, item: &ProcessCpuItem) {
+    state.selected_pid = Some(item.pid);
+    state.selected_start_time = Some(item.start_time);
+    state.selected_name = Some(item.name.to_string());
+    state.confirm_kill = Some((item.pid, Instant::now()));
+    state.last_action_msg = Some((
+        format!("Confirm Kill for {} (PID {}) in bottom bar (3s)", item.name, item.pid),
+        Instant::now(),
+    ));
+}
+pub fn resolve_group_targets(
+    item: &ProcessCpuItem,
+    raw_rows: &[RawProcessCpuRow],
+    group_clones: bool,
+) -> Vec<(u32, String, Option<u64>, Option<String>)> {
+    if group_clones && item.clone_count > 1 {
+        let v: Vec<_> = raw_rows
+            .iter()
+            .filter(|r| r.name.eq_ignore_ascii_case(&item.name))
+            .map(|r| {
+                (
+                    r.pid,
+                    r.name.to_string(),
+                    r.creation_time,
+                    r.exe_path.as_deref().map(str::to_owned),
+                )
+            })
+            .collect();
+        if !v.is_empty() {
+            return v;
+        }
+    }
+    vec![(item.pid, item.name.to_string(), item.creation_time, exe_opt(item))]
+}
 pub fn show_row_menu(ui: &mut egui::Ui, item: &ProcessCpuItem, state: &mut CpuTableState) {
     ui.set_min_width(240.0);
     ui.label(
@@ -37,7 +71,7 @@ pub fn show_row_menu(ui: &mut egui::Ui, item: &ProcessCpuItem, state: &mut CpuTa
         let (pid, name, start, ct, exe) =
             (item.pid, item.name.to_string(), item.start_time, item.creation_time, exe_opt(item));
         state.spawn_menu_action(move || {
-            let msg = match enable_eco_qos(pid, &name, ct, exe) {
+            let msg = match set_process_eco_qos(pid, &name, ct, exe, true) {
                 Ok(()) => "EcoQoS enabled".to_owned(),
                 Err(e) => format!("EcoQoS blocked: {e}"),
             };
@@ -48,9 +82,10 @@ pub fn show_row_menu(ui: &mut egui::Ui, item: &ProcessCpuItem, state: &mut CpuTa
     }
     if ui.button("Open File Location").clicked() {
         state.last_action_msg = Some(("Working...".to_owned(), Instant::now()));
-        let pid = item.pid;
+        let (pid, name, ct, exe) =
+            (item.pid, item.name.to_string(), item.creation_time, exe_opt(item));
         state.spawn_menu_action(move || {
-            let msg = match open_process_file_location(pid) {
+            let msg = match open_process_file_location(pid, &name, ct, exe.as_deref()) {
                 Ok(()) => "Opened file location".to_owned(),
                 Err(error) => format!("Open blocked: {error}"),
             };
@@ -63,19 +98,7 @@ pub fn show_row_menu(ui: &mut egui::Ui, item: &ProcessCpuItem, state: &mut CpuTa
         .add(egui::Button::new(egui::RichText::new("Terminate Process").color(colors::ACCENT_RED)))
         .clicked()
     {
-        state.last_action_msg = Some(("Working...".to_owned(), Instant::now()));
-        state.selected_pid = None;
-        state.selected_name = None;
-        state.confirm_kill = None;
-        let (pid, name, ct, exe) =
-            (item.pid, item.name.to_string(), item.creation_time, exe_opt(item));
-        state.spawn_menu_action(move || {
-            let msg = match terminate_process(pid, &name, ct, exe) {
-                Ok(()) => "Task ended".to_owned(),
-                Err(e) => format!("End blocked: {e}"),
-            };
-            (msg, None)
-        });
+        arm_context_menu_kill(state, item);
         ui.close_menu();
     }
     ui.separator();
@@ -129,9 +152,15 @@ pub(super) fn action_button(
 
 pub(super) fn render_bottom_action_bar(
     ui: &mut egui::Ui,
-    state: &mut CpuTableState,
     selected: Option<&ProcessCpuItem>,
+    raw_rows: &[RawProcessCpuRow],
+    state: &mut CpuTableState,
 ) {
+    if state.action_rx.is_none()
+        && state.last_action_msg.as_ref().is_some_and(|(_, at)| at.elapsed().as_secs() >= 8)
+    {
+        state.last_action_msg = None;
+    }
     ui.horizontal(|ui| {
         let can_act = selected.is_some();
         state.confirm_kill = state.confirm_kill.filter(|(pid, at)| {
@@ -139,16 +168,30 @@ pub(super) fn render_bottom_action_bar(
         });
         if let Some(item) = selected {
             if action_button(ui, can_act, "[ Trim RAM ]", colors::ACCENT_CYAN).clicked() {
-                state.last_action_msg = Some(("Working...".to_owned(), Instant::now()));
-                let (pid, name, ct, exe) =
-                    (item.pid, item.name.to_string(), item.creation_time, exe_opt(item));
-                state.spawn_menu_action(move || {
-                    let msg = match trim_process_working_set(pid, &name, ct, exe) {
-                        Ok(()) => "Working set trimmed".to_owned(),
-                        Err(e) => format!("Trim blocked: {e}"),
-                    };
-                    (msg, None)
-                });
+                let targets = resolve_group_targets(item, raw_rows, state.group_clones);
+                if targets.len() == 1 {
+                    let (pid, name, ct, exe) = targets.into_iter().next().unwrap();
+                    state.last_action_msg = Some(("Working...".to_owned(), Instant::now()));
+                    state.spawn_menu_action(move || {
+                        let msg = match trim_process_working_set(pid, &name, ct, exe) {
+                            Ok(()) => "Working set trimmed".to_owned(),
+                            Err(e) => format!("Trim blocked: {e}"),
+                        };
+                        (msg, None)
+                    });
+                } else {
+                    let total = targets.len();
+                    let name_for_msg = item.name.to_string();
+                    state.spawn_menu_action(move || {
+                        let mut ok = 0;
+                        for (pid, name, ct, exe) in targets {
+                            if trim_process_working_set(pid, &name, ct, exe).is_ok() {
+                                ok += 1;
+                            }
+                        }
+                        (format!("Trimmed RAM for {ok}/{total} processes in {name_for_msg}"), None)
+                    });
+                }
             }
             if action_button(ui, can_act, "[ EcoQoS ]", crate::theme::OPTIMAL_EMERALD).clicked() {
                 state.last_action_msg = Some(("Working...".to_owned(), Instant::now()));
@@ -160,7 +203,7 @@ pub(super) fn render_bottom_action_bar(
                     exe_opt(item),
                 );
                 state.spawn_menu_action(move || {
-                    let msg = match enable_eco_qos(pid, &name, ct, exe) {
+                    let msg = match set_process_eco_qos(pid, &name, ct, exe, true) {
                         Ok(()) => "EcoQoS enabled".to_owned(),
                         Err(e) => format!("EcoQoS blocked: {e}"),
                     };
@@ -169,10 +212,10 @@ pub(super) fn render_bottom_action_bar(
                 });
             }
             if action_button(ui, can_act, "[ Open Location ]", colors::TEXT_PRIMARY).clicked() {
-                state.last_action_msg = Some(("Working...".to_owned(), Instant::now()));
-                let pid = item.pid;
+                let (pid, name, ct, exe) =
+                    (item.pid, item.name.to_string(), item.creation_time, exe_opt(item));
                 state.spawn_menu_action(move || {
-                    let msg = match open_process_file_location(pid) {
+                    let msg = match open_process_file_location(pid, &name, ct, exe.as_deref()) {
                         Ok(()) => "Opened file location".to_owned(),
                         Err(e) => format!("Open blocked: {e}"),
                     };
