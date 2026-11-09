@@ -2,7 +2,7 @@
 use crate::modules::cpu::model::{CpuSnapshot, ProcessCpuItem, RawProcessCpuRow};
 use crate::modules::cpu::qos_action::trim_process_working_set;
 use crate::modules::cpu::table_body::render_virtualized_table;
-use crate::modules::cpu::table_menu::action_button;
+use crate::modules::cpu::table_menu::{action_button, GroupTarget};
 use crate::modules::cpu::table_state::CpuTableState;
 use crate::modules::memory::safe_handle::is_app_elevated;
 use crate::theme::{card_frame, colors};
@@ -47,7 +47,7 @@ pub fn render_cpu_table(
                 });
             } else {
                 let height = (ui.available_height() - 4.0).max(120.0);
-                render_virtualized_table(ui, &rows, state, height);
+                render_virtualized_table(ui, &rows, raw_rows, state, height);
             }
         });
     });
@@ -111,21 +111,25 @@ fn do_purge(raw_rows: &[RawProcessCpuRow], state: &mut CpuTableState) -> bool {
     heavy.sort_by_key(|a| std::cmp::Reverse(a.ram_bytes));
     heavy.truncate(64);
     let total = heavy.len();
-    let targets: Vec<(u32, String, Option<u64>, Option<String>)> = heavy
+    let targets: Vec<GroupTarget> = heavy
         .iter()
-        .map(|r| {
-            (r.pid, r.name.to_string(), r.creation_time, r.exe_path.as_deref().map(str::to_owned))
+        .map(|r| GroupTarget {
+            pid: r.pid,
+            name: r.name.to_string(),
+            start_time: r.start_time,
+            creation_time: r.creation_time,
+            exe_path: r.exe_path.as_deref().map(str::to_owned),
         })
         .collect();
     state.spawn_menu_action(move || {
         let _guard = PurgeGuard;
         let mut ok = 0;
-        for (pid, name, ct, exe) in targets {
-            if trim_process_working_set(pid, &name, ct, exe).is_ok() {
+        for t in targets {
+            if trim_process_working_set(t.pid, &t.name, t.creation_time, t.exe_path).is_ok() {
                 ok += 1;
             }
         }
-        (format!("Purged RAM ({ok}/{total} processes)"), None)
+        (format!("Purged RAM ({ok}/{total} processes)"), None, Vec::new())
     });
     true
 }
@@ -225,5 +229,10 @@ fn render_toolbar(
             });
         });
     }
-    crate::modules::cpu::table_menu::render_bottom_action_bar(ui, selected_row, raw_rows, state);
+    crate::modules::cpu::table_menu_actions::render_bottom_action_bar(
+        ui,
+        selected_row,
+        raw_rows,
+        state,
+    );
 }

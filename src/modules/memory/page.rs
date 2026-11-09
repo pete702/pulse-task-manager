@@ -71,7 +71,7 @@ pub fn render_memory_page(
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("[ View Processes -> ]").clicked() {
-                    cpu_table_state.set_sort(CpuSortCol::RamBytes);
+                    cpu_table_state.ensure_sort(CpuSortCol::RamBytes, false);
                     *active_tab = ActiveTab::Processes;
                     crate::core::request_process_scan();
                 }

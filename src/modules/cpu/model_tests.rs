@@ -1,6 +1,21 @@
 //! Tests for CPU model.
 use super::*;
 #[test]
+fn bottleneck_total_85_triggers() {
+    let snap = CpuSnapshot { total_pct: 85.0, hottest_core_pct: 10.0, ..Default::default() };
+    assert!(snap.single_thread_bottleneck());
+}
+#[test]
+fn bottleneck_hottest_85_triggers() {
+    let snap = CpuSnapshot { total_pct: 10.0, hottest_core_pct: 85.0, ..Default::default() };
+    assert!(snap.single_thread_bottleneck());
+}
+#[test]
+fn bottleneck_below_85_false() {
+    let snap = CpuSnapshot { total_pct: 10.0, hottest_core_pct: 84.9, ..Default::default() };
+    assert!(!snap.single_thread_bottleneck());
+}
+#[test]
 fn test_hottest_core_detection() {
     let mut snap = CpuSnapshot {
         per_core_pct: Arc::from(vec![10.0, 95.0, 45.0, 30.0].into_boxed_slice()),

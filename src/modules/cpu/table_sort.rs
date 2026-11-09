@@ -9,12 +9,16 @@ use crate::modules::cpu::table_state::CpuSortCol;
 
 /// Case-insensitive substring check.
 #[inline]
-pub fn contains_ci(haystack: &str, needle: &str) -> bool {
-    needle.is_empty()
-        || haystack
-            .as_bytes()
-            .windows(needle.len())
-            .any(|w| w.eq_ignore_ascii_case(needle.as_bytes()))
+pub fn contains_ci(haystack: &str, needle_lower: &str) -> bool {
+    if needle_lower.is_empty() {
+        return true;
+    }
+    if haystack.is_ascii() && needle_lower.is_ascii() {
+        let nb = needle_lower.as_bytes();
+        return haystack.len() >= nb.len()
+            && haystack.as_bytes().windows(nb.len()).any(|w| w.eq_ignore_ascii_case(nb));
+    }
+    haystack.to_lowercase().contains(&needle_lower.to_lowercase())
 }
 
 /// Builds one display item from a raw row plus its RAM delta.

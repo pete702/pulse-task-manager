@@ -2,6 +2,28 @@
 
 Archived entries from 0.1.x. Recent 0.2.x entries live in CHANGELOG.md.
 
+## [0.4.42] - 2026-03-31
+
+- **Master Height**: `horizontal_top` with 280px full-height master, pinned ALL selector outside scroll, `.max_height(full)` scroll, `set_min_width` full-width cards, right pane `(full_w - 290px)`.
+- **Activity Columns**: `draw_table_row` with `set_min/max_width` fixed columns (`88/88/92px` + remainder), header separator `BORDER_SUBTLE`, card fills remaining height.
+- **KPI Single Line**: `TOP I/O` gets remainder width after 3x `110px` columns, value uses `Label::truncate(true)` so it never wraps.
+- **Version bump to 0.4.42**.
+
+## [0.4.41] - 2026-03-31
+
+- **Master-Detail Cockpit**: `render_storage_tab` splits at `>= 680px` into 275px master (ALL selector + vertical physical cards) and detail (KPI/chart/activity); narrow windows fall back to vertical stack.
+- **Master Clickability**: disk headers and each partition use `Sense::click()`, two-item headers never collide, partition right text colored by `health_label`.
+- **Dedup Inspector**: removed `SELECTED PARTITION` duplicate box; activity is always 100% width with `All Drives` / `On X:` toggle kept.
+- **Tooltip Fix**: storage series renamed to `Read` / `Write`, custom clamped 240px hover box shows `Write: 9.5 MB/s (3.2m ago)` inside `plot_rect`, default rulers disabled.
+- **Version bump to 0.4.41**.
+
+## [0.4.40] - 2026-03-31
+
+- **Extents Fallback**: `IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS` maps volumes when `STORAGE_DEVICE_NUMBER` fails; per-mount `DISK_PERFORMANCE` keyed `0x8000_0000 | letter` covers unmapped `L:\`.
+- **Physical Disk Cards**: 2-column grid with compact 68px cards, header `DISK N (partitions/GiB)` + `R/W` + worst badge, partitions horizontal via `ui.columns`.
+- **Activity Width**: full-width `TOP PROCESS DISK ACTIVITY` when `selected is None`, else 58/42 split with `Clear Selection / Show All` inspector.
+- **Version bump to 0.4.40**.
+
 ## [0.4.39] - 2026-03-31
 
 - **Compact Volume Rows**: replaced tall 2-column disk boxes with sleek single-row strips, `Margin::symmetric(10.0, 6.0)`, spacing 4.0, slim 5px bars, one-line `R/W` + `Used/Total` + badge.

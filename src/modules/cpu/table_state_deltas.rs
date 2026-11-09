@@ -1,5 +1,5 @@
 //! RAM delta computation for CpuTableState.
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use crate::modules::cpu::model::RawProcessCpuRow;
@@ -14,6 +14,13 @@ impl CpuTableState {
         scan_changed: bool,
         scan_generation: u64,
     ) -> HashMap<(u32, u64), i64> {
+        if rows.is_empty() {
+            self.ram_baseline.clear();
+        }
+        if self.ram_baseline.len() > rows.len() + 32 {
+            let live: HashSet<(u32, u64)> = rows.iter().map(|r| (r.pid, r.start_time)).collect();
+            self.ram_baseline.retain(|k, _| live.contains(k));
+        }
         if !scan_changed {
             let mut deltas = HashMap::with_capacity(rows.len());
             for row in rows {
@@ -32,8 +39,9 @@ impl CpuTableState {
                     0
                 } else {
                     let dt = raw_dt.max(1.0);
+                    let scale = (10.0 / dt).clamp(1.0 / 30.0, 10.0);
                     let diff = row.ram_bytes as i64 - prev.0 as i64;
-                    ((diff as f32) * (10.0 / dt)).round() as i64
+                    ((diff as f32) * scale).round() as i64
                 }
             });
             deltas.insert(key, delta);
@@ -48,10 +56,7 @@ impl CpuTableState {
         self.baseline_scan_gen = scan_generation;
         deltas
     }
-    pub fn spawn_menu_action(
-        &mut self,
-        job: impl FnOnce() -> (String, Option<(u32, u64, bool)>) + Send + 'static,
-    ) {
+    pub fn spawn_menu_action(&mut self, job: impl FnOnce() -> super::ActionMsg + Send + 'static) {
         if self.action_rx.is_some() {
             return;
         }
@@ -65,7 +70,7 @@ impl CpuTableState {
     pub fn poll_menu_action(&mut self) {
         if let Some(rx) = self.action_rx.take() {
             match rx.try_recv() {
-                Ok((msg, eco)) => {
+                Ok((msg, eco, rollbacks)) => {
                     if let Some((pid, st, on)) = eco {
                         if self.eco_overrides.len() >= 512 {
                             self.eco_overrides.clear();
@@ -73,6 +78,9 @@ impl CpuTableState {
                         self.eco_overrides.insert((pid, st), on);
                         crate::modules::cpu::collector::mark_pending_eco(pid, st, on);
                         crate::core::request_process_scan();
+                    }
+                    if !rollbacks.is_empty() {
+                        self.apply_eco_rollbacks(&rollbacks);
                     }
                     self.last_action_msg = Some((msg, Instant::now()));
                     self.dirty = true;

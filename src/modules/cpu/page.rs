@@ -59,7 +59,7 @@ pub fn render_cpu_page(
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("[ View Processes -> ]").clicked() {
-                        table_state.set_sort(CpuSortCol::CpuPct);
+                        table_state.ensure_sort(CpuSortCol::CpuPct, false);
                         *active_tab = ActiveTab::Processes;
                         crate::core::request_process_scan();
                     }

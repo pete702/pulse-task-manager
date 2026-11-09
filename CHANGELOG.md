@@ -2,6 +2,24 @@
 
 All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
 
+## [0.4.57] - 2026-03-31
+
+- **Eco Rollback**: optimistic overrides restored on failure, `apply_eco_rollbacks` via action channel.
+- **Delta and Hover**: 10s scale clamped to [1/30, 10] with 1.0s floor, hover uses `resolve_exe_cached`.
+- **Version bump to 0.4.57**.
+
+## [0.4.56] - 2026-03-31
+
+- **Group Identity**: `GroupTarget` with start/creation/exe, imposter path guard, group trim/eco/kill/open with reuse checks.
+- **Menu Split**: actions moved to `table_menu_actions.rs` to keep files <= 265 lines, tests compacted.
+- **Version bump to 0.4.56**.
+
+## [0.4.55] - 2026-03-31
+
+- **Sort and Search**: navigation uses `ensure_sort`, Unicode `contains_ci` with ASCII fast path, header still toggles.
+- **Hover Cache**: TTL fallback, no sticky insert when saturated, Drop-guarded in-flight, baseline eviction and 0.05s dt floor.
+- **Version bump to 0.4.55**.
+
 ## [0.4.54] - 2026-03-31
 
 - **Grouped Hog Fix**: single `from_raw` path, clamped group CPU, per-member hog flag, zero-alloc `pid_contains`.
@@ -77,25 +95,3 @@ All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGEL
 - **KPI Alignment**: short `BLACKBOX/READ MB/s/WRITE MB/s/TOP I/O` headers, `10/13` fonts on one baseline, widths `(w*0.18).clamp(68,95)`, short `Disk 0` scope max 14 chars.
 - **Ultra-Compact Disks**: `Margin(8,4)`, `16px` header, `15px` partitions, `3px` bars, `H: NTFS` + `used/total (Free) %`, 2-column `chunks(2)` when `>= 440px`.
 - **Version bump to 0.4.43**.
-
-## [0.4.42] - 2026-03-31
-
-- **Master Height**: `horizontal_top` with 280px full-height master, pinned ALL selector outside scroll, `.max_height(full)` scroll, `set_min_width` full-width cards, right pane `(full_w - 290px)`.
-- **Activity Columns**: `draw_table_row` with `set_min/max_width` fixed columns (`88/88/92px` + remainder), header separator `BORDER_SUBTLE`, card fills remaining height.
-- **KPI Single Line**: `TOP I/O` gets remainder width after 3x `110px` columns, value uses `Label::truncate(true)` so it never wraps.
-- **Version bump to 0.4.42**.
-
-## [0.4.41] - 2026-03-31
-
-- **Master-Detail Cockpit**: `render_storage_tab` splits at `>= 680px` into 275px master (ALL selector + vertical physical cards) and detail (KPI/chart/activity); narrow windows fall back to vertical stack.
-- **Master Clickability**: disk headers and each partition use `Sense::click()`, two-item headers never collide, partition right text colored by `health_label`.
-- **Dedup Inspector**: removed `SELECTED PARTITION` duplicate box; activity is always 100% width with `All Drives` / `On X:` toggle kept.
-- **Tooltip Fix**: storage series renamed to `Read` / `Write`, custom clamped 240px hover box shows `Write: 9.5 MB/s (3.2m ago)` inside `plot_rect`, default rulers disabled.
-- **Version bump to 0.4.41**.
-
-## [0.4.40] - 2026-03-31
-
-- **Extents Fallback**: `IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS` maps volumes when `STORAGE_DEVICE_NUMBER` fails; per-mount `DISK_PERFORMANCE` keyed `0x8000_0000 | letter` covers unmapped `L:\`.
-- **Physical Disk Cards**: 2-column grid with compact 68px cards, header `DISK N (partitions/GiB)` + `R/W` + worst badge, partitions horizontal via `ui.columns`.
-- **Activity Width**: full-width `TOP PROCESS DISK ACTIVITY` when `selected is None`, else 58/42 split with `Clear Selection / Show All` inspector.
-- **Version bump to 0.4.40**.

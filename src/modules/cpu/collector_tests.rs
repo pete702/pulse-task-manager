@@ -1,6 +1,7 @@
 //! CPU collector tests.
 
-use super::{first_sample_disk_bytes, guarded_disk_bytes, CpuCollector};
+use super::{first_sample_disk_bytes, guarded_disk_bytes, pid_contains, CpuCollector};
+use crate::modules::cpu::table_sort::contains_ci;
 #[test]
 fn first_sample_zeroes_lifetime_even_when_young() {
     assert_eq!(
@@ -29,4 +30,25 @@ fn disk_rate_uses_production_helper() {
     assert_eq!(CpuCollector::disk_rate(100, 200, 1.0), 0);
     assert_eq!(CpuCollector::disk_rate(200, 100, 0.0), 0);
     assert_eq!(CpuCollector::disk_rate(1_000_000, 0, 2.0), 500_000);
+}
+#[test]
+fn contains_ci_ascii_and_unicode() {
+    assert!(contains_ci("Chrome.exe", "chrome"));
+    assert!(contains_ci("CHROME.EXE", "chrome"));
+    assert!(!contains_ci("chrome.exe", "edge"));
+    assert!(contains_ci("", ""));
+    let upper = "\u{041f}\u{0440}\u{043e}\u{0446}\u{0435}\u{0441}";
+    let lower = "\u{043f}\u{0440}\u{043e}\u{0446}\u{0435}\u{0441}";
+    assert!(contains_ci(upper, lower));
+    assert!(contains_ci(lower, upper));
+    assert!(!contains_ci(lower, "other"));
+}
+#[test]
+fn pid_contains_edges() {
+    assert!(pid_contains(0, "0"));
+    assert!(pid_contains(99999, "999"));
+    assert!(!pid_contains(12, "123"));
+    assert!(!pid_contains(100, "9"));
+    assert!(!pid_contains(99999, ""));
+    assert!(!pid_contains(1234, "12a"));
 }

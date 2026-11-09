@@ -1,5 +1,5 @@
 //! Unified process table body with sortable headers, bars, and row actions.
-use crate::modules::cpu::model::ProcessCpuItem;
+use crate::modules::cpu::model::{ProcessCpuItem, RawProcessCpuRow};
 use crate::modules::cpu::table_cols::{col_widths, compute_col_x, draw_separators, truncate_name};
 use crate::modules::cpu::table_menu::{render_sort_button, show_row_menu};
 use crate::modules::cpu::table_state::{CpuSortCol, CpuTableState};
@@ -39,6 +39,7 @@ fn txt(ui: &egui::Ui, r: egui::Rect, s: &str, c: egui::Color32) {
 pub fn render_virtualized_table(
     ui: &mut egui::Ui,
     rows: &[ProcessCpuItem],
+    raw_rows: &[RawProcessCpuRow],
     state: &mut CpuTableState,
     height: f32,
 ) {
@@ -186,17 +187,17 @@ pub fn render_virtualized_table(
                 txt(ui, c6, &item.disk_io_text, ic);
                 let hov = resp.hovered();
                 let resp = if hov {
-                    let p = if !item.exe_path.is_empty() {
-                        item.exe_path.to_string()
-                    } else {
-                        crate::modules::cpu::exe_cache::cached_exe_path(item.pid, item.start_time)
-                    };
+                    let p = crate::modules::cpu::exe_cache::resolve_exe_cached(
+                        item.pid,
+                        item.start_time,
+                        if item.exe_path.is_empty() { None } else { Some(item.exe_path.as_ref()) },
+                    );
                     resp.on_hover_text(format!("{}\n{}", item.name, p))
                 } else {
                     resp
                 };
                 resp.on_hover_cursor(egui::CursorIcon::Default).context_menu(|ui| {
-                    show_row_menu(ui, item, state);
+                    show_row_menu(ui, item, raw_rows, state);
                 });
             }
         },

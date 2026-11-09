@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use crate::modules::cpu::model::{ProcessCpuItem, RawProcessCpuRow};
 use crate::modules::cpu::table_sort::{filter_group_and_sort, sort_slice};
+pub(crate) type ActionMsg = (String, Option<(u32, u64, bool)>, Vec<((u32, u64), Option<bool>)>);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ProcessQuickFilter {
     #[default]
@@ -15,20 +16,13 @@ pub enum ProcessQuickFilter {
 
 impl ProcessQuickFilter {
     pub fn from_u8(v: u8) -> Self {
-        match v {
-            1 => ProcessQuickFilter::ActiveLoad,
-            2 => ProcessQuickFilter::HighRam,
-            3 => ProcessQuickFilter::EcoQos,
-            _ => ProcessQuickFilter::All,
-        }
+        [Self::All, Self::ActiveLoad, Self::HighRam, Self::EcoQos]
+            .get(v as usize)
+            .copied()
+            .unwrap_or(Self::All)
     }
     pub fn to_u8(self) -> u8 {
-        match self {
-            ProcessQuickFilter::All => 0,
-            ProcessQuickFilter::ActiveLoad => 1,
-            ProcessQuickFilter::HighRam => 2,
-            ProcessQuickFilter::EcoQos => 3,
-        }
+        self as u8
     }
     pub fn label(self) -> &'static str {
         match self {
@@ -38,18 +32,12 @@ impl ProcessQuickFilter {
             ProcessQuickFilter::EcoQos => "[ EcoQoS ]",
         }
     }
-    pub fn matches(
-        self,
-        cpu_pct: f32,
-        ram_bytes: u64,
-        io_mbps: f32,
-        eco_qos: Option<bool>,
-    ) -> bool {
+    pub fn matches(self, cpu: f32, ram: u64, io: f32, eco: Option<bool>) -> bool {
         match self {
-            ProcessQuickFilter::All => true,
-            ProcessQuickFilter::ActiveLoad => cpu_pct >= 1.0 || io_mbps > 0.0,
-            ProcessQuickFilter::HighRam => ram_bytes >= 200 * 1024 * 1024,
-            ProcessQuickFilter::EcoQos => eco_qos == Some(true),
+            Self::All => true,
+            Self::ActiveLoad => cpu >= 1.0 || io > 0.0,
+            Self::HighRam => ram >= 200 * 1024 * 1024,
+            Self::EcoQos => eco == Some(true),
         }
     }
 }
@@ -68,7 +56,6 @@ pub enum CpuSortCol {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CpuTableCacheKey(u64, String, CpuSortCol, bool, bool, u8);
 #[derive(Debug)]
-#[allow(clippy::type_complexity)]
 pub struct CpuTableState {
     pub comfort_density: bool,
     pub search_query: String,
@@ -82,7 +69,7 @@ pub struct CpuTableState {
     pub selected_name: Option<String>,
     pub paused: bool,
     pub last_action_msg: Option<(String, Instant)>,
-    pub action_rx: Option<std::sync::mpsc::Receiver<(String, Option<(u32, u64, bool)>)>>,
+    pub action_rx: Option<std::sync::mpsc::Receiver<ActionMsg>>,
     pub eco_overrides: HashMap<(u32, u64), bool>,
     pub confirm_kill: Option<(u32, Instant)>,
     pub baseline_scan_gen: u64,
@@ -224,7 +211,6 @@ impl CpuTableState {
         }
         self.apply_sort_in_place();
     }
-    #[allow(dead_code)]
     pub fn ensure_sort(&mut self, col: CpuSortCol, asc: bool) {
         self.sort_col = col;
         self.sort_asc = asc;
@@ -265,6 +251,19 @@ impl CpuTableState {
         }
     }
     pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+    pub(crate) fn apply_eco_rollbacks(&mut self, rollbacks: &[((u32, u64), Option<bool>)]) {
+        if rollbacks.is_empty() {
+            return;
+        }
+        for &(key, prev) in rollbacks {
+            if let Some(old) = prev {
+                self.eco_overrides.insert(key, old);
+            } else {
+                self.eco_overrides.remove(&key);
+            }
+        }
         self.dirty = true;
     }
 }

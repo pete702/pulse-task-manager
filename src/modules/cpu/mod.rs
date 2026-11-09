@@ -18,6 +18,7 @@ pub mod table;
 pub mod table_body;
 pub mod table_cols;
 pub mod table_menu;
+pub mod table_menu_actions;
 pub mod table_sort;
 pub mod table_state;
 pub mod top_cards;
