@@ -8,7 +8,7 @@ use sysinfo::System;
 use windows_sys::Win32::System::Power::{CallNtPowerInformation, ProcessorInformation};
 
 #[cfg(target_os = "windows")]
-const MAX_CORES: usize = 128;
+const MAX_CORES: usize = 256;
 
 /// Cached CPU brand string (read once at startup).
 static CPU_BRAND: OnceLock<Arc<str>> = OnceLock::new();
@@ -113,37 +113,43 @@ pub struct ProcessorPowerInfo {
 }
 
 /// Reads live CPU current frequency (CurrentMhz) per core.
-/// Returns current_mhz where current_mhz reflects Turbo Boost / SpeedShift.
+/// Returns (base_mhz, current_mhz) where current_mhz reflects Turbo Boost / SpeedShift.
 /// Base MHz is read from the cached BASE_MHZ (initialized once at startup).
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 pub fn read_cpu_frequencies() -> (u64, u64) {
-    let base_mhz = get_base_mhz();
-
-    let n = unsafe { windows_sys::Win32::System::Threading::GetActiveProcessorCount(0) } as usize;
-    let n = n.clamp(1, MAX_CORES);
-
-    let mut buf = [ProcessorPowerInfo::default(); MAX_CORES];
-    let status = unsafe {
-        CallNtPowerInformation(
-            ProcessorInformation,
-            std::ptr::null_mut(),
-            0,
-            buf.as_mut_ptr() as *mut _,
-            (n * std::mem::size_of::<ProcessorPowerInfo>()) as u32,
-        )
-    };
-
-    if status == 0 {
-        let mut max_current = 0u64;
-        for info in buf.iter().take(n) {
-            max_current = max_current.max(info.current_mhz as u64);
-        }
-        (base_mhz, max_current)
-    } else {
-        // Fallback: use cached base MHz for both
-        (base_mhz, base_mhz)
+    thread_local! {
+        static FREQ_BUF: std::cell::RefCell<Vec<ProcessorPowerInfo>> =
+            const { std::cell::RefCell::new(Vec::new()) };
     }
+    let base_mhz = get_base_mhz();
+    let count = (unsafe { windows_sys::Win32::System::Threading::GetActiveProcessorCount(0) }
+        as usize)
+        .clamp(1, MAX_CORES);
+    FREQ_BUF.with(|cell| {
+        let mut buf = cell.borrow_mut();
+        if buf.len() != count {
+            buf.resize(count, ProcessorPowerInfo::default());
+        }
+        let status = unsafe {
+            CallNtPowerInformation(
+                ProcessorInformation,
+                std::ptr::null_mut(),
+                0,
+                buf.as_mut_ptr() as *mut _,
+                (count * std::mem::size_of::<ProcessorPowerInfo>()) as u32,
+            )
+        };
+        if status == 0 {
+            let mut max_current = 0u64;
+            for info in buf.iter().take(count) {
+                max_current = max_current.max(info.current_mhz as u64);
+            }
+            (base_mhz, max_current)
+        } else {
+            (base_mhz, base_mhz)
+        }
+    })
 }
 
 /// Non-Windows stub: returns cached base MHz for both values.

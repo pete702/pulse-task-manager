@@ -1,6 +1,6 @@
 [package]
 name = "pulse_manager"
-version = "0.4.57"
+version = "0.4.65"
 edition = "2021"
 rust-version = "1.88"
 description = "Windows 10/11 hardware telemetry HUD and process manager in Rust + egui"
@@ -34,7 +34,7 @@ debug = true
 eframe = "=0.27.2"
 egui = "=0.27.2"
 egui_plot = "=0.27.2"
-egui_extras = "=0.27.2"
+egui_extras = { version = "=0.27.2", default-features = false }
 
 # =============================================================================
 # SYSTEM INTELLIGENCE (sysinfo 0.30.12 - PINNED EXACTLY)
@@ -45,7 +45,7 @@ sysinfo = { version = "=0.30.12", default-features = false }
 # WINDOWS NATIVE API (windows-sys 0.52.0 - PINNED EXACTLY)
 # Features: ProcessStatus (PSAPI), Threading, Foundation, Globalization, Power, Registry, SystemInformation
 # =============================================================================
-windows-sys = { version = "=0.52.0", features = ["Win32_System_ProcessStatus", "Win32_System_Threading", "Win32_Foundation", "Win32_Globalization", "Win32_Security", "Win32_System_Power", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_Storage_FileSystem", "Win32_System_IO"] }
+windows-sys = { version = "=0.52.0", default-features = false, features = ["Win32_System_ProcessStatus", "Win32_System_Threading", "Win32_Foundation", "Win32_Globalization", "Win32_Security", "Win32_System_Power", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_Storage_FileSystem", "Win32_System_IO"] }
 
 [dev-dependencies]
 

@@ -163,6 +163,14 @@ impl CpuHistory {
     pub fn latest_timestamp(&self) -> f64 {
         self.timestamps.back().copied().unwrap_or(0.0)
     }
+
+    pub fn show_core_grid(&self) -> bool {
+        self.show_core_grid
+    }
+
+    pub fn set_show_core_grid(&mut self, show: bool) {
+        self.show_core_grid = show;
+    }
     #[allow(dead_code)]
     pub fn total_series(&mut self, window: CpuChartWindow) -> Arc<Vec<[f64; 2]>> {
         self.get_total_series(window)

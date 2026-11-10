@@ -1,8 +1,19 @@
-//! Adaptive per-core live telemetry grid (2–128+ logical threads).
+//! Adaptive per-core live telemetry grid (2-128+ logical threads).
 
 use crate::modules::cpu::model::CpuSnapshot;
 use crate::theme::{card_frame, colors};
 use eframe::egui;
+use std::borrow::Cow;
+use std::sync::OnceLock;
+
+pub(crate) fn compute_grid_cols(n: usize, avail_w: f32, spacing: f32) -> (usize, f32) {
+    let avail_w = if avail_w.is_finite() { avail_w.max(0.0) } else { 0.0 };
+    let spacing = if spacing.is_finite() { spacing.max(0.0) } else { 0.0 };
+    let max_fit = ((avail_w + spacing) / (68.0 + spacing)).floor().max(1.0) as usize;
+    let cols = ((avail_w / 88.0).floor() as usize).clamp(4, 14).min(max_fit).min(n.max(1)).max(1);
+    let tile_w = ((avail_w - spacing * (cols.saturating_sub(1) as f32)) / (cols as f32)).max(68.0);
+    (cols, tile_w)
+}
 
 /// Renders the adaptive per-core grid.
 pub fn render_core_grid(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
@@ -12,13 +23,12 @@ pub fn render_core_grid(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
         return;
     }
 
-    // Dynamic cols from available width so narrowing never clips C08/C09.
     let avail_w = ui.available_width().max(120.0);
-    let cols = ((avail_w / 88.0).floor() as usize).clamp(4, 14).min(n.max(1));
+    let spacing = 6.0_f32;
+    let (cols, tile_w) = compute_grid_cols(n, avail_w, spacing);
 
     card_frame().show(ui, |ui| {
         ui.vertical(|ui| {
-            // Header
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new("PER-CORE LIVE TELEMETRY GRID")
@@ -36,13 +46,6 @@ pub fn render_core_grid(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
                 });
             });
             ui.add_space(8.0);
-
-            // Grid layout — vertical ScrollArea when threads are high.
-            let available_width = ui.available_width().max(120.0);
-            let spacing = 6.0_f32;
-            let tile_w = ((available_width - spacing * (cols.saturating_sub(1) as f32))
-                / (cols as f32))
-                .max(68.0);
             let cell_width = tile_w;
             let cell_height = 48.0;
 
@@ -76,6 +79,27 @@ pub fn render_core_grid(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
     });
 }
 
+fn core_label(idx: usize) -> Cow<'static, str> {
+    static LABELS: OnceLock<Vec<String>> = OnceLock::new();
+    let labels = LABELS.get_or_init(|| (0..256).map(|i| format!("C{i:02}")).collect());
+    if let Some(s) = labels.get(idx) {
+        Cow::Borrowed(s.as_str())
+    } else {
+        Cow::Owned(format!("C{idx:02}"))
+    }
+}
+
+fn usage_label(usage: f32) -> Cow<'static, str> {
+    static LABELS: OnceLock<Vec<String>> = OnceLock::new();
+    let labels = LABELS.get_or_init(|| (0..=100).map(|i| format!("{i}%")).collect());
+    let idx = if usage.is_finite() { usage.clamp(0.0, 100.0).round() as usize } else { 0 };
+    if let Some(s) = labels.get(idx) {
+        Cow::Borrowed(s.as_str())
+    } else {
+        Cow::Owned(format!("{idx}%"))
+    }
+}
+
 fn render_core_cell(
     ui: &mut egui::Ui,
     idx: usize,
@@ -105,16 +129,18 @@ fn render_core_cell(
     };
 
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
-    if is_hottest {
-        resp.on_hover_text(format!(
-            "Core C{:02}: {:.1}% (Hottest logical thread in current tick)",
-            idx, usage
-        ));
-    } else {
-        resp.on_hover_text(format!("Core C{:02}: {:.1}%", idx, usage));
+    if resp.hovered() {
+        if is_hottest {
+            resp.on_hover_text(format!(
+                "Core C{:02}: {:.1}% (Hottest logical thread in current tick)",
+                idx, usage
+            ));
+        } else {
+            resp.on_hover_text(format!("Core C{:02}: {:.1}%", idx, usage));
+        }
     }
 
-    // Cell background — idle cores dimmed.
+    // Cell background - idle cores dimmed.
     let bg_color = if is_idle && !is_hottest {
         egui::Color32::from_rgba_unmultiplied(10, 12, 18, 180)
     } else if is_hottest {
@@ -138,7 +164,7 @@ fn render_core_cell(
         egui::Stroke::new(stroke_width, stroke_color),
     );
 
-    // Core label — idle dimmed.
+    // Core label - idle dimmed.
     let label_y = rect.top() + 4.0;
     let lbl_color = if is_hottest {
         colors::ACCENT_CYAN
@@ -150,7 +176,7 @@ fn render_core_cell(
     ui.painter().text(
         egui::pos2(rect.center().x, label_y),
         egui::Align2::CENTER_TOP,
-        format!("C{:02}", idx),
+        core_label(idx),
         egui::FontId::monospace(10.0),
         lbl_color,
     );
@@ -193,7 +219,7 @@ fn render_core_cell(
         ui.painter().rect_filled(cap_rect, egui::Rounding::ZERO, cap_color);
     }
 
-    // Usage percentage text — idle dimmed.
+    // Usage percentage text - idle dimmed.
     let pct_y = rect.bottom() - 10.0;
     let pct_color = if is_hottest {
         bar_color
@@ -205,8 +231,33 @@ fn render_core_cell(
     ui.painter().text(
         egui::pos2(rect.center().x, pct_y),
         egui::Align2::CENTER_BOTTOM,
-        format!("{:.0}%", usage),
+        usage_label(usage),
         egui::FontId::monospace(11.0),
         pct_color,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{compute_grid_cols, core_label, usage_label};
+
+    #[test]
+    fn core_grid_helpers() {
+        assert_eq!(core_label(0).as_ref(), "C00");
+        assert_eq!(core_label(255).as_ref(), "C255");
+        assert_eq!(core_label(256).as_ref(), "C256");
+        for &(v, s) in
+            &[(0.0, "0%"), (100.0, "100%"), (f32::NAN, "0%"), (-5.0, "0%"), (150.0, "100%")]
+        {
+            assert_eq!(usage_label(v).as_ref(), s);
+        }
+        for &avail_w in &[100.0_f32, 250.0, 860.0, 1920.0] {
+            let (cols, tile_w) = compute_grid_cols(16, avail_w, 6.0);
+            let total = cols as f32 * tile_w + cols.saturating_sub(1) as f32 * 6.0;
+            assert!(total <= avail_w + 0.01);
+            if avail_w >= 68.0 {
+                assert!(tile_w >= 68.0);
+            }
+        }
+    }
 }

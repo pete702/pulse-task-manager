@@ -45,9 +45,6 @@ pub fn render_total_load_card(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
                         .size(28.0)
                         .color(color),
                 );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add_space(8.0);
-                });
             });
             ui.add_space(4.0);
 

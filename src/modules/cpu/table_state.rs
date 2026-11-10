@@ -5,42 +5,7 @@ use std::time::Instant;
 use crate::modules::cpu::model::{ProcessCpuItem, RawProcessCpuRow};
 use crate::modules::cpu::table_sort::{filter_group_and_sort, sort_slice};
 pub(crate) type ActionMsg = (String, Option<(u32, u64, bool)>, Vec<((u32, u64), Option<bool>)>);
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ProcessQuickFilter {
-    #[default]
-    All,
-    ActiveLoad,
-    HighRam,
-    EcoQos,
-}
-
-impl ProcessQuickFilter {
-    pub fn from_u8(v: u8) -> Self {
-        [Self::All, Self::ActiveLoad, Self::HighRam, Self::EcoQos]
-            .get(v as usize)
-            .copied()
-            .unwrap_or(Self::All)
-    }
-    pub fn to_u8(self) -> u8 {
-        self as u8
-    }
-    pub fn label(self) -> &'static str {
-        match self {
-            ProcessQuickFilter::All => "[ All ]",
-            ProcessQuickFilter::ActiveLoad => "[ Active CPU/Disk ]",
-            ProcessQuickFilter::HighRam => "[ RAM > 200 MB ]",
-            ProcessQuickFilter::EcoQos => "[ EcoQoS ]",
-        }
-    }
-    pub fn matches(self, cpu: f32, ram: u64, io: f32, eco: Option<bool>) -> bool {
-        match self {
-            Self::All => true,
-            Self::ActiveLoad => cpu >= 1.0 || io > 0.0,
-            Self::HighRam => ram >= 200 * 1024 * 1024,
-            Self::EcoQos => eco == Some(true),
-        }
-    }
-}
+pub use super::quick_filter::ProcessQuickFilter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CpuSortCol {
@@ -259,6 +224,11 @@ impl CpuTableState {
         }
         for &(key, prev) in rollbacks {
             if let Some(old) = prev {
+                if self.eco_overrides.len() >= 512 && !self.eco_overrides.contains_key(&key) {
+                    if let Some(k) = self.eco_overrides.keys().next().copied() {
+                        self.eco_overrides.remove(&k);
+                    }
+                }
                 self.eco_overrides.insert(key, old);
             } else {
                 self.eco_overrides.remove(&key);

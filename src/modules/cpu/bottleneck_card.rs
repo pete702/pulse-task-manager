@@ -8,15 +8,16 @@ use crate::ui::primitives::{cyber_accent, draw_cyber_corner_brackets};
 use eframe::egui;
 
 fn cached_hottest(pct: f32) -> Arc<str> {
-    let key = (pct * 10.0).round() as u16;
+    let clamped = if pct.is_finite() { pct.clamp(0.0, 100.0) } else { 0.0 };
+    let key = (clamped * 10.0).round() as u16;
     static CACHE: OnceLock<Mutex<(u16, Arc<str>)>> = OnceLock::new();
     let mut cache = CACHE
-        .get_or_init(|| Mutex::new((0, Arc::from(""))))
+        .get_or_init(|| Mutex::new((u16::MAX, Arc::from(""))))
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     if cache.0 != key {
         cache.0 = key;
-        cache.1 = Arc::from(format!("{pct:.1}%"));
+        cache.1 = Arc::from(format!("{clamped:.1}%"));
     }
     Arc::clone(&cache.1)
 }
@@ -24,7 +25,7 @@ fn cached_hottest(pct: f32) -> Arc<str> {
 fn cached_thread(idx: usize) -> Arc<str> {
     static CACHE: OnceLock<Mutex<(usize, Arc<str>)>> = OnceLock::new();
     let mut cache = CACHE
-        .get_or_init(|| Mutex::new((0, Arc::from(""))))
+        .get_or_init(|| Mutex::new((usize::MAX, Arc::from(""))))
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     if cache.0 != idx {
@@ -35,17 +36,28 @@ fn cached_thread(idx: usize) -> Arc<str> {
 }
 
 fn cached_delta(delta: f32) -> Arc<str> {
-    let key = (delta * 10.0).round() as u16;
+    let clamped = if delta.is_finite() { delta.clamp(0.0, 100.0) } else { 0.0 };
+    let key = (clamped * 10.0).round() as u16;
     static CACHE: OnceLock<Mutex<(u16, Arc<str>)>> = OnceLock::new();
     let mut cache = CACHE
-        .get_or_init(|| Mutex::new((0, Arc::from(""))))
+        .get_or_init(|| Mutex::new((u16::MAX, Arc::from(""))))
         .lock()
         .unwrap_or_else(|e| e.into_inner());
     if cache.0 != key {
         cache.0 = key;
-        cache.1 = Arc::from(format!("+{delta:.1}% vs Total"));
+        cache.1 = Arc::from(format!("+{clamped:.1}% vs Total"));
     }
     Arc::clone(&cache.1)
+}
+
+pub(crate) fn classify_bottleneck_badge(hottest_pct: f32, is_bottleneck: bool) -> &'static str {
+    if is_bottleneck {
+        "[!] SINGLE-THREAD BOUND"
+    } else if hottest_pct < 5.0 {
+        "[--] IDLE / BALANCED"
+    } else {
+        "[OK] BALANCED"
+    }
 }
 
 /// Renders the Peak Thread Bottleneck card.
@@ -74,10 +86,13 @@ pub fn render_bottleneck_card(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
                     );
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let (badge_text, badge_color) = if is_bottleneck {
-                        ("[!] SINGLE-THREAD BOUND", egui::Color32::from_rgb(239, 68, 68))
+                    let badge_text = classify_bottleneck_badge(hottest_pct, is_bottleneck);
+                    let badge_color = if is_bottleneck {
+                        egui::Color32::from_rgb(239, 68, 68)
+                    } else if hottest_pct < 5.0 {
+                        colors::TEXT_SECONDARY
                     } else {
-                        ("[OK] BALANCED", egui::Color32::from_rgb(0, 229, 255))
+                        egui::Color32::from_rgb(0, 229, 255)
                     };
                     ui.label(
                         egui::RichText::new(badge_text)
@@ -177,4 +192,27 @@ fn metric_cell(ui: &mut egui::Ui, caption: &str, value: &str, value_color: egui:
                 .wrap(false),
         );
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cached_delta, cached_hottest, cached_thread, classify_bottleneck_badge};
+
+    #[test]
+    fn cached_helpers_handle_zero_nan_and_nonzero() {
+        assert_eq!(cached_hottest(0.0).as_ref(), "0.0%");
+        assert_eq!(cached_hottest(f32::NAN).as_ref(), "0.0%");
+        assert_eq!(cached_thread(0).as_ref(), "Thread #0");
+        assert_eq!(cached_delta(0.0).as_ref(), "+0.0% vs Total");
+        assert_eq!(cached_hottest(12.34).as_ref(), "12.3%");
+        assert_eq!(cached_thread(7).as_ref(), "Thread #7");
+        assert_eq!(cached_delta(5.67).as_ref(), "+5.7% vs Total");
+    }
+
+    #[test]
+    fn classify_bottleneck_badge_states() {
+        assert_eq!(classify_bottleneck_badge(90.0, true), "[!] SINGLE-THREAD BOUND");
+        assert_eq!(classify_bottleneck_badge(1.0, false), "[--] IDLE / BALANCED");
+        assert_eq!(classify_bottleneck_badge(20.0, false), "[OK] BALANCED");
+    }
 }

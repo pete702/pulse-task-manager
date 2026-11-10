@@ -72,6 +72,8 @@ pub fn draw_hud_legend(ui: &mut egui::Ui, plot_rect: egui::Rect) -> (bool, bool)
 
     let total_id = egui::Id::new("cpu_chart_show_total");
     let peak_id = egui::Id::new("cpu_chart_show_peak");
+    let total_btn_id = egui::Id::new("cpu_chart_legend_total_btn");
+    let peak_btn_id = egui::Id::new("cpu_chart_legend_peak_btn");
 
     let mut show_total: bool =
         ui.ctx().data_mut(|d| *d.get_temp_mut_or_insert_with(total_id, || true));
@@ -83,7 +85,7 @@ pub fn draw_hud_legend(ui: &mut egui::Ui, plot_rect: egui::Rect) -> (bool, bool)
         egui::pos2(plot_rect.left() + 8.0, y_leg),
         egui::vec2(72.0, 15.0),
     );
-    let total_resp = ui.interact(total_rect, total_id, egui::Sense::click());
+    let total_resp = ui.interact(total_rect, total_btn_id, egui::Sense::click());
     if total_resp.clicked() {
         show_total = !show_total;
         ui.ctx().data_mut(|d| d.insert_temp(total_id, show_total));
@@ -117,7 +119,7 @@ pub fn draw_hud_legend(ui: &mut egui::Ui, plot_rect: egui::Rect) -> (bool, bool)
         egui::pos2(plot_rect.left() + 116.0, y_leg),
         egui::vec2(82.0, 15.0),
     );
-    let peak_resp = ui.interact(peak_rect, peak_id, egui::Sense::click());
+    let peak_resp = ui.interact(peak_rect, peak_btn_id, egui::Sense::click());
     if peak_resp.clicked() {
         show_peak = !show_peak;
         ui.ctx().data_mut(|d| d.insert_temp(peak_id, show_peak));

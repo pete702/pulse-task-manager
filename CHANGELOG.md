@@ -2,6 +2,55 @@
 
 All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
 
+## [0.4.65] - 2026-03-31
+
+- **CPU Hotkeys/UI**: Escape now surrenders CPU search focus unconditionally on the CPU tab.
+- **CPU Hardening/Tests**: extracted grid/bottleneck helpers and added regression tests for grid sizing, labels, badges, and quick filters.
+- **Version bump to 0.4.65**.
+
+## [0.4.64] - 2026-03-31
+
+- **CPU Chart**: cached Y-grid marks, preallocated time conversion/anchoring, and tactical scanner hover/cursor cleanup.
+- **CPU UI/State**: single Escape path for CPU search, CPU sub-view toggle, and shared min window width constant.
+- **Version bump to 0.4.64**.
+
+## [0.4.63] - 2026-03-31
+
+- **CPU Chart**: fixed legend rect lag/double frame/comment, separated legend state/button IDs, deduped/cached X grid marks, and added chart axis tests.
+- **Tests**: asserted exact priority class restoration in live EcoQoS roundtrip.
+- **Version bump to 0.4.63**.
+
+## [0.4.62] - 2026-03-31
+
+- **CPU UI**: fixed bottleneck sentinel/idle states, tactical ticks at 0%, narrow layout thresholds, and core grid overflow/hover allocs.
+- **CPU State/Hotkeys**: added `show_core_grid` accessors, wired `CpuSubView` dispatch, and made process hotkeys focus-aware.
+- **Version bump to 0.4.62**.
+
+## [0.4.61] - 2026-03-31
+
+- **Collector EcoQoS**: bounded probe attempts per scan (max 24) to cap Win32 probes when results are unavailable.
+- **CPU Freq**: thread-local frequency buffer in `win32_cpu` to avoid holding a Mutex across the Win32 call.
+- **Version bump to 0.4.61**.
+
+## [0.4.60] - 2026-03-31
+
+- **Build/Deps**: cleaned local build artifacts; trimmed unused default features for `egui_extras` and `windows-sys` in `Cargo.toml`.
+- **Tests**: added live Windows kernel EcoQoS enable/restore roundtrip test.
+- **Version bump to 0.4.60**.
+
+## [0.4.59] - 2026-03-31
+
+- **qos_action**: probe returns `Some(false)` for PID 0/4 without budget; tests moved to `collector_tests.rs` to decompress module.
+- **CPU Table**: `ProcessQuickFilter` moved to `quick_filter.rs` with explicit numeric mapping; simplified delta scale; capped `eco_overrides` on rollback insert.
+- **Version bump to 0.4.59**.
+
+## [0.4.58] - 2026-03-31
+
+- **EcoQoS Safety**: oldest-first eviction for pending/orig maps, no silent disable-miss priority, atomic priority/throttling order with rollback, stricter Eco detection and probe budget.
+- **Collector/Tests**: deterministic round-robin Eco probe test, `disk_rates_from_prev` helper, removed test-only disk helpers, no `seen_pids` clone per scan.
+- **CPU Freq**: MAX_CORES 256 with reusable frequency buffer in `win32_cpu`.
+- **Version bump to 0.4.58**.
+
 ## [0.4.57] - 2026-03-31
 
 - **Eco Rollback**: optimistic overrides restored on failure, `apply_eco_rollbacks` via action channel.
@@ -44,54 +93,4 @@ All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGEL
 - **Persisted Widths**: `PERSISTED_WIDTHS` slot + `cpu_col_widths` in state.cfg, saved on drag/autofit.
 - **Version bump to 0.4.51**.
 
-## [0.4.50] - 2026-03-31
 
-- **Purge Scope**: heavy raw rows >=10MiB sorted/truncated 64, enable only when unpaused/idle/non-empty, via `spawn_menu_action`.
-- **Menu Guard**: context Terminate arms 3s confirm via `arm_context_menu_kill`, group Trim via `resolve_group_targets`, 8s msg expiry.
-- **Version bump to 0.4.50**.
-
-## [0.4.49] - 2026-03-31
-
-- **Column Engine**: drag 1 left gives freed to immediate neighbor, `[f32;7]` temp storage, zero-alloc `Cow` truncate.
-- **Virtualized Rows**: `show_rows` virtualization, dynamic `max_ram` heat bars, striping/hover, `selected_start_time` on click.
-- **Quick Filter**: active-pill no-op guard, removed dead `passes`, version bump to 0.4.49.
-
-## [0.4.48] - 2026-03-31
-
-- **CPU Table Guards**: normalized search key, generation-gated cache, `scan_changed` delta with 15s cap, PID reuse clear with `selected_start_time`, `baseline_scan_gen`.
-- **Eco Overrides**: `eco_overrides` read for display and quick filter, 512 cap, case-insensitive name sort, disconnected action channel recovery.
-- **Version bump to 0.4.48**.
-
-## [0.4.47] - 2026-03-31
-
-- **Linux CI Clean**: `cfg`-gated Windows imports in `qos_action.rs` and `physical_disk.rs`; `HANDLE` unified to `isize` in `safe_handle.rs`; Win32 calls wrapped with non-Windows stubs in `actions.rs`.
-- **Version bump to 0.4.47**.
-
-## [0.4.46] - 2026-03-31
-
-- **Single-Source Layout**: `table_body.rs` computes `col_w/col_x` once per frame; headers, cells, and dividers at `col_x[i+1]` share exact X positions; `TableBuilder` removed; cells inset 6px, RAM bar capped in `widths[4]`.
-- **Proportional Fit**: `fit_column_widths` scales slack above min widths to keep `sum == avail`; `MIN_COL_W` tightened; divider 1 left distributes to right columns (no giant CLONES).
-- **Version bump to 0.4.46**.
-
-## [0.4.45] - 2026-03-31
-
-- **Toolbar 2-Tier**: `table.rs` uses 1 row >= 1180px with 300px reserved right region; below it uses badge/filter/pills row + group/density + Purge/Pause/counter row, no Pause/Purge overlap.
-- **Draggable Columns**: new `table_cols.rs` 7-column engine with min widths, sum == avail, ResizeHorizontal dividers, drag cascade, double-click autofit; CLONES compact, PROCESS NAME takes remainder.
-- **Dynamic Truncation**: name chars = `((w-16)/7.2)` min 12, RAM bar fits inside `widths[4]`, separators align header/body.
-- **Version bump to 0.4.45**.
-
-## [0.4.44] - 2026-03-31
-
-- **KPI Staircase**: single `34px` strip paints headers at `top_y` and values at `val_y` via `painter().text`, deterministic `x0..x3` offsets, `proportional(10.0)` / `monospace(13.0)`.
-- **Synthetic ID**: `scope_label_for` decodes `>= 0x8000_0000` to `Disk [L:]` (letter from low byte), never prints `2147483724`; test asserts no `214748` substring.
-- **Header Title**: full `DISK THROUGHPUT` kept when `header_rect.width() >= 380.0`, short `THROUGHPUT` only below `380px`.
-- **Bar-Matched Pct**: partition capacity in `TEXT_SECONDARY`, percentage in `bar_color` (Cyan/Amber/Red) matching the bar below.
-- **Version bump to 0.4.44**.
-
-## [0.4.43] - 2026-03-31
-
-- **Header Overlap**: chart header split into `header_rect` left/right zones, right controls first (`15m 5m 1m` + `[ Disk 0 x ]` chip), left title clipped to `(width - controls - 8).max(120)`, short title below 460px.
-- **Y Decimals**: ceiling `< 10.0` prints `{:.1}` ticks (`1.0 MB/s, 0.8, 0.5, 0.3`) instead of `1, 1, 0, 0`.
-- **KPI Alignment**: short `BLACKBOX/READ MB/s/WRITE MB/s/TOP I/O` headers, `10/13` fonts on one baseline, widths `(w*0.18).clamp(68,95)`, short `Disk 0` scope max 14 chars.
-- **Ultra-Compact Disks**: `Margin(8,4)`, `16px` header, `15px` partitions, `3px` bars, `H: NTFS` + `used/total (Free) %`, 2-column `chunks(2)` when `>= 440px`.
-- **Version bump to 0.4.43**.

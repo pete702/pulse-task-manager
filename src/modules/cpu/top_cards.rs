@@ -1,4 +1,5 @@
 //! CPU telemetry cards: Total Processor Load + Peak Thread Bottleneck.
+use crate::app_persist::MIN_WINDOW_WIDTH;
 use crate::modules::cpu::model::CpuSnapshot;
 use crate::ui::primitives::draw_tactical_ticks;
 use eframe::egui;
@@ -6,7 +7,7 @@ use eframe::egui;
 /// Renders the two CPU telemetry cards side by side.
 pub fn render_cpu_cards_row(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
     let avail = ui.available_width();
-    if avail < 880.0 {
+    if avail < MIN_WINDOW_WIDTH - 40.0 {
         ui.vertical(|ui| {
             crate::modules::cpu::total_load_card::render_total_load_card(ui, cpu);
             ui.add_space(10.0);
@@ -72,7 +73,6 @@ pub fn draw_precision_bar_with_threshold(
             215,
         );
         ui.painter().rect_filled(fill_rect, egui::Rounding::same(3.0), fill_color);
-        draw_tactical_ticks(ui, rect);
         // 4. Crisp leading-edge cursor cap (2px bright white at right tip of fill)
         let cap_w = 2.0_f32.min(fill_w);
         let cap_rect = egui::Rect::from_min_max(
@@ -82,4 +82,5 @@ pub fn draw_precision_bar_with_threshold(
         let cap_color = egui::Color32::from_rgb(240, 253, 250);
         ui.painter().rect_filled(cap_rect, egui::Rounding::ZERO, cap_color);
     }
+    draw_tactical_ticks(ui, rect);
 }

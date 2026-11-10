@@ -39,7 +39,7 @@ impl CpuTableState {
                     0
                 } else {
                     let dt = raw_dt.max(1.0);
-                    let scale = (10.0 / dt).clamp(1.0 / 30.0, 10.0);
+                    let scale = (10.0 / dt).min(10.0);
                     let diff = row.ram_bytes as i64 - prev.0 as i64;
                     ((diff as f32) * scale).round() as i64
                 }

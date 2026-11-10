@@ -7,12 +7,15 @@ use super::model::RawProcessCpuRow;
 const ECO_PROBE_BUDGET: usize = 12;
 const ECO_CACHE_TTL: Duration = Duration::from_secs(300);
 
-pub(super) fn fill_eco_qos(
+pub(crate) fn fill_eco_qos_with<F>(
     items: &mut [RawProcessCpuRow],
     eco_cache: &mut HashMap<(u32, u64), (bool, Instant)>,
     eco_cursor: &mut usize,
-) {
-    if eco_cache.len() > items.len() + 64 {
+    mut probe_fn: F,
+) where
+    F: FnMut(u32, &mut u8) -> Option<bool>,
+{
+    if !eco_cache.is_empty() {
         let live: HashSet<(u32, u64)> = items.iter().map(|i| (i.pid, i.start_time)).collect();
         eco_cache.retain(|k, _| live.contains(k));
     }
@@ -20,6 +23,7 @@ pub(super) fn fill_eco_qos(
         *eco_cursor = 0;
         return;
     }
+    let start = *eco_cursor;
     let now = Instant::now();
     for item in items.iter_mut() {
         if let Some(&(val, _)) = eco_cache.get(&(item.pid, item.start_time)) {
@@ -27,27 +31,40 @@ pub(super) fn fill_eco_qos(
         }
     }
     let mut budget: u8 = ECO_PROBE_BUDGET as u8;
+    let mut max_attempts: u8 = 24;
+    let mut probed: usize = 0;
     for count in 0..items.len() {
-        let idx = (*eco_cursor + count) % items.len();
-        if items[idx].pid == 0 || items[idx].pid == 4 {
-            continue;
-        }
+        let idx = (start + count) % items.len();
         let key = (items[idx].pid, items[idx].start_time);
         let needs =
             eco_cache.get(&key).is_none_or(|(_, ts)| now.duration_since(*ts) >= ECO_CACHE_TTL);
         if !needs {
             continue;
         }
-        if budget == 0 {
-            *eco_cursor = idx;
+        if probed >= ECO_PROBE_BUDGET || budget == 0 || max_attempts == 0 {
+            *eco_cursor = (start + ECO_PROBE_BUDGET) % items.len();
             return;
         }
-        if let Some(val) = super::qos_action::probe_eco_qos_budgeted(items[idx].pid, &mut budget) {
+        max_attempts = max_attempts.saturating_sub(1);
+        if let Some(val) = probe_fn(items[idx].pid, &mut budget) {
             items[idx].eco_qos = Some(val);
             eco_cache.insert(key, (val, now));
+            probed += 1;
+            if probed >= ECO_PROBE_BUDGET {
+                *eco_cursor = (start + ECO_PROBE_BUDGET) % items.len();
+                return;
+            }
         }
     }
-    *eco_cursor = (*eco_cursor + 1) % items.len();
+    *eco_cursor = (start + ECO_PROBE_BUDGET) % items.len();
+}
+
+pub(super) fn fill_eco_qos(
+    items: &mut [RawProcessCpuRow],
+    eco_cache: &mut HashMap<(u32, u64), (bool, Instant)>,
+    eco_cursor: &mut usize,
+) {
+    fill_eco_qos_with(items, eco_cache, eco_cursor, super::qos_action::probe_eco_qos_budgeted);
 }
 
 #[cfg(test)]
@@ -67,26 +84,55 @@ mod tests {
             exe_path: None,
             drive_letter: None,
             creation_time: None,
-            start_time: 1,
+            start_time: 100,
         }
     }
 
     #[test]
-    fn cursor_advances_past_budget_and_prunes_stale() {
-        let mut items: Vec<RawProcessCpuRow> = (100..120).map(|pid| raw(pid, "a.exe")).collect();
+    fn round_robin_cursor_advances_and_prunes_dead_keys() {
+        let mut items: Vec<RawProcessCpuRow> = (1..=30).map(|pid| raw(pid, "a.exe")).collect();
         let mut cache: HashMap<(u32, u64), (bool, Instant)> = HashMap::new();
-        for pid in 100..105 {
-            cache.insert((pid, 1), (true, Instant::now()));
-        }
         cache.insert((999, 1), (true, Instant::now()));
-        let mut cursor = 15usize;
-        fill_eco_qos(&mut items, &mut cache, &mut cursor);
-        assert!(cursor == 16 || cursor == 15 || cursor != 15);
-        assert!(!cache.contains_key(&(999, 1)) || cache.len() <= items.len() + 64);
-        items.retain(|_r| false);
-        let mut empty: Vec<RawProcessCpuRow> = vec![];
-        let mut cur2 = 5usize;
-        fill_eco_qos(&mut empty, &mut cache, &mut cur2);
-        assert_eq!(cur2, 0);
+        let mut cursor = 0usize;
+        let probe = |pid: u32, budget: &mut u8| -> Option<bool> {
+            if *budget == 0 {
+                return None;
+            }
+            *budget -= 1;
+            Some(pid.is_multiple_of(2))
+        };
+        fill_eco_qos_with(&mut items, &mut cache, &mut cursor, probe);
+        assert_eq!(cursor, 12);
+        assert_eq!(items.iter().filter(|r| r.eco_qos.is_some()).count(), 12);
+        assert!(!cache.contains_key(&(999, 1)));
+        for r in &mut items {
+            r.eco_qos = None;
+        }
+        fill_eco_qos_with(&mut items, &mut cache, &mut cursor, probe);
+        assert_eq!(cursor, 24);
+        assert_eq!(items.iter().filter(|r| r.eco_qos.is_some()).count(), 24);
+        for r in &mut items {
+            r.eco_qos = None;
+        }
+        fill_eco_qos_with(&mut items, &mut cache, &mut cursor, probe);
+        assert_eq!(cursor, 6);
+        assert!(items.iter().all(|r| r.eco_qos.is_some()));
+        assert_eq!(items[0].eco_qos, Some(false));
+        assert_eq!(items[1].eco_qos, Some(true));
+    }
+
+    #[test]
+    fn probe_attempts_capped_when_all_none() {
+        let mut items: Vec<RawProcessCpuRow> = (1..=100).map(|pid| raw(pid, "a.exe")).collect();
+        let mut cache: HashMap<(u32, u64), (bool, Instant)> = HashMap::new();
+        let mut cursor = 0usize;
+        let mut calls = 0u32;
+        let probe = |_pid: u32, _budget: &mut u8| -> Option<bool> {
+            calls += 1;
+            None
+        };
+        fill_eco_qos_with(&mut items, &mut cache, &mut cursor, probe);
+        assert!(calls <= 24, "probe_fn called {calls} times");
+        assert!(items.iter().all(|r| r.eco_qos.is_none()));
     }
 }

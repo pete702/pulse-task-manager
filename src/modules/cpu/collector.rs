@@ -100,13 +100,12 @@ impl CpuCollector {
                 } else {
                     None
                 };
-            let (r_mb, w_mb) = match prev {
-                Some((pr, pw, _)) => (
-                    Self::disk_rate(tot_r, pr, elapsed_secs as f64) as f32 / 1_048_576.0,
-                    Self::disk_rate(tot_w, pw, elapsed_secs as f64) as f32 / 1_048_576.0,
-                ),
-                None => (0.0, 0.0),
-            };
+            let (r_mb, w_mb) = Self::disk_rates_from_prev(
+                prev.map(|(r, w, _)| (r, w)),
+                tot_r,
+                tot_w,
+                elapsed_secs,
+            );
             let exe_path =
                 exe.and_then(|p| p.to_str()).filter(|s| !s.is_empty()).map(std::sync::Arc::from);
             self.prev_disk.insert(key, (tot_r, tot_w, creation_time));
@@ -125,10 +124,10 @@ impl CpuCollector {
             });
         }
         self.fill_eco_qos(&mut raw_rows);
-        self.seen_pids = live.clone();
         self.eco_cache.retain(|k, _| live.contains(k));
         self.prev_disk.retain(|k, _| live.contains(k));
         self.creation_cache.retain(|k, _| live.contains(k));
+        self.seen_pids = live;
         raw_rows.sort_by(|a, b| b.cpu_usage.total_cmp(&a.cpu_usage));
         raw_rows
     }
@@ -136,7 +135,12 @@ impl CpuCollector {
         let pending: HashMap<(u32, u64), Option<bool>> =
             crate::modules::cpu::qos_action::PENDING_ECO
                 .get()
-                .map(|slot| std::mem::take(&mut *slot.lock().unwrap_or_else(|e| e.into_inner())))
+                .map(|slot| {
+                    std::mem::take(&mut *slot.lock().unwrap_or_else(|e| e.into_inner()))
+                        .into_iter()
+                        .map(|(k, (v, _))| (k, v))
+                        .collect()
+                })
                 .unwrap_or_default();
         for row in rows.iter_mut() {
             if row.pid == 0 || row.pid == 4 {
@@ -159,6 +163,20 @@ impl CpuCollector {
             (cur.saturating_sub(prev) as f64 / dt) as u64
         }
     }
+    pub(crate) fn disk_rates_from_prev(
+        prev: Option<(u64, u64)>,
+        read_bytes: u64,
+        written_bytes: u64,
+        elapsed_secs: f32,
+    ) -> (f32, f32) {
+        match prev {
+            Some((pr, pw)) => (
+                Self::disk_rate(read_bytes, pr, elapsed_secs as f64) as f32 / 1_048_576.0,
+                Self::disk_rate(written_bytes, pw, elapsed_secs as f64) as f32 / 1_048_576.0,
+            ),
+            None => (0.0, 0.0),
+        }
+    }
     fn elapsed_since_last_scan(&mut self) -> f32 {
         let now = std::time::Instant::now();
         let elapsed = match self.last_scan {
@@ -173,31 +191,6 @@ impl Default for CpuCollector {
     fn default() -> Self {
         Self::new()
     }
-}
-#[cfg(test)]
-pub(crate) fn guarded_disk_bytes(
-    read: u64,
-    written: u64,
-    total_read: u64,
-    total_written: u64,
-    is_first_seen: bool,
-) -> (u64, u64) {
-    if !is_first_seen {
-        return (read, written);
-    }
-    let r = if total_read > 0 && read == total_read { 0 } else { read };
-    let w = if total_written > 0 && written == total_written { 0 } else { written };
-    (r, w)
-}
-#[allow(dead_code)]
-#[cfg(test)]
-pub(crate) fn first_sample_disk_bytes(
-    read: u64,
-    written: u64,
-    total_read: u64,
-    total_written: u64,
-) -> (u64, u64) {
-    guarded_disk_bytes(read, written, total_read, total_written, true)
 }
 pub(crate) fn pid_contains(pid: u32, needle: &str) -> bool {
     if needle.is_empty() || !needle.bytes().all(|b| b.is_ascii_digit()) {

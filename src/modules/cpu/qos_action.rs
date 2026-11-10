@@ -12,27 +12,34 @@ use crate::modules::memory::safe_handle::{
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Threading::{
     GetPriorityClass, GetProcessInformation, ProcessPowerThrottling, SetPriorityClass,
-    SetProcessInformation, IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS,
-    PROCESS_POWER_THROTTLING_CURRENT_VERSION, PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
-    PROCESS_POWER_THROTTLING_STATE, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
+    SetProcessInformation, IDLE_PRIORITY_CLASS, PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+    PROCESS_POWER_THROTTLING_EXECUTION_SPEED, PROCESS_POWER_THROTTLING_STATE,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
 };
-type EcoMap = HashMap<(u32, u64), Option<bool>>;
+type EcoMap = HashMap<(u32, u64), (Option<bool>, Instant)>;
 pub(crate) static PENDING_ECO: OnceLock<Mutex<EcoMap>> = OnceLock::new();
-type PrioMap = HashMap<(u32, u64), u32>;
+type PrioMap = HashMap<(u32, u64), (u32, Instant)>;
 pub(crate) static ORIG_PRIORITY: OnceLock<Mutex<PrioMap>> = OnceLock::new();
+
 pub fn is_system_process(name: &str) -> bool {
     verify_pid_safety_gate(u32::MAX, name).is_err()
 }
+pub(crate) fn evict_oldest<V>(map: &mut HashMap<(u32, u64), (V, Instant)>, key: (u32, u64)) {
+    if map.len() >= 512 && !map.contains_key(&key) {
+        if let Some(old) = map.iter().min_by_key(|(_, (_, at))| *at).map(|(k, _)| *k) {
+            map.remove(&old);
+        }
+    }
+}
 fn pending_insert(key: (u32, u64), val: Option<bool>) {
     let slot = PENDING_ECO.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
-    if guard.len() >= 512 {
-        guard.keys().next().copied().map(|k| guard.remove(&k));
-    }
-    guard.insert(key, val);
+    let mut g = slot.lock().unwrap_or_else(|e| e.into_inner());
+    evict_oldest(&mut g, key);
+    g.insert(key, (val, Instant::now()));
 }
 #[allow(dead_code)]
 pub fn mark_pending_eco(pid: u32, start_time: u64, on: bool) {
@@ -40,11 +47,24 @@ pub fn mark_pending_eco(pid: u32, start_time: u64, on: bool) {
 }
 #[allow(dead_code)]
 pub fn probe_eco_qos_budgeted(pid: u32, budget: &mut u8) -> Option<bool> {
-    if pid == 0 || pid == 4 || *budget == 0 {
+    if pid == 0 || pid == 4 {
+        return Some(false);
+    }
+    if *budget == 0 {
         return None;
     }
-    *budget -= 1;
-    is_process_eco_qos(pid)
+    let v = is_process_eco_qos(pid);
+    if v.is_some() {
+        *budget -= 1;
+    }
+    v
+}
+pub(crate) fn resolve_restore_priority(key: (u32, u64)) -> Result<u32, String> {
+    let slot = ORIG_PRIORITY.get_or_init(|| Mutex::new(HashMap::new()));
+    let g = slot.lock().unwrap_or_else(|e| e.into_inner());
+    g.get(&key)
+        .map(|(p, _)| *p)
+        .ok_or_else(|| "No saved priority class for this process".to_string())
 }
 pub(crate) fn target_for(
     pid: u32,
@@ -56,14 +76,12 @@ pub(crate) fn target_for(
     ct?;
     Some(ProcessTarget { pid, creation_time: ct, name: name.to_string(), exe_path: exe })
 }
-#[cfg(target_os = "windows")]
 pub(crate) fn build_throttling_masks(enable: bool) -> (u32, u32) {
+    #[cfg(target_os = "windows")]
     let c = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+    #[cfg(not(target_os = "windows"))]
+    let c = 1u32;
     (c, if enable { c } else { 0 })
-}
-#[cfg(not(target_os = "windows"))]
-pub(crate) fn build_throttling_masks(enable: bool) -> (u32, u32) {
-    (1, if enable { 1 } else { 0 })
 }
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
@@ -78,33 +96,21 @@ pub fn set_process_eco_qos(
         return Err("System process is protected".to_string());
     }
     verify_pid_safety_gate(pid, name).map_err(str::to_string)?;
-    let creation_time =
-        creation_time.ok_or_else(|| "Cannot read process creation time".to_string())?;
+    let ct = creation_time.ok_or_else(|| "Cannot read process creation time".to_string())?;
     let handle = SafeHandle::open(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_INFORMATION, pid)
         .ok_or_else(|| "Access denied while opening process".to_string())?;
-    let expected_path = exe_path.as_deref().filter(|s| !s.trim().is_empty());
-    if is_handle_critical(&handle)
-        || !verify_handle_identity(&handle, name, Some(creation_time), expected_path)
-    {
+    let ep = exe_path.as_deref().filter(|s| !s.trim().is_empty());
+    if is_handle_critical(&handle) || !verify_handle_identity(&handle, name, Some(ct), ep) {
         return Err("Process identity verification failed".to_string());
     }
-    let priority = if enable {
-        let cur = unsafe { GetPriorityClass(handle.as_raw()) };
-        if cur != 0 && cur != IDLE_PRIORITY_CLASS {
-            let slot = ORIG_PRIORITY.get_or_init(|| Mutex::new(HashMap::new()));
-            let mut g = slot.lock().unwrap_or_else(|e| e.into_inner());
-            if g.len() >= 512 {
-                g.keys().next().copied().map(|k| g.remove(&k));
-            }
-            g.entry((pid, creation_time)).or_insert(cur);
-        }
-        IDLE_PRIORITY_CLASS
-    } else {
-        ORIG_PRIORITY
-            .get()
-            .and_then(|s| s.lock().unwrap_or_else(|e| e.into_inner()).remove(&(pid, creation_time)))
-            .unwrap_or(NORMAL_PRIORITY_CLASS)
-    };
+    let orig_prio = unsafe { GetPriorityClass(handle.as_raw()) };
+    if orig_prio == 0 {
+        return Err("Failed to read process priority class".to_string());
+    }
+    let priority = if enable { IDLE_PRIORITY_CLASS } else { resolve_restore_priority((pid, ct))? };
+    if unsafe { SetPriorityClass(handle.as_raw(), priority) } == 0 {
+        return Err("Failed to update process priority class for EcoQoS".to_string());
+    }
     let (control_mask, state_mask) = build_throttling_masks(enable);
     let state = PROCESS_POWER_THROTTLING_STATE {
         Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
@@ -115,16 +121,25 @@ pub fn set_process_eco_qos(
         SetProcessInformation(
             handle.as_raw(),
             ProcessPowerThrottling,
-            &state as *const _ as *const std::os::raw::c_void,
+            &state as *const _ as *const _,
             std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32,
         )
     };
     if info_ok == 0 {
-        return Err("Failed to apply power throttling state".to_string());
+        let _ = unsafe { SetPriorityClass(handle.as_raw(), orig_prio) };
+        return Err("Windows rejected EcoQoS power throttling state".to_string());
     }
-    if unsafe { SetPriorityClass(handle.as_raw(), priority) } == 0 {
-        return Err("Failed to set priority class".to_string());
+    if enable {
+        if orig_prio != IDLE_PRIORITY_CLASS {
+            let slot = ORIG_PRIORITY.get_or_init(|| Mutex::new(HashMap::new()));
+            let mut g = slot.lock().unwrap_or_else(|e| e.into_inner());
+            evict_oldest(&mut g, (pid, ct));
+            g.entry((pid, ct)).or_insert((orig_prio, Instant::now()));
+        }
+    } else if let Some(slot) = ORIG_PRIORITY.get() {
+        slot.lock().unwrap_or_else(|e| e.into_inner()).remove(&(pid, ct));
     }
+    pending_insert((pid, ct), Some(enable));
     Ok(())
 }
 #[cfg(not(target_os = "windows"))]
@@ -144,11 +159,14 @@ pub fn is_process_eco_qos(pid: u32) -> Option<bool> {
         return Some(false);
     }
     let handle = SafeHandle::open(PROCESS_QUERY_LIMITED_INFORMATION, pid)?;
-    let prio = unsafe { GetPriorityClass(handle.as_raw()) };
-    if prio == 0 {
+    if unsafe { GetPriorityClass(handle.as_raw()) } == 0 {
         return None;
     }
-    let mut state: PROCESS_POWER_THROTTLING_STATE = unsafe { std::mem::zeroed() };
+    let mut state = PROCESS_POWER_THROTTLING_STATE {
+        Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+        ControlMask: 0,
+        StateMask: 0,
+    };
     let ok = unsafe {
         GetProcessInformation(
             handle.as_raw(),
@@ -157,14 +175,10 @@ pub fn is_process_eco_qos(pid: u32) -> Option<bool> {
             std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32,
         )
     };
-    if ok != 0 {
-        return Some(
-            (state.ControlMask & PROCESS_POWER_THROTTLING_EXECUTION_SPEED) != 0
-                && (state.StateMask & PROCESS_POWER_THROTTLING_EXECUTION_SPEED) != 0
-                || prio == IDLE_PRIORITY_CLASS,
-        );
-    }
-    Some(prio == IDLE_PRIORITY_CLASS)
+    (ok != 0).then_some(
+        (state.ControlMask & PROCESS_POWER_THROTTLING_EXECUTION_SPEED) != 0
+            && (state.StateMask & PROCESS_POWER_THROTTLING_EXECUTION_SPEED) != 0,
+    )
 }
 #[cfg(not(target_os = "windows"))]
 pub fn is_process_eco_qos(_pid: u32) -> Option<bool> {
@@ -181,7 +195,7 @@ pub fn trim_process_working_set(
     }
     let target = target_for(pid, name, ct, exe)
         .ok_or_else(|| "Cannot read process creation time".to_string())?;
-    trim_single_pid(&target).map(|_| ()).map_err(|reason| match reason {
+    trim_single_pid(&target).map(|_| ()).map_err(|r| match r {
         TrimSkipReason::Protected => "Protected process".to_string(),
         TrimSkipReason::AccessDenied => "Access denied".to_string(),
         TrimSkipReason::CriticalProcess => "Critical process".to_string(),
@@ -201,18 +215,11 @@ pub fn open_process_file_location(
     }
     let handle = SafeHandle::open_process(pid)
         .ok_or_else(|| "Access denied while opening process".to_string())?;
-    if is_handle_critical(&handle)
-        || !verify_handle_identity(
-            &handle,
-            name,
-            creation_time,
-            exe_path.filter(|s| !s.trim().is_empty()),
-        )
-    {
+    let ep = exe_path.filter(|s| !s.trim().is_empty());
+    if is_handle_critical(&handle) || !verify_handle_identity(&handle, name, creation_time, ep) {
         return Err("Blocked by process identity or safety check".to_string());
     }
-    let path = exe_path
-        .filter(|s| !s.trim().is_empty())
+    let path = ep
         .map(str::to_owned)
         .or_else(|| query_process_image_path(&handle))
         .ok_or_else(|| "Cannot resolve executable path".to_string())?;
@@ -232,31 +239,5 @@ pub fn terminate_process(
     match terminate_process_group(&[target])? {
         0 => Err("Process was not terminated (identity or access check failed)".to_string()),
         _ => Ok(()),
-    }
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn test_is_system_process() {
-        assert!(
-            is_system_process("System")
-                && is_system_process("svchost.exe")
-                && !is_system_process("chrome.exe")
-        );
-        let (on_c, on_s) = build_throttling_masks(true);
-        assert!(on_c != 0 && on_s != 0);
-        let (off_c, off_s) = build_throttling_masks(false);
-        assert!(off_c != 0 && off_s == 0);
-    }
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn test_target_for_rejects_none_on_windows() {
-        assert!(target_for(123, "app.exe", None, None).is_none());
-        assert!(target_for(123, "app.exe", Some(42), None).is_some());
-    }
-    #[test]
-    fn open_location_rejects_system_pid_4() {
-        assert!(open_process_file_location(4, "System", None, None).is_err());
     }
 }

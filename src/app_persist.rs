@@ -4,6 +4,8 @@ use std::time::{Duration, Instant};
 use crate::app::PulseApp;
 use crate::core::persist;
 
+pub const MIN_WINDOW_WIDTH: f32 = 860.0;
+
 impl PulseApp {
     pub(crate) fn apply_persisted(&mut self, s: &persist::PersistedState) {
         self.active_tab = persist::active_tab_from_index(s.active_tab);
@@ -16,7 +18,7 @@ impl PulseApp {
             crate::modules::cpu::table_state::ProcessQuickFilter::from_u8(s.process_quick_filter);
         self.memory_history.chart_window = persist::chart_window_from_secs(s.mem_window_secs);
         self.cpu_history.chart_window = persist::chart_window_from_secs(s.cpu_window_secs);
-        self.cpu_history.show_core_grid = s.cpu_show_grid;
+        self.cpu_history.set_show_core_grid(s.cpu_show_grid);
         self.last_viewport_size = Some(egui::Vec2::new(s.win_w, s.win_h));
         // Full-tab persistence: storage/network windows, chart mode, probe.
         crate::modules::storage::view::set_window_secs(s.storage_window_secs as usize);
@@ -37,7 +39,7 @@ impl PulseApp {
             compact_rows: !self.cpu_table_state.comfort_density,
             sort_col: self.cpu_table_state.sort_col,
             sort_asc: self.cpu_table_state.sort_asc,
-            cpu_show_grid: self.cpu_history.show_core_grid,
+            cpu_show_grid: self.cpu_history.show_core_grid(),
             mem_window_secs: persist::secs_from_chart_window(self.memory_history.chart_window),
             cpu_window_secs: persist::secs_from_chart_window(self.cpu_history.chart_window),
             storage_window_secs: crate::modules::storage::view::window_secs() as u64,
@@ -46,7 +48,7 @@ impl PulseApp {
             network_probe_enabled: crate::modules::network::latency_probe::probe_enabled(),
             process_quick_filter: self.cpu_table_state.quick_filter.to_u8(),
             cpu_col_widths: crate::modules::cpu::table_cols::get_persisted_col_widths(),
-            win_w: (wx.clamp(860.0, 3840.0) * 10.0).round() / 10.0,
+            win_w: (wx.clamp(MIN_WINDOW_WIDTH, 3840.0) * 10.0).round() / 10.0,
             win_h: (wy.clamp(560.0, 2160.0) * 10.0).round() / 10.0,
         }
     }

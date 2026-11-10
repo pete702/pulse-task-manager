@@ -97,6 +97,9 @@ pub fn handle_global_hotkeys(
     }
     // Escape: Clear search or release focus and clear selection
     if esc {
+        if *active_tab == ActiveTab::Cpu {
+            ctx.memory_mut(|m| m.surrender_focus(egui::Id::new("cpu_search_filter")));
+        }
         let has_query =
             !table_state.search_query.is_empty() || !cpu_table_state.search_query.is_empty();
         if has_query {

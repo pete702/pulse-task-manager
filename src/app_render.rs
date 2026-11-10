@@ -79,6 +79,8 @@ pub fn render_central_panel(
         ActiveTab::Cpu => {
             if let Some(ref snap) = snapshot {
                 if let Some(ref cpu) = snap.cpu {
+                    let scan_generation =
+                        snap.memory.as_ref().map(|m| m.process_scan_id).unwrap_or(0);
                     cpu_page::render_cpu_page(
                         ui,
                         cpu,
@@ -87,6 +89,7 @@ pub fn render_central_panel(
                         cpu_table_state,
                         uptime_secs,
                         active_tab,
+                        scan_generation,
                     );
                 } else {
                     render_awaiting(ui);
