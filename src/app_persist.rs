@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use crate::app::PulseApp;
 use crate::core::persist;
 
-pub const MIN_WINDOW_WIDTH: f32 = 860.0;
+pub use crate::core::persist::MIN_WINDOW_WIDTH;
 
 impl PulseApp {
     pub(crate) fn apply_persisted(&mut self, s: &persist::PersistedState) {

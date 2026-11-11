@@ -5,6 +5,8 @@ use crate::modules::memory::model::ChartWindow;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
+
+pub const MIN_WINDOW_WIDTH: f32 = 860.0;
 static STAGED_STATE: OnceLock<Mutex<Option<PersistedState>>> = OnceLock::new();
 pub fn stage_state(state: &PersistedState) {
     let slot = STAGED_STATE.get_or_init(|| Mutex::new(None));
@@ -106,7 +108,7 @@ pub fn serialize(s: &PersistedState) -> String {
         s.active_tab.min(5), bool_str(s.group_clones), bool_str(s.compact_rows), sort_col_str(s.sort_col),
         bool_str(s.sort_asc), bool_str(s.cpu_show_grid), s.mem_window_secs, s.cpu_window_secs,
         s.storage_window_secs, s.network_window_secs, s.network_chart_mode.min(2),
-        bool_str(s.network_probe_enabled), s.process_quick_filter.min(3), win_w.clamp(860.0, 3840.0),
+        bool_str(s.network_probe_enabled), s.process_quick_filter.min(3), win_w.clamp(MIN_WINDOW_WIDTH, 3840.0),
         win_h.clamp(560.0, 2160.0),
     );
     if let Some(w) = s.cpu_col_widths {
@@ -140,7 +142,7 @@ pub fn parse(text: &str) -> PersistedState {
             "network_chart_mode" => s.network_chart_mode = v.parse::<u8>().unwrap_or(0).min(2),
             "network_probe_enabled" => s.network_probe_enabled = parse_bool(v),
             "process_quick_filter" => s.process_quick_filter = v.parse::<u8>().unwrap_or(0).min(3),
-            "win_w" => s.win_w = parse_f32_clamp(v, 1180.0, 860.0, 3840.0),
+            "win_w" => s.win_w = parse_f32_clamp(v, 1180.0, MIN_WINDOW_WIDTH, 3840.0),
             "win_h" => s.win_h = parse_f32_clamp(v, 760.0, 560.0, 2160.0),
             "cpu_col_widths" => s.cpu_col_widths = parse_col_widths(v),
             _ => {}

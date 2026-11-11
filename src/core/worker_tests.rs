@@ -4,7 +4,10 @@
 mod tests {
     use crate::core::worker::spawn_telemetry_worker;
     use crate::core::worker_io::{publish, PublishResult};
-    use crate::core::worker_policy::should_scan_processes;
+    use crate::core::worker_policy::{
+        should_scan_processes, worker_tick_interval, WORKER_INTERVAL_MINIMIZED,
+        WORKER_INTERVAL_VISIBLE,
+    };
     use crate::core::{LatestSlot, SystemSnapshot};
     use std::sync::{mpsc, Arc};
     use std::time::Duration;
@@ -70,6 +73,22 @@ mod tests {
         assert!(rx.try_recv().is_err(), "no extra dummy snapshot in the channel");
     }
     #[test]
+    fn test_publish_payload_wakeup_on_full() {
+        let (tx, _rx) = mpsc::sync_channel(1);
+        let slot = LatestSlot::new();
+        let wake_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let wc = Arc::clone(&wake_count);
+        let wakeup: Arc<dyn Fn() + Send + Sync + 'static> = Arc::new(move || {
+            wc.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        });
+        let first = Arc::new(SystemSnapshot::new(1, 1.0, Some(Default::default())));
+        assert!(matches!(publish(&tx, &slot, first, &wakeup, false), PublishResult::Sent));
+        assert_eq!(wake_count.load(std::sync::atomic::Ordering::Relaxed), 1);
+        let second = Arc::new(SystemSnapshot::new(2, 2.0, Some(Default::default())));
+        assert!(matches!(publish(&tx, &slot, second, &wakeup, false), PublishResult::Full));
+        assert_eq!(wake_count.load(std::sync::atomic::Ordering::Relaxed), 2);
+    }
+    #[test]
     fn test_latest_slot_drain_all_preserves_fifo_history() {
         let (tx, rx) = mpsc::sync_channel(2);
         let slot = LatestSlot::new();
@@ -100,18 +119,44 @@ mod tests {
     }
     #[test]
     fn test_process_scan_is_decoupled_from_ram_ticks() {
-        // With SCAN_TICKS_VISIBLE = 3, scans happen at tick 0, 3, 6, ...
-        assert!(should_scan_processes(false, 0, false, false, true));
-        assert!(!should_scan_processes(false, 1, false, false, true));
-        assert!(!should_scan_processes(false, 2, false, false, true));
-        assert!(should_scan_processes(false, 3, false, false, true), "every 3rd tick scans");
-        assert!(should_scan_processes(false, 1, true, false, true), "wake forces a scan");
-        assert!(should_scan_processes(false, 1, false, true, true), "action forces a scan");
-        for tick in 0..10 {
-            assert!(
-                !should_scan_processes(true, tick, false, false, true),
-                "minimized mode pauses process scans"
-            );
+        // (ticks_since_scan, fast, force_request, minimized, is_first_tick)
+        assert!(should_scan_processes(0, true, false, false, true), "first tick scans");
+        assert!(!should_scan_processes(1, true, false, false, false));
+        assert!(!should_scan_processes(2, true, false, false, false));
+        assert!(
+            should_scan_processes(3, true, false, false, false),
+            "fast steady-state: every 3 ticks"
+        );
+        assert!(!should_scan_processes(4, false, false, false, false));
+        assert!(
+            should_scan_processes(5, false, false, false, false),
+            "slow steady-state: every 5 ticks"
+        );
+        assert!(
+            should_scan_processes(3, true, false, false, false),
+            "immediate scan when switching to fast at 3"
+        );
+        assert!(should_scan_processes(1, true, true, false, false), "force_request triggers scan");
+        for t in 0..10 {
+            assert!(!should_scan_processes(t, true, false, true, t == 0), "minimized pauses scans");
         }
+    }
+    #[test]
+    fn test_worker_tick_interval_values() {
+        assert_eq!(worker_tick_interval(false), WORKER_INTERVAL_VISIBLE);
+        assert_eq!(worker_tick_interval(true), WORKER_INTERVAL_MINIMIZED);
+    }
+
+    #[test]
+    fn test_set_worker_paused_edge_transitions() {
+        use crate::core::worker_loop::{is_worker_paused, set_worker_paused};
+        set_worker_paused(false);
+        assert!(!is_worker_paused());
+        set_worker_paused(false);
+        assert!(!is_worker_paused(), "repeated unpause keeps state unpaused");
+        set_worker_paused(true);
+        assert!(is_worker_paused());
+        set_worker_paused(false);
+        assert!(!is_worker_paused(), "toggle true->false transitions cleanly");
     }
 }

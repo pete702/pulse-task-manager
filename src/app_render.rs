@@ -16,6 +16,14 @@ use crate::modules::memory::page::{self as mem_page, MemorySubView};
 use crate::modules::memory::table_state::MemoryTableState;
 use crate::ui::{chrome, sidebar};
 
+fn s_cpu_scan_id(snap: &SystemSnapshot) -> u64 {
+    snap.cpu
+        .as_ref()
+        .map(|c| c.process_scan_id)
+        .or_else(|| snap.memory.as_ref().map(|m| m.process_scan_id))
+        .unwrap_or(0)
+}
+
 /// Renders the central panel content based on the active tab.
 #[allow(clippy::too_many_arguments)]
 pub fn render_central_panel(
@@ -33,19 +41,11 @@ pub fn render_central_panel(
     telemetry_paused: &mut bool,
 ) {
     ui.add_space(16.0);
-    // Background ingestion: one point per genuine process scan, even on other tabs.
-    if let Some(ref snap) = snapshot {
-        let raw: &[crate::modules::cpu::model::RawProcessCpuRow] =
-            snap.cpu.as_ref().map(|c| c.raw_processes.as_ref()).unwrap_or(&[]);
-        crate::modules::storage::view::ingest_storage_snapshot(snap, raw, *telemetry_paused);
-        crate::modules::network::view::ingest_network_snapshot(snap, *telemetry_paused);
-    }
     match *active_tab {
         ActiveTab::Processes => {
             if let Some(ref snap) = snapshot {
                 if let Some(ref cpu) = snap.cpu {
-                    let process_scan_id =
-                        snap.memory.as_ref().map(|m| m.process_scan_id).unwrap_or(0);
+                    let process_scan_id = s_cpu_scan_id(snap);
                     cpu_page::render_processes_page(ui, cpu, cpu_table_state, process_scan_id);
                 } else {
                     render_awaiting(ui);
@@ -79,8 +79,7 @@ pub fn render_central_panel(
         ActiveTab::Cpu => {
             if let Some(ref snap) = snapshot {
                 if let Some(ref cpu) = snap.cpu {
-                    let scan_generation =
-                        snap.memory.as_ref().map(|m| m.process_scan_id).unwrap_or(0);
+                    let scan_generation = s_cpu_scan_id(snap);
                     cpu_page::render_cpu_page(
                         ui,
                         cpu,

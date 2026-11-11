@@ -1,5 +1,5 @@
 use crate::modules::cpu::chart_axis::x_grid_spacer;
-use crate::modules::memory::downsampling::{lttb_segments, nice_ceiling};
+use crate::modules::memory::downsampling::lttb_segments;
 use crate::modules::storage::chart_tip::{draw_hover_tip, draw_toggles};
 use crate::modules::storage::collector::IO_SPIKE_THRESHOLD_MB_S;
 use crate::modules::storage::view_helpers::truncate;
@@ -15,6 +15,16 @@ fn san(v: f64) -> f64 {
         0.0
     }
 }
+fn nice_ceil(v: f64) -> f64 {
+    let target = san(v).max(1.0);
+    let steps = [4.0, 8.0, 20.0, 40.0, 80.0, 160.0, 200.0, 400.0, 800.0, 1600.0, 4000.0, 8000.0];
+    for s in steps {
+        if target <= s {
+            return s;
+        }
+    }
+    ((target / 8000.0).ceil() * 8000.0).max(4.0)
+}
 pub(crate) fn stepped_ceiling(
     r: &Arc<Vec<[f64; 2]>>,
     w: &Arc<Vec<[f64; 2]>>,
@@ -26,7 +36,7 @@ pub(crate) fn stepped_ceiling(
         .filter(|_| sr)
         .chain(w.iter().filter(|_| sw))
         .fold(0.0_f64, |a, p| a.max(san(p[1])));
-    nice_ceiling(peak, 1.0)
+    nice_ceil(peak)
 }
 pub(crate) fn next_visibility(sr: bool, sw: bool, is_read: bool) -> (bool, bool) {
     let nr = sr ^ is_read;
@@ -39,17 +49,6 @@ pub(crate) fn next_visibility(sr: bool, sw: bool, is_read: bool) -> (bool, bool)
 }
 fn lbl(s: impl Into<String>, sz: f32, c: egui::Color32) -> egui::RichText {
     egui::RichText::new(s).monospace().size(sz).color(c)
-}
-fn tx(
-    p: &egui::Painter,
-    x: f32,
-    y: f32,
-    a: egui::Align2,
-    s: impl std::fmt::Display,
-    sz: f32,
-    c: egui::Color32,
-) {
-    p.text(egui::pos2(x, y), a, s, egui::FontId::monospace(sz), c);
 }
 pub fn render_storage_chart(
     ui: &mut egui::Ui,
@@ -164,10 +163,13 @@ pub fn render_storage_chart(
                 })
         });
         let rect = *plot_resp.inner.transform.frame();
+        if plot_resp.inner.response.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+        }
         let hover = plot_resp.inner.response.hover_pos();
         draw_hud(ui, rect, span, ceil);
+        draw_hover_tip(ui, rect, span, ceil, read, write, show_read, show_write, hover);
         draw_toggles(ui, rect, show_read, show_write);
-        draw_hover_tip(ui, rect, span, read, write, show_read, show_write, hover);
     });
     draw_cyber_corner_brackets(ui, resp.response.rect, cyber_accent((lr + lw).clamp(0.0, 100.0)));
 }
@@ -187,46 +189,46 @@ fn to_points(s: &Arc<Vec<[f64; 2]>>) -> PlotPoints {
         PlotPoints::new(lttb_segments(&Arc::new(clean), 920))
     }
 }
+fn draw_pill(
+    p: &egui::Painter,
+    pos: egui::Pos2,
+    a: egui::Align2,
+    t: &str,
+    sz: f32,
+    c: egui::Color32,
+) {
+    let g = p.layout_no_wrap(t.to_owned(), egui::FontId::monospace(sz), c);
+    let r = a.anchor_size(pos, g.size()).expand2(egui::vec2(4.0, 1.5));
+    p.rect_filled(
+        r,
+        egui::Rounding::same(3.0),
+        egui::Color32::from_rgba_unmultiplied(11, 15, 22, 220),
+    );
+    p.galley(r.min + egui::vec2(4.0, 1.5), g, c);
+}
 fn draw_hud(ui: &egui::Ui, rect: egui::Rect, span: f64, ceil: f64) {
     let p = ui.painter();
-    let col = egui::Color32::from_rgba_unmultiplied(148, 163, 184, 135);
+    let col = egui::Color32::from_rgba_unmultiplied(148, 163, 184, 170);
     let gx = rect.left() - 6.0;
     let giga = ceil >= 1000.0;
-    let top = if giga {
-        format!("{:.2} GB/s", ceil / 1000.0)
-    } else if ceil < 10.0 {
-        format!("{ceil:.1} MB/s")
-    } else {
-        format!("{ceil:.0} MB/s")
-    };
-    tx(p, gx, rect.top() + 3.0, egui::Align2::RIGHT_TOP, top, 10.0, col);
+    let top = if giga { format!("{:.2} GB/s", ceil / 1000.0) } else { format!("{ceil:.0} MB/s") };
+    draw_pill(p, egui::pos2(gx, rect.top() + 3.0), egui::Align2::RIGHT_TOP, &top, 10.0, col);
     for v in [75.0, 50.0, 25.0] {
         let y = rect.bottom() - (v / 100.0) * rect.height();
         let val = v as f64 / 100.0 * ceil;
-        let label = if giga {
-            format!("{:.1}", val / 1000.0)
-        } else if ceil < 10.0 {
-            format!("{val:.1}")
-        } else {
-            format!("{val:.0}")
-        };
-        tx(p, gx, y - 2.0, egui::Align2::RIGHT_CENTER, label, 10.0, col);
+        let label = if giga { format!("{:.1}", val / 1000.0) } else { format!("{val:.0}") };
+        draw_pill(p, egui::pos2(gx, y - 2.0), egui::Align2::RIGHT_CENTER, &label, 10.0, col);
     }
     let y = rect.bottom() - 5.0;
-    let bg = egui::Color32::from_rgba_unmultiplied(11, 12, 16, 210);
-    for (dx, w, txt, right) in [
-        (3.0_f32, 76.0_f32, format!("{span:.0}m ago"), false),
-        (rect.width() - 47.0, 40.0_f32, "now".to_owned(), true),
-    ] {
-        let r =
-            egui::Rect::from_min_size(egui::pos2(rect.left() + dx, y - 15.0), egui::vec2(w, 16.0));
-        p.rect_filled(r, egui::Rounding::same(2.0), bg);
-        if right {
-            tx(p, r.right() - 8.0, y, egui::Align2::RIGHT_BOTTOM, txt, 11.0, col);
-        } else {
-            tx(p, r.left() + 5.0, y, egui::Align2::LEFT_BOTTOM, txt, 11.0, col);
-        }
-    }
+    draw_pill(
+        p,
+        egui::pos2(rect.left() + 8.0, y),
+        egui::Align2::LEFT_BOTTOM,
+        &format!("{span:.0}m ago"),
+        11.0,
+        col,
+    );
+    draw_pill(p, egui::pos2(rect.right() - 8.0, y), egui::Align2::RIGHT_BOTTOM, "now", 11.0, col);
 }
 #[cfg(test)]
 mod tests {
@@ -240,6 +242,14 @@ mod tests {
         let wo = stepped_ceiling(&r, &w, false, true);
         assert!(both >= ro && both >= wo && ro >= wo);
         assert_eq!(next_visibility(true, true, true), (false, true));
-        assert_eq!(stepped_ceiling(&Arc::new(vec![[0.0, f64::NAN]]), &w, true, false), 1.0);
+        assert_eq!(
+            stepped_ceiling(
+                &Arc::new(vec![[0.0, f64::NAN]]),
+                &Arc::new(vec![[0.0, 0.0]]),
+                true,
+                false
+            ),
+            4.0
+        );
     }
 }

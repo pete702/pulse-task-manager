@@ -31,7 +31,10 @@ pub fn publish(
             }
             PublishResult::Sent
         }
-        Err(mpsc::TrySendError::Full(_)) => PublishResult::Full,
+        Err(mpsc::TrySendError::Full(_)) => {
+            (wakeup)();
+            PublishResult::Full
+        }
         Err(mpsc::TrySendError::Disconnected(_)) => PublishResult::Disconnected,
     }
 }

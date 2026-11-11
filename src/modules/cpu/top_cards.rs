@@ -4,10 +4,12 @@ use crate::modules::cpu::model::CpuSnapshot;
 use crate::ui::primitives::draw_tactical_ticks;
 use eframe::egui;
 
+const TOP_CARDS_SIDEBAR_OFFSET: f32 = 40.0;
+
 /// Renders the two CPU telemetry cards side by side.
 pub fn render_cpu_cards_row(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
     let avail = ui.available_width();
-    if avail < MIN_WINDOW_WIDTH - 40.0 {
+    if avail < MIN_WINDOW_WIDTH - TOP_CARDS_SIDEBAR_OFFSET {
         ui.vertical(|ui| {
             crate::modules::cpu::total_load_card::render_total_load_card(ui, cpu);
             ui.add_space(10.0);

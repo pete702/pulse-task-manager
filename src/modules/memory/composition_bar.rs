@@ -38,17 +38,21 @@ pub fn render_composition_bar(ui: &mut egui::Ui, snap: &MemorySnapshot) {
         ui.vertical(|ui| {
             ui.label(egui::RichText::new(Key::MemoryCompositionTitle.t()).monospace().size(13.0).color(colors::ACCENT_CYAN));
             ui.add_space(6.0);
-            let total = snap.ram_total_bytes.max(1) as f64;
-            let in_use = (snap.ram_used_bytes as f64).clamp(0.0, total);
-            let avail = (snap.ram_available_bytes as f64).clamp(0.0, (total - in_use).max(0.0));
-            let cache = (snap.ram_cached_bytes() as f64).clamp(0.0, avail);
-            let free = (avail - cache).max(0.0);
+            let total_u = snap.ram_total_bytes.max(1);
+            let used_u = snap.ram_used_bytes.min(total_u);
+            let avail_u = snap.ram_available_bytes.min(total_u.saturating_sub(used_u));
+            let cached_bar_u = snap.ram_cached_bytes().min(avail_u);
+            let free_bar_u = avail_u.saturating_sub(cached_bar_u);
+            let total = total_u as f64;
+            let in_use = used_u as f64;
+            let cached_bar = cached_bar_u as f64;
+            let free_bar = free_bar_u as f64;
             let pct = |v: f64| (v / total * 100.0) as f32;
-            let (in_use_pct, cache_pct, free_pct) = (pct(in_use), pct(cache), pct(free));
+            let (in_use_pct, cache_pct, free_pct) = (pct(in_use), pct(cached_bar), pct(free_bar));
             let bar_w = ui.available_width().max(80.0);
             let (rect, response) = ui.allocate_exact_size(egui::vec2(bar_w, 12.0), egui::Sense::hover());
             ui.painter().rect_filled(rect, egui::Rounding::same(3.0), egui::Color32::from_rgb(0x1E, 0x22, 0x30));
-            let (in_use_w, cache_w, free_w) = segment_widths(rect.width(), in_use, cache, free, total);
+            let (in_use_w, cache_w, free_w) = segment_widths(rect.width(), in_use, cached_bar, free_bar, total);
             let (x0, x1) = (rect.left(), rect.left() + in_use_w);
             let x2 = (x1 + cache_w).min(rect.right());
             let x3 = (x2 + free_w).min(rect.right());
@@ -57,14 +61,18 @@ pub fn render_composition_bar(ui: &mut egui::Ui, snap: &MemorySnapshot) {
             if free_w > 0.0 { ui.painter().rect_filled(egui::Rect::from_min_max(egui::pos2(x2, rect.top()), egui::pos2(x3, rect.bottom())), egui::Rounding::same(3.0), egui::Color32::from_rgb(0x1E, 0x22, 0x30)); }
             ui.painter().rect_stroke(rect, egui::Rounding::same(3.0), egui::Stroke::new(1.0_f32, BORDER_COLOR));
             if response.hovered() {
-                let tooltip = format!("In Use (Active): {:.2} GB ({:.1}%)\nAvailable: {:.2} GB ({:.1}%)\n  Windows File & System Cache (K32GetPerformanceInfo.SystemCache): {:.2} GB ({:.1}%)\n  Free: {:.2} GB ({:.1}%)\nCommitted / Limit: {:.2} / {:.2} GB ({:.1}%)", in_use / GIB, in_use_pct, avail / GIB, cache_pct + free_pct, cache / GIB, cache_pct, free / GIB, free_pct, snap.commit_total_bytes as f64 / GIB, snap.commit_limit_bytes as f64 / GIB, snap.commit_charge_pct());
+                let avail_pct = cache_pct + free_pct;
+                let tooltip = format!(
+                    "In Use (Active): {:.2} GB ({:.1}%)\nAvailable: {:.2} GB ({:.1}%)\n  Windows File & System Cache (K32GetPerformanceInfo.SystemCache): {:.2} GB ({:.1}%)\n  Free: {:.2} GB ({:.1}%)\nCommitted / Limit: {:.2} / {:.2} GB ({:.1}%)",
+                    in_use / GIB, in_use_pct, avail_u as f64 / GIB, avail_pct, cached_bar / GIB, cache_pct, free_bar / GIB, free_pct, snap.commit_total_bytes as f64 / GIB, snap.commit_limit_bytes as f64 / GIB, snap.commit_charge_pct()
+                );
                 response.on_hover_text(tooltip);
             }
             ui.add_space(6.0);
             ui.horizontal_wrapped(|ui| {
-                legend(ui, load_color(in_use_pct), &format!("In Use: {} ({:.0}%)", format_bytes(snap.ram_used_bytes), in_use_pct));
-                legend(ui, egui::Color32::from_rgb(0x00, 0x88, 0xAA), &format!("Cached (OS): {} ({:.0}%)", format_bytes(snap.ram_cached_bytes()), cache_pct));
-                legend(ui, colors::TEXT_SECONDARY, &format!("Free: {} ({:.0}%)", format_bytes(free as u64), free_pct));
+                legend(ui, load_color(in_use_pct), &format!("In Use: {} ({:.0}%)", format_bytes(used_u), in_use_pct));
+                legend(ui, egui::Color32::from_rgb(0x00, 0x88, 0xAA), &format!("Cached (OS): {} ({:.0}%)", format_bytes(cached_bar_u), cache_pct));
+                legend(ui, colors::TEXT_SECONDARY, &format!("Free: {} ({:.0}%)", format_bytes(free_bar_u), free_pct));
             });
         });
     });

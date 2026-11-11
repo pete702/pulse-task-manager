@@ -2,6 +2,79 @@
 
 All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
 
+## [0.4.77] - 2026-04-17
+
+- **CPU Table**: single-entry bounded eviction for `eco_overrides` at the 512-entry cap in `table_state_deltas.rs` and `table_menu_actions.rs` (preventing mass reset of active EcoQoS overrides).
+- **Version bump to 0.4.77**.
+
+## [0.4.76] - 2026-04-17
+
+- **Charts**: clean-4 Y-axis scaling on Network and Storage charts (fixing `1 Mbps, 1, 0, 0` and fractional ticks), with dark HUD axis pills.
+- **Storage UI**: `MB/s` unit on Storage `TOP I/O`.
+- **Version bump to 0.4.76**.
+
+## [0.4.75] - 2026-04-17
+
+- **Ingest**: unified 4-module snapshot ingestion in `app_ingest.rs` and minimized snapshot draining without UI rendering.
+- **Charts**: `push_gap_anchored` time-gap clamping across CPU, Storage, and Network chart histories.
+- **Version bump to 0.4.75**.
+
+## [0.4.74] - 2026-04-17
+
+- **Trim/UI**: `core::win32::self_trim_working_set` result-aware 10s retry backoff and `OnceLock` app icon caching.
+- **CPU/Menu**: tri-state `EcoQoS` menu status (active/off/unprobed).
+- **Version bump to 0.4.74**.
+
+## [0.4.73] - 2026-04-17
+
+- **Trim/UI**: unified self-trim policy with 10s minimize cooldown and immediate repaint on snapshot ingest.
+- **CPU/Panic/CLI**: `CpuSnapshot.process_scan_id` decoupling, re-entrancy-guarded PID-scoped `create_new` panic hook, and unknown CLI flag warning.
+- **Version bump to 0.4.73**.
+
+## [0.4.72] - 2026-04-17
+
+- **Hotkeys/Resume**: pre-ingest hotkey handling, instant process scan on F10 and UI telemetry resume.
+- **UX/Scope**: tab-scoped Escape, fast process cadence predicate excluding Memory overview, and CPU table freeze tooltip.
+- **Ingest**: snapshot_id deduplication for ingest.
+- **Version bump to 0.4.72**.
+
+## [0.4.71] - 2026-04-17
+
+- **Worker Loop**: edge-triggered pause unpark swap, early-wakeup guard, and timestamp monotonicity only on scheduled due ticks.
+- **Process Tables**: scanned-gated `process_scan_id`/`last_scan_tick` and full CPU/Memory process cache restoration when not scanned.
+- **Version bump to 0.4.71**.
+
+## [0.4.70] - 2026-04-17
+
+- **Worker Safety/Cadence**: `SpawnedWorker` optional handle, pause scan-request handling with instant resume unpark, monotonic snapshot timestamps, and elapsed-ticks scan cadence with active minimized tick interval.
+- **Worker Invariants**: unified `raw_processes`/`process_count` assignment and due-gated storage/network collection reuse.
+- **Version bump to 0.4.70**.
+
+## [0.4.69] - 2026-04-17
+
+- **CPU History**: O(1) revision-tagged series caches, removed dead `cached_revision`, and bounded ring-buffer peak decay on eviction.
+- **CPU/Worker**: synced `cpu/mod.rs` 960-sample doc and added UI wakeup on `publish_payload` `Full`.
+- **Version bump to 0.4.69**.
+
+## [0.4.68] - 2026-03-31
+
+- **CPU UI**: removed duplicate Overview sub-view button and clarified `LOGICAL CORES / PROCS` label.
+- **Charts**: added dark backdrop pills behind axis labels and unified scanner time format in CPU/Memory HUDs.
+- **Memory**: fixed composition bar segment math so In Use + Cached + Free never exceeds total RAM.
+- **Version bump to 0.4.68**.
+
+## [0.4.67] - 2026-03-31
+
+- **Charts**: added vertical scanner, curve dots, and tactical tooltip to CPU chart.
+- **Charts**: unified Memory, Storage, and Network charts to single vertical scanner, arrow cursor, and no horizontal crosshair.
+- **Version bump to 0.4.67**.
+
+## [0.4.66] - 2026-03-31
+
+- **CPU Sub-view**: two-way toggle with `toggle_sub_view` and back-to-overview control from Processes.
+- **Window Width**: unified 860.0 literals on canonical `MIN_WINDOW_WIDTH` and shared top-cards offset.
+- **Version bump to 0.4.66**.
+
 ## [0.4.65] - 2026-03-31
 
 - **CPU Hotkeys/UI**: Escape now surrenders CPU search focus unconditionally on the CPU tab.
@@ -20,77 +93,21 @@ All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGEL
 - **Tests**: asserted exact priority class restoration in live EcoQoS roundtrip.
 - **Version bump to 0.4.63**.
 
-## [0.4.62] - 2026-03-31
 
-- **CPU UI**: fixed bottleneck sentinel/idle states, tactical ticks at 0%, narrow layout thresholds, and core grid overflow/hover allocs.
-- **CPU State/Hotkeys**: added `show_core_grid` accessors, wired `CpuSubView` dispatch, and made process hotkeys focus-aware.
-- **Version bump to 0.4.62**.
 
-## [0.4.61] - 2026-03-31
 
-- **Collector EcoQoS**: bounded probe attempts per scan (max 24) to cap Win32 probes when results are unavailable.
-- **CPU Freq**: thread-local frequency buffer in `win32_cpu` to avoid holding a Mutex across the Win32 call.
-- **Version bump to 0.4.61**.
 
-## [0.4.60] - 2026-03-31
 
-- **Build/Deps**: cleaned local build artifacts; trimmed unused default features for `egui_extras` and `windows-sys` in `Cargo.toml`.
-- **Tests**: added live Windows kernel EcoQoS enable/restore roundtrip test.
-- **Version bump to 0.4.60**.
 
-## [0.4.59] - 2026-03-31
 
-- **qos_action**: probe returns `Some(false)` for PID 0/4 without budget; tests moved to `collector_tests.rs` to decompress module.
-- **CPU Table**: `ProcessQuickFilter` moved to `quick_filter.rs` with explicit numeric mapping; simplified delta scale; capped `eco_overrides` on rollback insert.
-- **Version bump to 0.4.59**.
 
-## [0.4.58] - 2026-03-31
 
-- **EcoQoS Safety**: oldest-first eviction for pending/orig maps, no silent disable-miss priority, atomic priority/throttling order with rollback, stricter Eco detection and probe budget.
-- **Collector/Tests**: deterministic round-robin Eco probe test, `disk_rates_from_prev` helper, removed test-only disk helpers, no `seen_pids` clone per scan.
-- **CPU Freq**: MAX_CORES 256 with reusable frequency buffer in `win32_cpu`.
-- **Version bump to 0.4.58**.
 
-## [0.4.57] - 2026-03-31
 
-- **Eco Rollback**: optimistic overrides restored on failure, `apply_eco_rollbacks` via action channel.
-- **Delta and Hover**: 10s scale clamped to [1/30, 10] with 1.0s floor, hover uses `resolve_exe_cached`.
-- **Version bump to 0.4.57**.
 
-## [0.4.56] - 2026-03-31
 
-- **Group Identity**: `GroupTarget` with start/creation/exe, imposter path guard, group trim/eco/kill/open with reuse checks.
-- **Menu Split**: actions moved to `table_menu_actions.rs` to keep files <= 265 lines, tests compacted.
-- **Version bump to 0.4.56**.
 
-## [0.4.55] - 2026-03-31
 
-- **Sort and Search**: navigation uses `ensure_sort`, Unicode `contains_ci` with ASCII fast path, header still toggles.
-- **Hover Cache**: TTL fallback, no sticky insert when saturated, Drop-guarded in-flight, baseline eviction and 0.05s dt floor.
-- **Version bump to 0.4.55**.
 
-## [0.4.54] - 2026-03-31
-
-- **Grouped Hog Fix**: single `from_raw` path, clamped group CPU, per-member hog flag, zero-alloc `pid_contains`.
-- **Creation Cache Bound**: max 64 Win32 probes per scan, no permanent `None`, `collect_process_cpu` call simplified.
-- **Version bump to 0.4.54**.
-
-## [0.4.53] - 2026-03-31
-
-- **Round-Robin Eco**: new `collector_eco` cache (budget 12, TTL 300s, cursor, prune), `last_scan` field, `disk_rate` helper, exe paths live.
-- **Model Harden**: NaN-safe `new`, `from_raw` without double format, removed duplicate builder.
-- **Version bump to 0.4.53**.
-
-## [0.4.52] - 2026-03-31
-
-- **EcoQoS Harden**: single-key eviction, `probe->Option<bool>`, no tautological path, ORIG priority remove, prio==0 guard.
-- **Open Location Gates**: system/gate/critical/identity checks, `decode_utf16_cstr` NUL strip, dead telemetry removed.
-- **Version bump to 0.4.52**.
-
-## [0.4.51] - 2026-03-31
-
-- **Non-Blocking Hover**: exe cache never queries on UI thread (bg thread, 4 in-flight, fallback insert).
-- **Persisted Widths**: `PERSISTED_WIDTHS` slot + `cpu_col_widths` in state.cfg, saved on drag/autofit.
-- **Version bump to 0.4.51**.
 
 

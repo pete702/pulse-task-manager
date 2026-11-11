@@ -42,6 +42,7 @@ pub fn collect_cpu(sys: &mut System) -> CpuSnapshot {
         brand,
         raw_processes: Arc::new([]),
         process_count: 0,
+        process_scan_id: 0,
     }
 }
 

@@ -147,7 +147,13 @@ fn right_controls(
         }
         ui.add_space(8.0);
         let pause_label = if state.paused { "> Resume" } else { "|| Pause" };
-        if ui.button(pause_label).clicked() {
+        if ui
+            .button(pause_label)
+            .on_hover_text(
+                "Freeze CPU table sorting and row order (Space). Live telemetry charts continue updating; use F10 for global telemetry pause.",
+            )
+            .clicked()
+        {
             state.toggle_pause();
         }
         ui.add_space(8.0);
@@ -199,7 +205,13 @@ fn render_toolbar(
                     }
                     ui.add_space(8.0);
                     let pause_label = if state.paused { "> Resume" } else { "|| Pause" };
-                    if ui.button(pause_label).clicked() {
+                    if ui
+                        .button(pause_label)
+                        .on_hover_text(
+                            "Freeze CPU table sorting and row order (Space). Live telemetry charts continue updating; use F10 for global telemetry pause.",
+                        )
+                        .clicked()
+                    {
                         state.toggle_pause();
                     }
                     ui.add_space(8.0);

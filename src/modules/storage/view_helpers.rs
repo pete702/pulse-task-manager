@@ -85,7 +85,7 @@ pub(crate) fn render_status_and_kpis(
     let top = snap
         .top_io_process
         .as_ref()
-        .map(|t| truncate(&format!("{} {:.1}", t.1, t.2), 28))
+        .map(|t| truncate(&format!("{} {:.1} MB/s", t.1, t.2), 28))
         .unwrap_or_else(|| "-".to_owned());
     card_frame().inner_margin(egui::Margin::symmetric(10.0, 5.0)).show(ui, |ui| {
         ui.set_width(ui.available_width());

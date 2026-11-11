@@ -3,7 +3,7 @@ use crate::i18n::Key;
 use crate::modules::memory::chart_axis::{minutes_ago, window_minutes};
 use crate::modules::memory::chart_chrome::render_header;
 use crate::modules::memory::chart_hud::{
-    draw_hud_legend, draw_x_axis_hud_labels, draw_y_axis_hud_labels,
+    draw_hud_legend, draw_hud_scanner, draw_x_axis_hud_labels, draw_y_axis_hud_labels,
 };
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::model::{ChartWindow, MemorySnapshot};
@@ -138,13 +138,13 @@ pub fn render_memory_chart(
             let ram_points = if ram_raw.is_empty() {
                 PlotPoints::new(vec![[-ONE_SEC_MIN, ram as f64], [0.0, ram as f64]])
             } else {
-                PlotPoints::new(ram_raw)
+                PlotPoints::new(ram_raw.clone())
             };
             let purple_points = if purple_raw.is_empty() {
                 let flat = if has_commit { commit as f64 } else { swap as f64 };
                 PlotPoints::new(vec![[-ONE_SEC_MIN, flat], [0.0, flat]])
             } else {
-                PlotPoints::new(purple_raw)
+                PlotPoints::new(purple_raw.clone())
             };
 
             // Compute plot height AFTER header so bottom labels fit.
@@ -165,6 +165,8 @@ pub fn render_memory_chart(
                 .height(plot_height)
                 .show_axes([false, false])
                 .show_grid([true, true])
+                .show_x(false)
+                .show_y(false)
                 .auto_bounds(egui::Vec2b::new(false, false))
                 .y_grid_spacer(move |_| Y_GRID.to_vec())
                 .x_grid_spacer(move |input| x_grid_spacer(span, &input))
@@ -218,6 +220,9 @@ pub fn render_memory_chart(
 
             // Draw in-canvas HUD axis labels using the plot's frame rect
             let plot_rect = *plot_response.transform.frame();
+            if plot_response.response.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+            }
             draw_y_axis_hud_labels(ui, plot_rect);
             draw_x_axis_hud_labels(ui, plot_rect, selected);
 
@@ -228,6 +233,16 @@ pub fn render_memory_chart(
                 ui.ctx().data(|d| d.get_temp(legend_rect_id));
             let interaction_rect = prev_legend_rect.unwrap_or(plot_rect);
 
+            draw_hud_scanner(
+                ui,
+                plot_rect,
+                span,
+                &ram_raw,
+                &purple_raw,
+                show_ram,
+                show_commit,
+                has_commit,
+            );
             let (new_show_ram, new_show_commit) = draw_hud_legend(ui, interaction_rect, has_commit);
 
             // Store current legend rect for next frame's interaction

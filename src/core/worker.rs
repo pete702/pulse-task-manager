@@ -1,7 +1,7 @@
 //! Background telemetry worker with decoupled RAM and process polling.
 
 use crate::core::worker_io::Wakeup;
-use crate::core::worker_loop::spawn_worker;
+use crate::core::worker_loop::{spawn_worker, SpawnedWorker};
 
 /// Handle to the running background telemetry worker.
 pub struct TelemetryWorker {
@@ -22,15 +22,14 @@ impl TelemetryWorker {
         wakeup: Option<Wakeup>,
     ) -> (Self, std::sync::mpsc::Receiver<std::sync::Arc<crate::core::SystemSnapshot>>) {
         let processes_tab_active = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let (rx, latest, is_minimized, shutdown, _wakeup, thread_handle) =
-            spawn_worker(wakeup, processes_tab_active.clone());
+        let spawned: SpawnedWorker = spawn_worker(wakeup, processes_tab_active.clone());
         let mut worker = TelemetryWorker {
-            rx: Some(rx),
-            latest,
-            is_minimized,
+            rx: Some(spawned.rx),
+            latest: spawned.latest,
+            is_minimized: spawned.is_minimized,
             processes_tab_active,
-            thread_handle: Some(thread_handle),
-            shutdown,
+            thread_handle: spawned.handle,
+            shutdown: spawned.shutdown,
         };
         let rx = worker.rx.take().expect("worker rx initialized");
         (worker, rx)
@@ -47,13 +46,8 @@ impl TelemetryWorker {
     }
 
     /// Requests an immediate process scan and unparks the worker thread for instant wakeup.
-    pub fn request_process_scan(&self) {
-        if crate::core::worker_loop::request_process_scan() {
-            return;
-        }
-        if let Some(h) = &self.thread_handle {
-            h.thread().unpark();
-        }
+    pub fn request_process_scan(&self) -> bool {
+        super::worker_loop::request_process_scan()
     }
 
     /// Drains all queued overflow snapshots in chronological FIFO order.

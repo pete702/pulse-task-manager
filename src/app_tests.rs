@@ -107,3 +107,29 @@ fn test_sanitize_f64() {
     assert_eq!(sanitize_f64(f64::NAN, 7.0), 7.0);
     assert_eq!(sanitize_f64(f64::INFINITY, 7.0), 7.0);
 }
+
+#[test]
+fn test_should_use_fast_process_cadence() {
+    use crate::app::should_use_fast_process_cadence;
+    use crate::modules::cpu::page::CpuSubView;
+
+    assert!(should_use_fast_process_cadence(ActiveTab::Processes, CpuSubView::Overview));
+    assert!(should_use_fast_process_cadence(ActiveTab::Storage, CpuSubView::Overview));
+    assert!(should_use_fast_process_cadence(ActiveTab::Cpu, CpuSubView::Processes));
+
+    assert!(!should_use_fast_process_cadence(ActiveTab::Memory, CpuSubView::Overview));
+    assert!(!should_use_fast_process_cadence(ActiveTab::Network, CpuSubView::Overview));
+    assert!(!should_use_fast_process_cadence(ActiveTab::Cpu, CpuSubView::Overview));
+}
+
+#[test]
+fn test_should_trigger_self_trim_policy() {
+    use crate::app_trim::should_trigger_self_trim;
+    use std::time::Duration;
+
+    assert!(should_trigger_self_trim(Duration::from_secs(1), 60, false));
+    assert!(!should_trigger_self_trim(Duration::from_secs(3), 0, true));
+    assert!(should_trigger_self_trim(Duration::from_secs(10), 0, true));
+    assert!(should_trigger_self_trim(Duration::from_secs(60), 0, false));
+    assert!(!should_trigger_self_trim(Duration::from_secs(59), 0, false));
+}

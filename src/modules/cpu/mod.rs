@@ -1,4 +1,4 @@
-//! CPU module for PULSE: pure math model, sysinfo collector, 900s dual-series history.
+//! CPU module -- 960-sample (15m) dual-series history, process telemetry, and UI.
 
 pub mod bottleneck_card;
 pub mod chart_axis;

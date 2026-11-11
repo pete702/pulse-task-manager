@@ -12,6 +12,15 @@ type AdapterSample = (f64, f32, f32);
 type SeriesCache = (Option<String>, usize, u64, Arc<Vec<[f64; 2]>>, Arc<Vec<[f64; 2]>>);
 type LatencyCache = (usize, u64, Arc<Vec<[f64; 2]>>, Arc<Vec<[f64; 2]>>);
 
+fn push_gap_anchored(pts: &mut Vec<[f64; 2]>, x: f64, y: f64) {
+    if let Some(&[px, _]) = pts.last() {
+        if x - px > 4.5 / 60.0 {
+            pts.extend([[px + 0.01, 0.0], [x - 0.01, 0.0]]);
+        }
+    }
+    pts.push([x, y]);
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
 pub struct NetworkHistory {
@@ -130,8 +139,8 @@ impl NetworkHistory {
         let mut second = Vec::new();
         for s in self.samples.iter().skip(start_idx) {
             let x = -(latest - s.0) / 60.0;
-            first.push([x, s.1 as f64]);
-            second.push([x, s.2 as f64]);
+            push_gap_anchored(&mut first, x, s.1 as f64);
+            push_gap_anchored(&mut second, x, s.2 as f64);
         }
         if start_idx > 0 && !first.is_empty() && first[0][0] > -window_min {
             let prev = &self.samples[start_idx - 1];
@@ -164,8 +173,8 @@ impl NetworkHistory {
         let mut second = Vec::new();
         for s in series.iter().skip(start_idx) {
             let x = -(latest - s.0) / 60.0;
-            first.push([x, s.1 as f64]);
-            second.push([x, s.2 as f64]);
+            push_gap_anchored(&mut first, x, s.1 as f64);
+            push_gap_anchored(&mut second, x, s.2 as f64);
         }
         if start_idx > 0 && !first.is_empty() && first[0][0] > -window_min {
             let prev = &series[start_idx - 1];
@@ -199,8 +208,8 @@ impl NetworkHistory {
             let x = -(latest - s.0) / 60.0;
             // Emit NAN for missing samples so egui_plot breaks the line
             // across outages. Never fake 0.0.
-            first.push([x, s.3.map(|v| v as f64).unwrap_or(f64::NAN)]);
-            second.push([x, s.4.map(|v| v as f64).unwrap_or(f64::NAN)]);
+            push_gap_anchored(&mut first, x, s.3.map(|v| v as f64).unwrap_or(f64::NAN));
+            push_gap_anchored(&mut second, x, s.4.map(|v| v as f64).unwrap_or(f64::NAN));
         }
         if start_idx > 0 && !first.is_empty() && first[0][0] > -window_min {
             let prev = &self.samples[start_idx - 1];

@@ -4,9 +4,21 @@ use crate::modules::memory::downsampling::lttb_downsample;
 use crate::modules::memory::model::ChartWindow;
 use std::collections::VecDeque;
 use std::sync::Arc;
+
 pub const CPU_HISTORY_CAPACITY: usize = 960;
 /// Re-export memory's ChartWindow for CPU charts (identical values: 60, 300, 900).
 pub type CpuChartWindow = ChartWindow;
+type SeriesCache = Option<(u64, Arc<Vec<[f64; 2]>>)>;
+
+fn push_gap_anchored(pts: &mut Vec<[f64; 2]>, x: f64, y: f64) {
+    if let Some(&[px, _]) = pts.last() {
+        if x - px > 4.5 {
+            pts.extend([[px + 0.01, 0.0], [x - 0.01, 0.0]]);
+        }
+    }
+    pts.push([x, y]);
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct CpuHistory {
     pub total_points: VecDeque<f32>,
@@ -17,14 +29,14 @@ pub struct CpuHistory {
     pub revision: u64,
     pub timestamps: VecDeque<f64>,
     pub show_core_grid: bool,
-    cached_total_1m: Option<Arc<Vec<[f64; 2]>>>,
-    cached_total_5m: Option<Arc<Vec<[f64; 2]>>>,
-    cached_total_15m: Option<Arc<Vec<[f64; 2]>>>,
-    cached_hottest_1m: Option<Arc<Vec<[f64; 2]>>>,
-    cached_hottest_5m: Option<Arc<Vec<[f64; 2]>>>,
-    cached_hottest_15m: Option<Arc<Vec<[f64; 2]>>>,
-    cached_revision: u64,
+    cache_total_1m: SeriesCache,
+    cache_total_5m: SeriesCache,
+    cache_total_15m: SeriesCache,
+    cache_hottest_1m: SeriesCache,
+    cache_hottest_5m: SeriesCache,
+    cache_hottest_15m: SeriesCache,
 }
+
 impl CpuHistory {
     #[inline]
     pub fn new() -> Self {
@@ -37,86 +49,77 @@ impl CpuHistory {
             revision: 0,
             timestamps: VecDeque::with_capacity(CPU_HISTORY_CAPACITY),
             show_core_grid: false,
-            cached_total_1m: None,
-            cached_total_5m: None,
-            cached_total_15m: None,
-            cached_hottest_1m: None,
-            cached_hottest_5m: None,
-            cached_hottest_15m: None,
-            cached_revision: 0,
+            cache_total_1m: None,
+            cache_total_5m: None,
+            cache_total_15m: None,
+            cache_hottest_1m: None,
+            cache_hottest_5m: None,
+            cache_hottest_15m: None,
         }
     }
+
     pub fn push(&mut self, total_pct: f32, hottest_pct: f32, timestamp_s: f64) {
         if let Some(last_ts) = self.timestamps.back() {
             if timestamp_s <= *last_ts {
                 return;
             }
         }
-        self.peak_total_percent = self.peak_total_percent.max(total_pct);
-        self.peak_hottest_percent = self.peak_hottest_percent.max(hottest_pct);
-        if self.total_points.len() == CPU_HISTORY_CAPACITY {
-            self.total_points.pop_front();
-        }
-        if self.hottest_points.len() == CPU_HISTORY_CAPACITY {
-            self.hottest_points.pop_front();
-        }
-        if self.timestamps.len() == CPU_HISTORY_CAPACITY {
-            self.timestamps.pop_front();
-        }
+        let evicted = if self.total_points.len() >= CPU_HISTORY_CAPACITY {
+            let et = self.total_points.pop_front();
+            let eh = self.hottest_points.pop_front();
+            let _ = self.timestamps.pop_front();
+            match (et, eh) {
+                (Some(t), Some(h)) => Some((t, h)),
+                _ => None,
+            }
+        } else {
+            None
+        };
         self.total_points.push_back(total_pct);
         self.hottest_points.push_back(hottest_pct);
         self.timestamps.push_back(timestamp_s);
+        self.peak_total_percent = self.peak_total_percent.max(total_pct);
+        self.peak_hottest_percent = self.peak_hottest_percent.max(hottest_pct);
+        if let Some((ev_t, ev_h)) = evicted {
+            if ev_t >= self.peak_total_percent || ev_h >= self.peak_hottest_percent {
+                self.peak_total_percent = self.total_points.iter().copied().fold(0.0_f32, f32::max);
+                self.peak_hottest_percent =
+                    self.hottest_points.iter().copied().fold(0.0_f32, f32::max);
+            }
+        }
         self.revision = self.revision.wrapping_add(1);
-        self.invalidate_caches();
     }
-    #[inline]
-    fn invalidate_caches(&mut self) {
-        self.cached_total_1m = None;
-        self.cached_total_5m = None;
-        self.cached_total_15m = None;
-        self.cached_hottest_1m = None;
-        self.cached_hottest_5m = None;
-        self.cached_hottest_15m = None;
-        self.cached_revision = self.revision;
-    }
+
     #[allow(dead_code)]
-    fn get_total_series(&mut self, window: CpuChartWindow) -> Arc<Vec<[f64; 2]>> {
-        let cached = match window {
-            CpuChartWindow::OneMin => self.cached_total_1m.clone(),
-            CpuChartWindow::FiveMin => self.cached_total_5m.clone(),
-            CpuChartWindow::FifteenMin => self.cached_total_15m.clone(),
+    fn get_series(&mut self, window: CpuChartWindow, hottest: bool) -> Arc<Vec<[f64; 2]>> {
+        let rev = self.revision;
+        let slot_ro: &SeriesCache = match (hottest, window) {
+            (false, CpuChartWindow::OneMin) => &self.cache_total_1m,
+            (false, CpuChartWindow::FiveMin) => &self.cache_total_5m,
+            (false, CpuChartWindow::FifteenMin) => &self.cache_total_15m,
+            (true, CpuChartWindow::OneMin) => &self.cache_hottest_1m,
+            (true, CpuChartWindow::FiveMin) => &self.cache_hottest_5m,
+            (true, CpuChartWindow::FifteenMin) => &self.cache_hottest_15m,
         };
-        if let Some(c) = cached {
-            return c;
+        if let Some((r, arc)) = slot_ro {
+            if *r == rev {
+                return Arc::clone(arc);
+            }
         }
-        let points = self.build_windowed_series(&self.total_points, window);
-        let arc = Arc::new(lttb_downsample(&points, 920));
-        match window {
-            CpuChartWindow::OneMin => self.cached_total_1m = Some(arc.clone()),
-            CpuChartWindow::FiveMin => self.cached_total_5m = Some(arc.clone()),
-            CpuChartWindow::FifteenMin => self.cached_total_15m = Some(arc.clone()),
+        let src = if hottest { &self.hottest_points } else { &self.total_points };
+        let arc = Arc::new(lttb_downsample(&self.build_windowed_series(src, window), 920));
+        let slot: &mut SeriesCache = match (hottest, window) {
+            (false, CpuChartWindow::OneMin) => &mut self.cache_total_1m,
+            (false, CpuChartWindow::FiveMin) => &mut self.cache_total_5m,
+            (false, CpuChartWindow::FifteenMin) => &mut self.cache_total_15m,
+            (true, CpuChartWindow::OneMin) => &mut self.cache_hottest_1m,
+            (true, CpuChartWindow::FiveMin) => &mut self.cache_hottest_5m,
+            (true, CpuChartWindow::FifteenMin) => &mut self.cache_hottest_15m,
         };
+        *slot = Some((rev, Arc::clone(&arc)));
         arc
     }
-    #[allow(dead_code)]
-    fn get_hottest_series(&mut self, window: CpuChartWindow) -> Arc<Vec<[f64; 2]>> {
-        let cached = match window {
-            CpuChartWindow::OneMin => self.cached_hottest_1m.clone(),
-            CpuChartWindow::FiveMin => self.cached_hottest_5m.clone(),
-            CpuChartWindow::FifteenMin => self.cached_hottest_15m.clone(),
-        };
-        if let Some(c) = cached {
-            return c;
-        }
-        let points = self.build_windowed_series(&self.hottest_points, window);
-        let arc = Arc::new(lttb_downsample(&points, 920));
-        match window {
-            CpuChartWindow::OneMin => self.cached_hottest_1m = Some(arc.clone()),
-            CpuChartWindow::FiveMin => self.cached_hottest_5m = Some(arc.clone()),
-            CpuChartWindow::FifteenMin => self.cached_hottest_15m = Some(arc.clone()),
-        };
-        arc
-    }
+
     #[allow(dead_code, clippy::needless_range_loop)]
     fn build_windowed_series(
         &self,
@@ -140,12 +143,10 @@ impl CpuHistory {
         }
         let mut out = Vec::with_capacity(len - start_idx + 1);
         for i in start_idx..len {
-            out.push([timestamps[i], points[i] as f64]);
+            push_gap_anchored(&mut out, timestamps[i], points[i] as f64);
         }
-        // Clean startup: only anchor when real history predates cutoff.
         if start_idx > 0 && out.len() > 1 && out[0][0] > cutoff {
-            let prev_y = points[start_idx - 1] as f64;
-            out.insert(0, [cutoff, prev_y]);
+            out.insert(0, [cutoff, points[start_idx - 1] as f64]);
         }
         if let Some(last) = out.last().copied() {
             if last[0] < now {
@@ -154,6 +155,7 @@ impl CpuHistory {
         }
         out
     }
+
     #[inline]
     #[allow(dead_code)]
     pub fn len(&self) -> usize {
@@ -163,21 +165,19 @@ impl CpuHistory {
     pub fn latest_timestamp(&self) -> f64 {
         self.timestamps.back().copied().unwrap_or(0.0)
     }
-
     pub fn show_core_grid(&self) -> bool {
         self.show_core_grid
     }
-
     pub fn set_show_core_grid(&mut self, show: bool) {
         self.show_core_grid = show;
     }
     #[allow(dead_code)]
     pub fn total_series(&mut self, window: CpuChartWindow) -> Arc<Vec<[f64; 2]>> {
-        self.get_total_series(window)
+        self.get_series(window, false)
     }
     #[allow(dead_code)]
     pub fn hottest_series(&mut self, window: CpuChartWindow) -> Arc<Vec<[f64; 2]>> {
-        self.get_hottest_series(window)
+        self.get_series(window, true)
     }
     #[allow(dead_code)]
     pub fn clear(&mut self) {
@@ -187,7 +187,12 @@ impl CpuHistory {
         self.peak_total_percent = 0.0;
         self.peak_hottest_percent = 0.0;
         self.revision = self.revision.wrapping_add(1);
-        self.invalidate_caches();
+        self.cache_total_1m = None;
+        self.cache_total_5m = None;
+        self.cache_total_15m = None;
+        self.cache_hottest_1m = None;
+        self.cache_hottest_5m = None;
+        self.cache_hottest_15m = None;
     }
     #[inline]
     #[allow(dead_code)]
@@ -195,11 +200,11 @@ impl CpuHistory {
         self.total_points.back().copied().unwrap_or(0.0)
     }
     #[inline]
-    #[allow(dead_code)]
     pub fn current_hottest_percent(&self) -> f32 {
         self.hottest_points.back().copied().unwrap_or(0.0)
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,12 +226,9 @@ mod tests {
         for i in 0..100 {
             hist.push(i as f32 * 0.5, i as f32 * 0.3, i as f64);
         }
-        let series = hist.total_series(CpuChartWindow::OneMin);
-        assert!(!series.is_empty());
-        let series5 = hist.total_series(CpuChartWindow::FiveMin);
-        assert!(!series5.is_empty());
-        let series15 = hist.total_series(CpuChartWindow::FifteenMin);
-        assert!(!series15.is_empty());
+        assert!(!hist.total_series(CpuChartWindow::OneMin).is_empty());
+        assert!(!hist.total_series(CpuChartWindow::FiveMin).is_empty());
+        assert!(!hist.total_series(CpuChartWindow::FifteenMin).is_empty());
     }
     #[test]
     fn test_short_history_starts_at_first_sample() {
@@ -235,7 +237,6 @@ mod tests {
             hist.push(10.0, 20.0, i as f64 - 9.0);
         }
         let series = hist.total_series(CpuChartWindow::OneMin);
-        assert!(!series.is_empty());
         assert_eq!(series.first().map(|p| p[0]), Some(-9.0));
         assert_eq!(series.last().map(|p| p[0]), Some(0.0));
         let mut hist2 = CpuHistory::new();
@@ -254,5 +255,15 @@ mod tests {
         hist.push(99.0, 99.0, 0.5);
         assert_eq!(hist.len(), 1);
         assert_eq!(hist.current_total_percent(), 10.0);
+    }
+    #[test]
+    fn test_peak_total_percent_decays_after_spike_evicted() {
+        let mut hist = CpuHistory::new();
+        hist.push(99.0, 50.0, 1.0);
+        for i in 2..=(CPU_HISTORY_CAPACITY as i32 + 1) {
+            hist.push(10.0, 5.0, i as f64);
+        }
+        assert_eq!(hist.len(), CPU_HISTORY_CAPACITY);
+        assert_eq!(hist.peak_total_percent, 10.0);
     }
 }

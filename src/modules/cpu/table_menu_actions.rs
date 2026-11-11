@@ -50,11 +50,14 @@ pub(crate) fn spawn_eco(
         .iter()
         .map(|t| ((t.pid, t.start_time), state.eco_overrides.get(&(t.pid, t.start_time)).copied()))
         .collect();
-    if state.eco_overrides.len() + targets.len() > 512 {
-        state.eco_overrides.clear();
-    }
     for t in &targets {
-        state.eco_overrides.insert((t.pid, t.start_time), enable);
+        let key = (t.pid, t.start_time);
+        if state.eco_overrides.len() >= 512 && !state.eco_overrides.contains_key(&key) {
+            if let Some(&k) = state.eco_overrides.keys().next() {
+                state.eco_overrides.remove(&k);
+            }
+        }
+        state.eco_overrides.insert(key, enable);
     }
     let total = targets.len();
     let (lead, lst) = (targets[0].pid, targets[0].start_time);

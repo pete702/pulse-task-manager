@@ -72,10 +72,14 @@ impl CpuTableState {
             match rx.try_recv() {
                 Ok((msg, eco, rollbacks)) => {
                     if let Some((pid, st, on)) = eco {
-                        if self.eco_overrides.len() >= 512 {
-                            self.eco_overrides.clear();
+                        let key = (pid, st);
+                        if self.eco_overrides.len() >= 512 && !self.eco_overrides.contains_key(&key)
+                        {
+                            if let Some(&k) = self.eco_overrides.keys().next() {
+                                self.eco_overrides.remove(&k);
+                            }
                         }
-                        self.eco_overrides.insert((pid, st), on);
+                        self.eco_overrides.insert(key, on);
                         crate::modules::cpu::collector::mark_pending_eco(pid, st, on);
                         crate::core::request_process_scan();
                     }

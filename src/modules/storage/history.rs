@@ -17,6 +17,15 @@ fn san_f32(v: f32) -> f32 {
     }
 }
 
+fn push_gap_anchored(pts: &mut Vec<[f64; 2]>, x: f64, y: f64) {
+    if let Some(&[px, _]) = pts.last() {
+        if x - px > 4.5 / 60.0 {
+            pts.extend([[px + 0.01, 0.0], [x - 0.01, 0.0]]);
+        }
+    }
+    pts.push([x, y]);
+}
+
 #[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
 pub struct StorageHistory {
@@ -143,8 +152,8 @@ impl StorageHistory {
         let mut write = Vec::new();
         for s in samples.iter().skip(start_idx) {
             let x = -(latest - s.0) / 60.0;
-            read.push([x, san_f32(s.1) as f64]);
-            write.push([x, san_f32(s.2) as f64]);
+            push_gap_anchored(&mut read, x, san_f32(s.1) as f64);
+            push_gap_anchored(&mut write, x, san_f32(s.2) as f64);
         }
         if start_idx > 0 && !read.is_empty() && read[0][0] > -window_min {
             let prev = samples[start_idx - 1];
@@ -216,5 +225,18 @@ mod tests {
         assert_eq!(all[4][1], 10.0);
         let (missing, _) = h.series_points_scoped(Some(7), 60);
         assert!(missing.is_empty());
+    }
+    #[test]
+    fn gap_anchor_inserts_zero_points() {
+        let mut h = StorageHistory::new();
+        h.push(0.0, 5.0, 1.0);
+        h.push(10.0, 7.0, 2.0);
+        let (r, w) = h.series_points(60);
+        assert_eq!(r.len(), 4);
+        assert_eq!(w.len(), 4);
+        assert_eq!(r[1][1], 0.0);
+        assert_eq!(r[2][1], 0.0);
+        assert_eq!(w[1][1], 0.0);
+        assert_eq!(w[2][1], 0.0);
     }
 }

@@ -8,7 +8,7 @@ A native Windows 10/11 task manager in pure Rust + `egui` for real-time CPU, RAM
 [![License: Proprietary -- All Rights Reserved](https://img.shields.io/badge/License-Proprietary--All_Rights_Reserved-red.svg)](LICENSE)
 [![Platform: Windows 10/11 x64](https://img.shields.io/badge/Platform-Windows%2010%2F11%20x64-0078D4.svg)](https://github.com/pete702/pulse-task-manager/releases)
 
-**Single-file portable widget-free HUD - no service, no installer.**
+**Single-file portable HUD - no service, no installer.**
 
 ## Why PULSE?
 
@@ -49,7 +49,7 @@ Future Pro extensions (24h history, automation rules) will be optional offline m
 
 - **Single Portable Executable**: Standalone `.exe` (`~3.7 MiB` binary size on disk), no installer, no background service.
 - **Live System Top Bar**: Top header shows `[ CPU | RAM | UPTIME | HEALTH ]` plus true Win32 `GetUserDefaultLocaleName` OS locale; PULSE self-RAM/UI diagnostics live in the status bar.
-- **State Persistence & Tactical HUD**: Tab, sort, grid view, and window size survive restarts via `%LOCALAPPDATA%\PULSE\state.cfg`; next planned is Total Sci-Fi Cockpit UI 2.0 Redesign after `[05]`.
+- **State Persistence**: Tab, sort, grid view, and window size survive restarts via `%LOCALAPPDATA%\PULSE\state.cfg`.
 - **1 Hz Pausable Telemetry Worker**: Main `egui` UI thread + background telemetry worker thread (`bounded std::sync::mpsc::sync_channel(2)`) with 1 Hz system telemetry polling and adaptive process scanning (3 s when Processes tab active, 5 s on Overview). `Space` pause/resume freezes worker collection without dropping history; `Ctrl+F` search; `Esc` clear.
 - **Interned `Arc<str>` Process Names**: `util::intern_name` shares one `Arc<str>` per process name across CPU and Memory collectors, capped at 512 entries.
 - **Cached Physical Disk Handles**: Physical disk handles cached in `OnceLock` map (max 32), evicted and closed on `DeviceIoControl` failure -- no more per-tick `CreateFileW`/`CloseHandle`.
@@ -79,7 +79,7 @@ cargo run --release
 ## CLI Flags
 
 ```powershell
-pulse_manager.exe --version   # Prints: PULSE v0.4.65 (pulse_manager)
+pulse_manager.exe --version   # Prints: PULSE v0.4.77 (pulse_manager)
 pulse_manager.exe --help      # Prints usage
 pulse_manager.exe --self-test # Headless CI self-test
 ```

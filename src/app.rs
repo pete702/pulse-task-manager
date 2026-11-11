@@ -44,7 +44,7 @@ pub struct PulseApp {
     pub(crate) dirty_since: Option<Instant>,
     pub(crate) dirty_state_snapshot: Option<persist::PersistedState>,
     pub(crate) pointer_down: bool,
-    pub(crate) last_trim: Instant,
+    pub(crate) last_self_trim: Instant,
 }
 
 impl PulseApp {
@@ -87,7 +87,7 @@ impl PulseApp {
             dirty_since: None,
             dirty_state_snapshot: None,
             pointer_down: false,
-            last_trim: Instant::now(),
+            last_self_trim: Instant::now(),
         };
         app.apply_persisted(&saved);
         app
@@ -118,6 +118,16 @@ impl PulseApp {
     }
 }
 
+pub(crate) fn should_use_fast_process_cadence(
+    active_tab: crate::app_tabs::ActiveTab,
+    cpu_sub_view: CpuSubView,
+) -> bool {
+    matches!(
+        active_tab,
+        crate::app_tabs::ActiveTab::Processes | crate::app_tabs::ActiveTab::Storage
+    ) || (active_tab == crate::app_tabs::ActiveTab::Cpu && cpu_sub_view == CpuSubView::Processes)
+}
+
 impl eframe::App for PulseApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let frame_start = Instant::now();
@@ -128,38 +138,36 @@ impl eframe::App for PulseApp {
         // Minimized: honest 0 FPS. No hotkeys or repaints while minimized.
         let is_minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         self.worker.set_minimized(is_minimized);
-        let minimize_edge = is_minimized && !self.was_minimized;
-        if minimize_edge || crate::app_trim::periodic_due(&self.last_trim) {
-            crate::app_trim::run_trim(&mut self.last_trim);
-        }
-        if self.startup_frames == 60 && self.latest_snapshot.is_some() {
-            crate::app_trim::run_trim(&mut self.last_trim);
-        }
+        let just_minimized = is_minimized && !self.was_minimized;
         self.was_minimized = is_minimized;
-        self.poll_snapshots();
+        crate::app_trim::maybe_self_trim(
+            &mut self.last_self_trim,
+            self.startup_frames as u32,
+            just_minimized,
+        );
+        let ingested_early = self.poll_snapshots();
         if is_minimized {
-            ctx.request_repaint_after(std::time::Duration::from_secs(30));
+            ctx.request_repaint_after(std::time::Duration::from_secs(5));
             return;
         }
+        let paused_before = self.telemetry_paused;
         if crate::app_tabs::handle_global_hotkeys(
             ctx,
             &mut self.active_tab,
             &mut self.memory_sub_view,
             &mut self.table_state,
             &mut self.cpu_table_state,
+            &mut self.action_state,
             &mut self.telemetry_paused,
         ) {
             ctx.request_repaint();
         }
-        let processes_active = self.active_tab == crate::app_tabs::ActiveTab::Processes
-            || self.active_tab == crate::app_tabs::ActiveTab::Storage
-            || self.active_tab == crate::app_tabs::ActiveTab::Memory
-            || (self.active_tab == crate::app_tabs::ActiveTab::Cpu
-                && self.cpu_sub_view == CpuSubView::Processes);
+        if ingested_early || self.poll_snapshots() {
+            ctx.request_repaint();
+        }
+        let processes_active = should_use_fast_process_cadence(self.active_tab, self.cpu_sub_view);
         self.worker.set_fast_process_cadence(processes_active);
-        crate::core::worker_loop::set_worker_paused(crate::core::worker_loop::WorkerConfig {
-            paused: self.telemetry_paused,
-        });
+        crate::core::worker_loop::set_worker_paused(self.telemetry_paused);
         crate::modules::network::latency_probe::set_fast_probe_mode(
             self.active_tab == crate::app_tabs::ActiveTab::Network && !self.telemetry_paused,
         );
@@ -192,7 +200,7 @@ impl eframe::App for PulseApp {
             .map(|s| {
                 let cpu_n = s.cpu.as_ref().map(|c| c.process_count).unwrap_or(0);
                 let mem_n = s.memory.as_ref().map(|m| m.processes.len()).unwrap_or(0);
-                cpu_n.max(mem_n) as u32
+                u32::try_from(cpu_n.max(mem_n)).unwrap_or(u32::MAX)
             })
             .unwrap_or(0);
         let uptime = latest_snapshot.as_ref().map(|s| s.uptime_secs).unwrap_or(0);
@@ -212,6 +220,9 @@ impl eframe::App for PulseApp {
             self.last_ui_ms,
             active_processes,
         );
+        if paused_before && !self.telemetry_paused {
+            self.worker.request_process_scan();
+        }
         self.last_ui_ms = frame_start.elapsed().as_secs_f32() * 1000.0;
         self.pointer_down = ctx.input(|i| i.pointer.any_down());
         self.save_state_if_needed(false);

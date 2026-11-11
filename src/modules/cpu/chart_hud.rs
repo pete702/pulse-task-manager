@@ -5,63 +5,72 @@ use crate::modules::memory::chart_axis::{format_tick_label, x_axis_ticks};
 use crate::theme::colors;
 use eframe::egui;
 
+fn draw_label_bg(
+    p: &egui::Painter,
+    pos: egui::Pos2,
+    align: egui::Align2,
+    text: &str,
+    font: egui::FontId,
+    color: egui::Color32,
+) {
+    let galley = p.layout_no_wrap(text.to_owned(), font, color);
+    let rect = align.anchor_rect(egui::Rect::from_min_size(pos, galley.size()));
+    let bg = rect.expand2(egui::vec2(3.0, 1.0));
+    p.rect_filled(
+        bg,
+        egui::Rounding::same(2.0),
+        egui::Color32::from_rgba_unmultiplied(11, 15, 22, 220),
+    );
+    p.galley(rect.min, galley, color);
+}
+
 pub fn draw_y_axis_hud_labels(ui: &egui::Ui, plot_rect: egui::Rect) {
-    let painter = ui.painter();
-    let hud_label = egui::Color32::from_rgba_unmultiplied(148, 163, 184, 135);
-    painter.text(
+    let p = ui.painter();
+    let c = egui::Color32::from_rgba_unmultiplied(148, 163, 184, 135);
+    let f = egui::FontId::monospace(10.0);
+    draw_label_bg(
+        p,
         egui::pos2(plot_rect.right() - 6.0, plot_rect.top() + 3.0),
         egui::Align2::RIGHT_TOP,
         "100%",
-        egui::FontId::monospace(10.0),
-        hud_label,
+        f.clone(),
+        c,
     );
     for (pct, label) in [(75.0, "75%"), (50.0, "50%"), (25.0, "25%")] {
         let y = plot_rect.bottom() - (pct / 100.0) * plot_rect.height();
-        painter.text(
+        draw_label_bg(
+            p,
             egui::pos2(plot_rect.right() - 6.0, y - 2.0),
             egui::Align2::RIGHT_CENTER,
             label,
-            egui::FontId::monospace(10.0),
-            hud_label,
+            f.clone(),
+            c,
         );
     }
 }
 
 pub fn draw_x_axis_hud_labels(ui: &egui::Ui, plot_rect: egui::Rect, window: CpuChartWindow) {
-    let painter = ui.painter();
-    let hud_label = egui::Color32::from_rgba_unmultiplied(148, 163, 184, 165);
+    let p = ui.painter();
+    let c = egui::Color32::from_rgba_unmultiplied(148, 163, 184, 165);
+    let f = egui::FontId::monospace(11.0);
     let ticks = x_axis_ticks(window);
     let y = plot_rect.bottom() - 5.0;
     let count = ticks.len();
     for (idx, tick) in ticks.iter().enumerate() {
         let x = if count > 1 {
-            let fraction = idx as f32 / (count - 1) as f32;
-            plot_rect.left() + fraction * plot_rect.width()
+            plot_rect.left() + (idx as f32 / (count - 1) as f32) * plot_rect.width()
         } else {
             plot_rect.left()
         };
         let label = format_tick_label(window, *tick);
-        let align = if idx == 0 {
-            egui::Align2::LEFT_BOTTOM
+        let (align, x_adj) = if idx == 0 {
+            (egui::Align2::LEFT_BOTTOM, plot_rect.left() + 8.0)
         } else if idx + 1 == count {
-            egui::Align2::RIGHT_BOTTOM
+            (egui::Align2::RIGHT_BOTTOM, plot_rect.right() - 8.0)
         } else {
-            egui::Align2::CENTER_BOTTOM
+            (egui::Align2::CENTER_BOTTOM, x)
         };
-        let x_adjusted = if idx == 0 {
-            plot_rect.left() + 8.0
-        } else if idx + 1 == count {
-            plot_rect.right() - 8.0
-        } else {
-            x
-        };
-        painter.text(
-            egui::pos2(x_adjusted, y),
-            align,
-            label,
-            egui::FontId::monospace(11.0),
-            hud_label,
-        );
+        draw_label_bg(p, egui::pos2(x_adj, y), align, &label, f.clone(), c);
     }
 }
 
@@ -149,4 +158,106 @@ pub fn draw_hud_legend(ui: &mut egui::Ui, plot_rect: egui::Rect) -> (bool, bool)
     );
 
     (show_total, show_peak)
+}
+
+fn fmt_rel_time(x_min: f64) -> String {
+    let secs = (-x_min * 60.0).max(0.0);
+    if secs < 0.5 {
+        "now".to_owned()
+    } else if secs < 60.0 {
+        format!("{secs:.0}s ago")
+    } else {
+        format!("{:.1}m ago", secs / 60.0)
+    }
+}
+
+fn nearest_sample(points: &[[f64; 2]], x: f64) -> Option<[f64; 2]> {
+    points.iter().copied().min_by(|a, b| (a[0] - x).abs().total_cmp(&(b[0] - x).abs()))
+}
+
+pub fn draw_hud_scanner(
+    ui: &egui::Ui,
+    plot_rect: egui::Rect,
+    span_mins: f64,
+    total_pts: &[[f64; 2]],
+    peak_pts: &[[f64; 2]],
+    show_total: bool,
+    show_peak: bool,
+) {
+    let Some(pointer) = ui.ctx().pointer_hover_pos() else { return };
+    if !plot_rect.contains(pointer) || span_mins <= 0.0 {
+        return;
+    }
+    let y_leg = plot_rect.top() + 3.0;
+    let total_rect = egui::Rect::from_min_size(
+        egui::pos2(plot_rect.left() + 8.0, y_leg),
+        egui::vec2(72.0, 15.0),
+    );
+    let peak_rect = egui::Rect::from_min_size(
+        egui::pos2(plot_rect.left() + 116.0, y_leg),
+        egui::vec2(82.0, 15.0),
+    );
+    if total_rect.contains(pointer) || peak_rect.contains(pointer) {
+        return;
+    }
+    let frac = ((pointer.x - plot_rect.left()) / plot_rect.width().max(1.0)).clamp(0.0, 1.0) as f64;
+    let x_min = -span_mins + frac * span_mins;
+    let p = ui.painter();
+    p.vline(
+        pointer.x,
+        plot_rect.y_range(),
+        egui::Stroke::new(1.0_f32, egui::Color32::from_rgba_unmultiplied(0, 212, 255, 140)),
+    );
+
+    let mut tip: Vec<(String, egui::Color32)> = vec![(fmt_rel_time(x_min), colors::TEXT_PRIMARY)];
+    for (enabled, pts, color, label) in [
+        (show_total, total_pts, colors::ACCENT_CYAN, "TOTAL"),
+        (show_peak, peak_pts, colors::ACCENT_AMBER, "PEAK"),
+    ] {
+        if !enabled {
+            continue;
+        }
+        if let Some(pt) = nearest_sample(pts, x_min) {
+            let v = if pt[1].is_finite() { pt[1].clamp(0.0, 100.0) } else { 0.0 };
+            let y = plot_rect.bottom() - (v as f32 / 100.0) * plot_rect.height();
+            let pos = egui::pos2(pointer.x, y);
+            p.circle_filled(
+                pos,
+                5.0,
+                egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 70),
+            );
+            p.circle_filled(pos, 3.5, color);
+            p.circle_stroke(
+                pos,
+                3.5,
+                egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(240, 253, 250)),
+            );
+            tip.push((format!("{label}: {v:.1}%"), color));
+        }
+    }
+    if tip.len() <= 1 {
+        return;
+    }
+    let tw = 138.0_f32;
+    let th = tip.len() as f32 * 15.0 + 8.0;
+    let x = (pointer.x + 14.0)
+        .clamp(plot_rect.left() + 4.0, (plot_rect.right() - tw - 4.0).max(plot_rect.left() + 4.0));
+    let y = (pointer.y + 14.0)
+        .clamp(plot_rect.top() + 4.0, (plot_rect.bottom() - th - 4.0).max(plot_rect.top() + 4.0));
+    let tr = egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(tw, th));
+    p.rect_filled(
+        tr,
+        egui::Rounding::same(4.0),
+        egui::Color32::from_rgba_unmultiplied(11, 12, 16, 235),
+    );
+    p.rect_stroke(tr, egui::Rounding::same(4.0), egui::Stroke::new(1.0_f32, colors::BORDER));
+    for (i, (text, col)) in tip.iter().enumerate() {
+        p.text(
+            egui::pos2(x + 7.0, y + 4.0 + i as f32 * 15.0),
+            egui::Align2::LEFT_TOP,
+            text,
+            egui::FontId::monospace(10.0),
+            *col,
+        );
+    }
 }

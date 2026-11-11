@@ -195,6 +195,7 @@ pub struct CpuSnapshot {
     pub brand: Arc<str>,    // CPU model name cached once
     pub raw_processes: Arc<[RawProcessCpuRow]>, // Raw rows for table grouping/sorting
     pub process_count: usize, // Total processes in the latest scan (stable between scans)
+    pub process_scan_id: u64,
 }
 
 impl CpuSnapshot {

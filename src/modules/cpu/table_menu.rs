@@ -96,11 +96,19 @@ pub fn show_row_menu(
         spawn_trim(state, tg(state), item.name.to_string());
         ui.close_menu();
     }
-    let on = item.eco_qos == Some(true);
-    let lab =
-        if on { "Disable EcoQoS (Efficiency Mode)" } else { "Enable EcoQoS (Efficiency Mode)" };
-    if ui.button(lab).clicked() {
-        spawn_eco(state, tg(state), item.name.to_string(), !on);
+    let (lab, eco_hover) = match item.eco_qos {
+        Some(true) => {
+            ("Disable EcoQoS (Efficiency Mode)", "EcoQoS status: Active (Efficiency Mode)")
+        }
+        Some(false) => ("Enable EcoQoS (Efficiency Mode)", "EcoQoS status: Off (Normal Priority)"),
+        None => (
+            "Enable EcoQoS (Efficiency Mode) [unprobed]",
+            "EcoQoS status: Unknown (awaiting background probe)",
+        ),
+    };
+    if ui.button(lab).on_hover_text(eco_hover).clicked() {
+        let enable = item.eco_qos != Some(true);
+        spawn_eco(state, tg(state), item.name.to_string(), enable);
         ui.close_menu();
     }
     if ui.button("Open File Location").clicked() {

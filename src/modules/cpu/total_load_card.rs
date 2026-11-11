@@ -106,11 +106,11 @@ pub fn render_total_load_card(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
                         )
                         .on_hover_text(format!("{} MHz (base)", cpu.base_mhz));
                     });
-                    // THREADS / PROCS
+                    // LOGICAL CORES / PROCS
                     ui.vertical(|ui| {
                         ui.add(
                             egui::Label::new(
-                                egui::RichText::new("THREADS / PROCS")
+                                egui::RichText::new("LOGICAL CORES / PROCS")
                                     .monospace()
                                     .size(10.0)
                                     .color(colors::TEXT_SECONDARY),
@@ -130,7 +130,7 @@ pub fn render_total_load_card(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
                             .wrap(false),
                         )
                         .on_hover_text(format!(
-                            "{} logical threads / {} processes",
+                            "{} logical cores / {} processes",
                             cpu.logical_cores, cpu.process_count
                         ));
                     });

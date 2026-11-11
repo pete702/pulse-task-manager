@@ -35,12 +35,12 @@ pub fn render_cpu_chart(ui: &mut egui::Ui, h: &mut CpuHistory) {
         let total_points = if total_raw.is_empty() {
             PlotPoints::new(vec![[-ONE_SEC_MIN, 0.0], [0.0, 0.0]])
         } else {
-            PlotPoints::new(total_raw)
+            PlotPoints::new(total_raw.clone())
         };
         let peak_points = if peak_raw.is_empty() {
             PlotPoints::new(vec![[-ONE_SEC_MIN, 0.0], [0.0, 0.0]])
         } else {
-            PlotPoints::new(peak_raw)
+            PlotPoints::new(peak_raw.clone())
         };
 
         let plot_height = ui.available_height().max(220.0);
@@ -117,6 +117,7 @@ pub fn render_cpu_chart(ui: &mut egui::Ui, h: &mut CpuHistory) {
         draw_y_axis_hud_labels(ui, plot_rect);
         draw_x_axis_hud_labels(ui, plot_rect, selected);
 
+        draw_hud_scanner(ui, plot_rect, span, &total_raw, &peak_raw, show_total, show_peak);
         // Draw interactive horizontal legend on top of the plot
         let (new_show_total, new_show_peak) = draw_hud_legend(ui, plot_rect);
 

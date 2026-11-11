@@ -69,11 +69,8 @@ fn history_key_for_volume(v: &DiskVolumeInfo) -> Option<u32> {
         .or_else(|| drive_letter(v.mount_point.as_ref()).map(|ch| 0x8000_0000 | (ch as u32)))
 }
 /// Background ingestion on worker pause-adjusted timestamps.
-pub fn ingest_storage_snapshot(snap: &SystemSnapshot, _raw: &[RawProcessCpuRow], paused: bool) {
+pub fn ingest_storage_snapshot(snap: &std::sync::Arc<SystemSnapshot>) {
     let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
-    if paused {
-        return;
-    }
     let elapsed = snap.memory.as_ref().map(|m| m.sample_elapsed_secs).unwrap_or(0.0);
     let due = guard.last_sample_ts.is_none_or(|last| elapsed > last);
     if !due {

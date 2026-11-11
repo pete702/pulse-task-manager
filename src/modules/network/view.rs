@@ -98,11 +98,8 @@ pub fn set_scope_all() {
 /// Background ingestion on worker pause-adjusted timestamps.
 /// Traffic always pushes so the Mbps chart works with probe OFF/probing.
 /// Latency keeps None gaps (never fake 0.0); per-adapter RX/TX feed the scope.
-pub fn ingest_network_snapshot(snap: &SystemSnapshot, paused: bool) {
+pub fn ingest_network_snapshot(snap: &std::sync::Arc<SystemSnapshot>) {
     let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
-    if paused {
-        return;
-    }
     let elapsed = snap.memory.as_ref().map(|m| m.sample_elapsed_secs).unwrap_or(0.0);
     let due = guard.last_sample_ts.is_none_or(|last| elapsed > last);
     if due {

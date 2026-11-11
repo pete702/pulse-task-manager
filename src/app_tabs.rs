@@ -2,6 +2,7 @@
 
 use crate::i18n::Key;
 use crate::modules::cpu::table_state::CpuTableState;
+use crate::modules::memory::action_bar::MemoryActionBarState;
 use crate::modules::memory::page::MemorySubView;
 use crate::modules::memory::table_state::MemoryTableState;
 use eframe::egui;
@@ -56,6 +57,7 @@ pub fn handle_global_hotkeys(
     memory_sub_view: &mut MemorySubView,
     table_state: &mut MemoryTableState,
     cpu_table_state: &mut CpuTableState,
+    action_state: &mut MemoryActionBarState,
     telemetry_paused: &mut bool,
 ) -> bool {
     let wants_input = ctx.wants_keyboard_input();
@@ -81,9 +83,10 @@ pub fn handle_global_hotkeys(
     }
     if f10 && !wants_input {
         *telemetry_paused = !*telemetry_paused;
-        crate::core::worker_loop::set_worker_paused(crate::core::worker_loop::WorkerConfig {
-            paused: *telemetry_paused,
-        });
+        crate::core::worker_loop::set_worker_paused(*telemetry_paused);
+        if !*telemetry_paused {
+            crate::core::request_process_scan();
+        }
         handled = true;
     }
     // Ctrl+F: Focus search in the master Processes tab
@@ -95,40 +98,40 @@ pub fn handle_global_hotkeys(
         ctx.request_repaint();
         handled = true;
     }
-    // Escape: Clear search or release focus and clear selection
+    // Escape: tab-scoped clear search or selection
     if esc {
-        if *active_tab == ActiveTab::Cpu {
-            ctx.memory_mut(|m| m.surrender_focus(egui::Id::new("cpu_search_filter")));
-        }
-        let has_query =
-            !table_state.search_query.is_empty() || !cpu_table_state.search_query.is_empty();
-        if has_query {
-            if !table_state.search_query.is_empty() {
-                table_state.clear_search();
-                ctx.request_repaint();
-                handled = true;
-            } else if !cpu_table_state.search_query.is_empty() {
-                cpu_table_state.clear_search();
-                ctx.request_repaint();
-                handled = true;
-            }
-        } else {
+        if matches!(*active_tab, ActiveTab::Cpu | ActiveTab::Processes) {
             ctx.memory_mut(|m| {
-                if let Some(id) = m.focused() {
+                let id = egui::Id::new("cpu_search_filter");
+                if m.focused() == Some(id) {
                     m.surrender_focus(id);
                 }
             });
-            table_state.clear_selection();
-            cpu_table_state.selected_pid = None;
-            cpu_table_state.selected_name = None;
-            cpu_table_state.confirm_kill = None;
-            cpu_table_state.mark_dirty();
-            if *active_tab == ActiveTab::Storage {
-                crate::modules::storage::view::clear_selected();
-            } else if *active_tab == ActiveTab::Network {
-                crate::modules::network::view::set_scope_all();
+            if !cpu_table_state.search_query.is_empty() {
+                cpu_table_state.search_query.clear();
+                cpu_table_state.mark_dirty();
+                handled = true;
+            } else if cpu_table_state.selected_pid.is_some()
+                || cpu_table_state.confirm_kill.is_some()
+            {
+                cpu_table_state.selected_pid = None;
+                cpu_table_state.selected_start_time = None;
+                cpu_table_state.selected_name = None;
+                cpu_table_state.confirm_kill = None;
+                cpu_table_state.mark_dirty();
+                handled = true;
             }
-            handled = true;
+        } else if *active_tab == ActiveTab::Memory {
+            if !table_state.search_query.is_empty() {
+                table_state.clear_search();
+                handled = true;
+            } else if table_state.selected_pid.is_some() {
+                table_state.clear_selection_state();
+                action_state.cancel_confirm();
+                handled = true;
+            } else {
+                action_state.cancel_confirm();
+            }
         }
     }
     // Ctrl+1..Ctrl+6: switch tabs quickly

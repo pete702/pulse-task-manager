@@ -29,6 +29,13 @@ impl CpuSubView {
     }
 }
 
+pub(crate) fn toggle_sub_view(sub_view: &mut CpuSubView) {
+    *sub_view = match *sub_view {
+        CpuSubView::Overview => CpuSubView::Processes,
+        CpuSubView::Processes => CpuSubView::Overview,
+    };
+}
+
 /// Renders the CPU hardware cockpit.
 #[allow(clippy::too_many_arguments)]
 pub fn render_cpu_page(
@@ -66,20 +73,6 @@ pub fn render_cpu_page(
                                 *active_tab = ActiveTab::Processes;
                                 crate::core::request_process_scan();
                             }
-                            let toggle_label = match *sub_view {
-                                CpuSubView::Overview => "Processes",
-                                CpuSubView::Processes => "Overview",
-                            };
-                            if ui
-                                .button(toggle_label)
-                                .on_hover_text(sub_view.label(cpu.process_count))
-                                .clicked()
-                            {
-                                *sub_view = match *sub_view {
-                                    CpuSubView::Overview => CpuSubView::Processes,
-                                    CpuSubView::Processes => CpuSubView::Overview,
-                                };
-                            }
                         });
                     });
                 });
@@ -88,12 +81,19 @@ pub fn render_cpu_page(
             });
         }
         CpuSubView::Processes => {
-            ui.label(
-                egui::RichText::new(sub_view.label(cpu.process_count))
-                    .monospace()
-                    .size(11.0)
-                    .color(colors::TEXT_SECONDARY),
-            );
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(sub_view.label(cpu.process_count))
+                        .monospace()
+                        .size(11.0)
+                        .color(colors::TEXT_SECONDARY),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("[ <- Back to Overview ]").clicked() {
+                        toggle_sub_view(sub_view);
+                    }
+                });
+            });
             render_processes_page(ui, cpu, table_state, scan_generation);
         }
     }
@@ -179,5 +179,10 @@ mod tests {
         assert!(!h.show_core_grid());
         assert!(!CpuSubView::Overview.label(42).is_empty());
         assert!(!CpuSubView::Processes.label(42).is_empty());
+        let mut v = CpuSubView::Overview;
+        toggle_sub_view(&mut v);
+        assert_eq!(v, CpuSubView::Processes);
+        toggle_sub_view(&mut v);
+        assert_eq!(v, CpuSubView::Overview);
     }
 }

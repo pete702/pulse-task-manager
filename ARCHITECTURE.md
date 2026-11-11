@@ -1,12 +1,12 @@
 # PULSE Architecture & Engineering Rules
 
-PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.88"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.4.65**.
+PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.88"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.4.77**.
 
 ## 1. Core Architectural Principles
 
 1. **Decoupled Two-Thread Telemetry Model**:
    - **UI Thread** (`src/app.rs`, `src/ui/`): Renders `egui` widgets, handles input, never calls blocking Win32/`sysinfo`. Holds `Arc<SystemSnapshot>` for zero-copy per-frame access. Minimized: 0 FPS UI when minimized (5s background worker poll + 30s safety watchdog).
-   - **Worker Thread** (`src/core/worker.rs`): **RAM at 1 Hz** (`snapshot_id`), **process scans every 3 s visible / 5 s minimized** (`process_scan_id`). Minimized: scans pause, 5s watchdog poll, 30s UI safety repaint, `Arc<Vec<RawProcessRow>>` shared zero-copy; restore triggers wakeup; wake/user action triggers immediate full scan. `LatestSlot` with `AtomicU64` overflow tracking; `sync_channel(2)` full means UI reads newer slot. `Space` pauses collection via `WorkerConfig.paused`.
+   - **Worker Thread** (`src/core/worker.rs`): **RAM at 1 Hz** (`snapshot_id`), **process scans every 3 s fast / 5 s background** (`process_scan_id`, elapsed-tick cadence). Minimized: scans pause, tick interval via policy, 30s UI safety repaint, `Arc<Vec<RawProcessRow>>` shared zero-copy; restore/wake/scan requests trigger immediate refresh. `LatestSlot` with `AtomicU64` overflow tracking; `sync_channel(2)` full means UI reads newer slot. `Space` pauses collection via worker pause state.
 
 2. **O(1) Process Table & Selection Cache**:
    - Filtered/grouped/sorted rows cached in `MemoryTableState` keyed by `process_scan_id` (monotonic u64). Scan ID + filter/sort/group unchanged means rebuild in `O(1)`. Rows stored as `Arc<[ProcessMemoryItem]>` for 60 FPS frames zero clones. `SelectedGroupSummary` with `Vec<ProcessTarget>` also cached per `scan_id`.
