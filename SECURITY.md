@@ -6,7 +6,7 @@
 | ------- | ------------------ |
 | 0.4.x   | Current release |
 
-Only the latest minor release in the `0.2.x` series receives security updates.
+Only the latest `0.4.x` release receives security updates.
 
 ## Local-Only Telemetry Guarantee
 
