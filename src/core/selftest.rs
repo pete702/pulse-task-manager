@@ -11,9 +11,9 @@ use crate::core::spawn_telemetry_worker;
 use crate::i18n::{current_lang, set_lang, Lang};
 use crate::modules::memory::history::MemoryHistory;
 use crate::platform::actions::{open_process_file_location, terminate_process_group};
-use crate::platform::handle::{
-    is_app_elevated, is_protected_process, verify_pid_safety_gate, SafeHandle,
-};
+#[cfg(target_os = "windows")]
+use crate::platform::handle::SafeHandle;
+use crate::platform::handle::{is_app_elevated, is_protected_process, verify_pid_safety_gate};
 use crate::platform::target::ProcessTarget;
 use crate::platform::trim::{
     trim_process_group, trim_processes_working_sets, ReclaimReport, TrimSkipReason,
@@ -153,6 +153,7 @@ pub fn run_headless_self_test() -> Result<(), String> {
             return Err(format!("{name} must be rejected by safety/protected guards"));
         }
     }
+    #[cfg(target_os = "windows")]
     if SafeHandle::open(0, 0).is_some() || SafeHandle::open_process(4).is_some() {
         return Err("Protected kernel PIDs must not yield usable process handles".to_string());
     }

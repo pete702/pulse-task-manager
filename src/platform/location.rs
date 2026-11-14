@@ -2,8 +2,7 @@
 
 use std::path::Path;
 
-#[cfg(target_os = "windows")]
-#[allow(unused_imports)]
+#[cfg(all(test, target_os = "windows"))]
 use crate::platform::handle::verify_pid_safety_gate_ex;
 #[cfg(all(test, target_os = "windows"))]
 use crate::platform::handle::{

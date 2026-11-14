@@ -1,13 +1,17 @@
 //! Process actions for the CPU table context menu.
 //! Provides EcoQoS, working-set trim, file location, and verified termination.
-use crate::platform::actions::{open_process_file_location as open_path, terminate_process_group};
+#[cfg(target_os = "windows")]
+use crate::platform::actions::open_process_file_location as open_path;
+use crate::platform::actions::terminate_process_group;
+use crate::platform::handle::verify_pid_safety_gate;
+#[cfg(target_os = "windows")]
 use crate::platform::handle::{
-    is_handle_critical, query_process_image_path, verify_handle_identity, verify_pid_safety_gate,
-    SafeHandle,
+    is_handle_critical, query_process_image_path, verify_handle_identity, SafeHandle,
 };
 use crate::platform::target::ProcessTarget;
 use crate::platform::trim::{trim_single_pid, TrimSkipReason};
 use std::collections::{HashMap, VecDeque};
+#[cfg(target_os = "windows")]
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 #[cfg(target_os = "windows")]
@@ -19,7 +23,9 @@ use windows_sys::Win32::System::Threading::{
 };
 type EcoMap = (HashMap<(u32, u64), Option<bool>>, VecDeque<(u32, u64)>);
 pub(crate) static PENDING_ECO: OnceLock<Mutex<EcoMap>> = OnceLock::new();
+#[cfg(any(target_os = "windows", test))]
 type PrioMap = (HashMap<(u32, u64), u32>, VecDeque<(u32, u64)>);
+#[cfg(any(target_os = "windows", test))]
 pub(crate) static ORIG_PRIORITY: OnceLock<Mutex<PrioMap>> = OnceLock::new();
 
 pub fn is_system_process(name: &str) -> bool {
@@ -32,6 +38,7 @@ pub(crate) fn pending_insert(key: (u32, u64), val: Option<bool>) {
     crate::util::insert_capped_fifo(map, order, 512, key, val);
 }
 
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn resolve_restore_priority(key: (u32, u64)) -> Result<u32, String> {
     let slot = ORIG_PRIORITY.get_or_init(|| Mutex::new((HashMap::new(), VecDeque::new())));
     let g = slot.lock().unwrap_or_else(|e| e.into_inner());
@@ -47,6 +54,7 @@ pub(crate) fn target_for(
     ct?;
     Some(ProcessTarget { pid, creation_time: ct, name: name.to_string(), exe_path: exe })
 }
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn build_throttling_masks(enable: bool) -> (u32, u32) {
     #[cfg(target_os = "windows")]
     let c = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
@@ -171,7 +179,9 @@ pub fn trim_process_working_set(
     trim_single_pid(&target).map(|_| ()).map_err(|r| match r {
         TrimSkipReason::Protected => "Protected process".to_string(),
         TrimSkipReason::AccessDenied => "Access denied".to_string(),
+        #[cfg(any(target_os = "windows", test))]
         TrimSkipReason::NotFoundOrMismatch => "Process identity mismatch or exited".to_string(),
+        #[cfg(any(target_os = "windows", test))]
         TrimSkipReason::Other => "Trim failed".to_string(),
     })
 }
@@ -187,22 +197,30 @@ pub fn open_process_file_location(
     if verify_pid_safety_gate(pid, name).is_err() {
         return Err("Process is protected by safety gate".to_string());
     }
-    let ct = creation_time.ok_or_else(|| "Cannot read process creation time".to_string())?;
-    if ct == 0 {
-        return Err("Cannot read process creation time".to_string());
+    #[cfg(target_os = "windows")]
+    {
+        let ct = creation_time.ok_or_else(|| "Cannot read process creation time".to_string())?;
+        if ct == 0 {
+            return Err("Cannot read process creation time".to_string());
+        }
+        let handle = SafeHandle::open_process(pid)
+            .ok_or_else(|| "Access denied while opening process".to_string())?;
+        let ep = exe_path.filter(|s| !s.trim().is_empty());
+        if is_handle_critical(&handle) || !verify_handle_identity(&handle, name, Some(ct), ep) {
+            return Err("Blocked by process identity or safety check".to_string());
+        }
+        let live_path = query_process_image_path(&handle);
+        let path = ep
+            .map(str::to_owned)
+            .or(live_path)
+            .ok_or_else(|| "Cannot resolve executable path".to_string())?;
+        open_path(Path::new(&path))
     }
-    let handle = SafeHandle::open_process(pid)
-        .ok_or_else(|| "Access denied while opening process".to_string())?;
-    let ep = exe_path.filter(|s| !s.trim().is_empty());
-    if is_handle_critical(&handle) || !verify_handle_identity(&handle, name, Some(ct), ep) {
-        return Err("Blocked by process identity or safety check".to_string());
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (creation_time, exe_path);
+        Err("Open file location requires Windows".to_string())
     }
-    let live_path = query_process_image_path(&handle);
-    let path = ep
-        .map(str::to_owned)
-        .or(live_path)
-        .ok_or_else(|| "Cannot resolve executable path".to_string())?;
-    open_path(Path::new(&path))
 }
 pub fn terminate_process(
     pid: u32,

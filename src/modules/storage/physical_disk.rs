@@ -227,8 +227,6 @@ pub fn perf_counters_for_mount(_mount: &str) -> Option<(i64, i64)> {
 pub fn sum_perf_counters(_mounts: &[&str]) -> Option<(i64, i64)> {
     None
 }
-#[cfg(not(target_os = "windows"))]
-fn evict_handle(_letter: char) {}
 
 #[cfg(test)]
 #[path = "physical_disk_tests.rs"]

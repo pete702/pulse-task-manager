@@ -48,11 +48,14 @@ impl ReclaimReport {
 pub enum TrimSkipReason {
     Protected,
     AccessDenied,
+    #[cfg(any(target_os = "windows", test))]
     NotFoundOrMismatch,
+    #[cfg(any(target_os = "windows", test))]
     Other,
 }
 
 /// Maps a Win32 error code for handle-open/operation failures.
+#[cfg(any(target_os = "windows", test))]
 pub fn map_win32_error(code: u32) -> TrimSkipReason {
     let _ = code;
     TrimSkipReason::AccessDenied
@@ -162,7 +165,9 @@ fn tally_skip(report: &mut ReclaimReport, reason: TrimSkipReason) {
     match reason {
         TrimSkipReason::Protected => report.skipped_protected += 1,
         TrimSkipReason::AccessDenied => report.skipped_access_denied += 1,
+        #[cfg(any(target_os = "windows", test))]
         TrimSkipReason::NotFoundOrMismatch => report.skipped_not_found_or_mismatch += 1,
+        #[cfg(any(target_os = "windows", test))]
         TrimSkipReason::Other => report.skipped_other += 1,
     }
 }

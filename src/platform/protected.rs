@@ -83,6 +83,7 @@ pub(crate) fn protection_reason(norm: &str) -> &'static str {
     }
 }
 
+#[cfg(any(target_os = "windows", test))]
 fn trim_trailing_seps(mut s: &str) -> &str {
     while s.len() > 3 && (s.ends_with('\\') || s.ends_with('/')) {
         s = &s[..s.len() - 1];
@@ -107,6 +108,7 @@ fn system_root_string() -> String {
 }
 
 /// Normalizes a Win32 path for case-insensitive, component-aware comparison/matching.
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn normalize_path_for_match(raw: &str) -> String {
     let mut s = raw.trim().replace('/', "\\");
     if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
@@ -127,6 +129,7 @@ pub(crate) fn normalize_path_for_match(raw: &str) -> String {
     trim_trailing_seps(&s).to_ascii_lowercase()
 }
 
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn is_path_under_dir(path_norm: &str, root_norm: &str) -> bool {
     let root = trim_trailing_seps(root_norm);
     if path_norm == root {
@@ -135,6 +138,7 @@ pub(crate) fn is_path_under_dir(path_norm: &str, root_norm: &str) -> bool {
     path_norm.starts_with(&format!(r"{}\", root))
 }
 
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn full_paths_match(a: &str, b: &str) -> bool {
     let na = normalize_path_for_match(a);
     let nb = normalize_path_for_match(b);

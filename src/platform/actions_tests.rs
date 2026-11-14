@@ -115,6 +115,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "windows")]
     fn normalize_check_drive_root(raw: &str) -> String {
         // Test helper mirrors drive-root normalization behavior via sanitizer-visible outcome.
         // Accept only existing roots in env; for synthetic assertion use string logic via Path.

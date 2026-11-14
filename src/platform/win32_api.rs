@@ -56,27 +56,6 @@ pub fn collect_windows_kernel_metrics() -> KernelMetrics {
     }
 }
 
-/// Non-Windows fallback for kernel metrics.
-#[cfg(not(target_os = "windows"))]
-#[derive(Default, Debug, Clone, Copy)]
-pub struct KernelMetrics {
-    pub commit_total_bytes: u64,
-    pub commit_limit_bytes: u64,
-    pub kernel_paged_bytes: u64,
-    pub kernel_nonpaged_bytes: u64,
-    pub system_handles: u32,
-    pub system_threads: u32,
-    pub system_processes: u32,
-    pub system_cache_bytes: u64,
-    pub is_valid: bool,
-}
-
-/// Non-Windows fallback (returns defaults).
-#[cfg(not(target_os = "windows"))]
-pub fn collect_windows_kernel_metrics() -> KernelMetrics {
-    KernelMetrics::default()
-}
-
 /// Queries the executable path of a process on-demand using OpenProcess + K32GetModuleFileNameExW.
 /// Used when background collector runs with `.without_exe()` and "Open Location" is clicked.
 /// Returns None if the process cannot be opened or the path cannot be retrieved.

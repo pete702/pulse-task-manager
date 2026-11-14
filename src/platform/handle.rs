@@ -17,10 +17,9 @@ use windows_sys::Win32::System::Threading::{
     GetCurrentProcess, GetProcessId, GetProcessTimes, OpenProcess, OpenProcessToken,
     QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
 };
-#[cfg(not(target_os = "windows"))]
-pub type HANDLE = isize;
-
+#[cfg(target_os = "windows")]
 pub struct SafeHandle(HANDLE);
+#[cfg(target_os = "windows")]
 impl SafeHandle {
     #[inline]
     pub(crate) fn from_raw(h: HANDLE) -> Option<Self> {
@@ -34,7 +33,6 @@ impl SafeHandle {
     pub fn as_raw(&self) -> HANDLE {
         self.0
     }
-    #[cfg(target_os = "windows")]
     #[allow(unsafe_code)]
     pub fn open(access: u32, pid: u32) -> Option<Self> {
         if pid == 0 || pid == 4 {
@@ -42,17 +40,8 @@ impl SafeHandle {
         }
         Self::from_raw(unsafe { OpenProcess(access, 0, pid) })
     }
-    #[cfg(not(target_os = "windows"))]
-    pub fn open(_access: u32, _pid: u32) -> Option<Self> {
-        None
-    }
-    #[cfg(target_os = "windows")]
     pub fn open_process(pid: u32) -> Option<Self> {
         Self::open(PROCESS_QUERY_LIMITED_INFORMATION, pid)
-    }
-    #[cfg(not(target_os = "windows"))]
-    pub fn open_process(_pid: u32) -> Option<Self> {
-        None
     }
 }
 #[cfg(target_os = "windows")]
@@ -65,10 +54,6 @@ impl Drop for SafeHandle {
             }
         }
     }
-}
-#[cfg(not(target_os = "windows"))]
-impl Drop for SafeHandle {
-    fn drop(&mut self) {}
 }
 
 static ELEVATED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -113,10 +98,6 @@ pub fn query_process_image_path(handle: &SafeHandle) -> Option<String> {
     }
     Some(String::from_utf16_lossy(&buf[..size as usize]))
 }
-#[cfg(not(target_os = "windows"))]
-pub fn query_process_image_path(_handle: &SafeHandle) -> Option<String> {
-    None
-}
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
@@ -130,10 +111,6 @@ pub fn query_process_creation_time(handle: &SafeHandle) -> Option<u64> {
     }
     let value = ((create.dwHighDateTime as u64) << 32) | create.dwLowDateTime as u64;
     (value != 0).then_some(value)
-}
-#[cfg(not(target_os = "windows"))]
-pub fn query_process_creation_time(_handle: &SafeHandle) -> Option<u64> {
-    None
 }
 
 #[cfg(target_os = "windows")]
@@ -195,10 +172,6 @@ pub fn is_handle_critical(handle: &SafeHandle) -> bool {
     };
     ok == 0 || critical != 0
 }
-#[cfg(not(target_os = "windows"))]
-pub fn is_handle_critical(_handle: &SafeHandle) -> bool {
-    true
-}
 
 /// Fail-closed live process identity check.
 /// Always verifies non-zero `expected_creation_time` equality first. Queries the live full
@@ -236,13 +209,4 @@ pub fn verify_handle_identity(
         return full_paths_match(exp_path, &actual_path);
     }
     live_name_norm == normalize_process_name(expected_name)
-}
-#[cfg(not(target_os = "windows"))]
-pub fn verify_handle_identity(
-    _handle: &SafeHandle,
-    _expected_name: &str,
-    _expected_creation_time: Option<u64>,
-    _expected_path: Option<&str>,
-) -> bool {
-    false
 }

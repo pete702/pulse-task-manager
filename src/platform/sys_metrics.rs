@@ -36,11 +36,6 @@ pub fn get_hwnd(_ctx: &eframe::egui::Context) -> isize {
     FOUND.load(Ordering::Relaxed)
 }
 
-#[cfg(not(target_os = "windows"))]
-pub fn get_hwnd(_ctx: &eframe::egui::Context) -> isize {
-    0
-}
-
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 pub fn set_dark_title_bar(hwnd: isize) -> bool {
@@ -64,9 +59,4 @@ pub fn set_dark_title_bar(hwnd: isize) -> bool {
         let _ = DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, 4);
         DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, &color, 4) == 0
     }
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn set_dark_title_bar(_hwnd: isize) -> bool {
-    false
 }
