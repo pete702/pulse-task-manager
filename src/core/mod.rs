@@ -1,6 +1,9 @@
 //! PULSE telemetry core: background worker, system snapshots, communication channels.
 
+pub mod downsampling;
 pub mod persist;
+pub mod persist_codec;
+pub mod ring_history;
 pub mod selftest;
 pub mod selftest_app;
 pub mod win32;
@@ -107,6 +110,7 @@ impl LatestSlot {
                 }
                 if let Some(cpu) = &mut prev_mut.cpu {
                     cpu.raw_processes = Arc::from(&[][..]);
+                    cpu.process_count = 0;
                 }
             }
         }
@@ -146,3 +150,24 @@ impl LatestSlot {
 pub use worker::{spawn_telemetry_worker, spawn_telemetry_worker_with_wakeup, TelemetryWorker};
 pub use worker_io::Wakeup;
 pub use worker_loop::request_process_scan;
+
+#[cfg(test)]
+mod latest_slot_tests {
+    use super::*;
+
+    #[test]
+    fn trim_cold_buffers_syncs_cpu_process_count() {
+        let slot = LatestSlot::new();
+        let cpu = CpuSnapshot {
+            raw_processes: Arc::from([crate::modules::cpu::model::RawProcessCpuRow::default()]),
+            process_count: 7,
+            ..Default::default()
+        };
+        slot.store(Arc::new(SystemSnapshot::new_with_jitter(1, 1.0, None, Some(cpu), 0)));
+        slot.store(Arc::new(SystemSnapshot::new_with_jitter(2, 1.0, None, None, 0)));
+        let first = slot.drain_all().into_iter().next().expect("first snapshot");
+        let cpu = first.cpu.as_ref().expect("cpu snapshot");
+        assert!(cpu.raw_processes.is_empty(), "trimmed raw processes must be empty");
+        assert_eq!(cpu.process_count, 0, "process_count must match emptied process list");
+    }
+}

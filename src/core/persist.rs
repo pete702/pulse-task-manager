@@ -1,31 +1,49 @@
-//! App state persistence for PULSE (std only). Stores key=value in %LOCALAPPDATA%\PULSE\state.cfg.
-use crate::app_tabs::ActiveTab;
+use crate::core::persist_codec;
 use crate::modules::cpu::table_state::CpuSortCol;
-use crate::modules::memory::model::ChartWindow;
-use std::io::Read;
-use std::path::PathBuf;
+use std::fs::OpenOptions;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{sync_channel, SyncSender, TrySendError};
 use std::sync::{Mutex, OnceLock};
+use std::thread;
 
 pub const MIN_WINDOW_WIDTH: f32 = 860.0;
 static STAGED_STATE: OnceLock<Mutex<Option<PersistedState>>> = OnceLock::new();
-pub fn stage_state(state: &PersistedState) {
-    let slot = STAGED_STATE.get_or_init(|| Mutex::new(None));
-    *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(state.clone());
+static SAVE_TX: OnceLock<SyncSender<(PathBuf, String)>> = OnceLock::new();
+static WRITE_LOCK: Mutex<()> = Mutex::new(());
+static WRITE_FAILED: AtomicBool = AtomicBool::new(false);
+
+fn save_sender() -> &'static SyncSender<(PathBuf, String)> {
+    SAVE_TX.get_or_init(|| {
+        let (tx, rx) = sync_channel::<(PathBuf, String)>(2);
+        let _ = thread::Builder::new().name("pulse_cfg_save".into()).spawn(move || {
+            while let Ok((p, s)) = rx.recv() {
+                if write_config_file(&p, &s).is_err() {
+                    WRITE_FAILED.store(true, Ordering::Relaxed);
+                } else {
+                    WRITE_FAILED.store(false, Ordering::Relaxed);
+                }
+            }
+        });
+        tx
+    })
+}
+fn with_staged<T>(f: impl FnOnce(&mut Option<PersistedState>) -> T) -> T {
+    f(&mut STAGED_STATE.get_or_init(|| Mutex::new(None)).lock().unwrap_or_else(|e| e.into_inner()))
+}
+pub fn stage_state(s: &PersistedState) {
+    with_staged(|x| *x = Some(s.clone()));
 }
 pub fn clear_staged_state() {
-    if let Some(slot) = STAGED_STATE.get() {
-        *slot.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    }
+    with_staged(|x| *x = None);
 }
 pub fn flush_staged_state() {
-    let staged = STAGED_STATE.get().and_then(|slot| {
-        let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
-        guard.take()
-    });
-    if let Some(s) = staged {
-        let _ = save_state(&s);
+    if let Some(s) = with_staged(|x| x.take()) {
+        save_now(&s);
     }
 }
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PersistedState {
     pub active_tab: u8,
@@ -51,7 +69,7 @@ impl Default for PersistedState {
             active_tab: 0,
             group_clones: true,
             compact_rows: true,
-            sort_col: CpuSortCol::CpuPct,
+            sort_col: CpuSortCol::default(),
             sort_asc: false,
             cpu_show_grid: false,
             mem_window_secs: 300,
@@ -67,169 +85,84 @@ impl Default for PersistedState {
         }
     }
 }
+
 pub fn state_path() -> Option<PathBuf> {
-    let base = std::env::var_os("LOCALAPPDATA")?;
-    Some(PathBuf::from(base).join("PULSE").join("state.cfg"))
+    std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join("PULSE").join("state.cfg"))
 }
 pub fn load_state() -> PersistedState {
     let Some(path) = state_path() else { return PersistedState::default() };
-    let Ok(file) = std::fs::File::open(&path) else { return PersistedState::default() };
+    let Ok(f) = std::fs::File::open(&path) else { return PersistedState::default() };
     let mut buf = Vec::new();
-    if file.take(64 * 1024).read_to_end(&mut buf).is_err() {
+    if f.take(64 * 1024).read_to_end(&mut buf).is_err() {
         return PersistedState::default();
     }
-    match String::from_utf8(buf) {
-        Ok(text) => parse(&text),
-        Err(_) => PersistedState::default(),
+    String::from_utf8(buf).map(|t| parse(&t)).unwrap_or_default()
+}
+fn is_sym(p: &Path) -> bool {
+    std::fs::symlink_metadata(p).map(|m| m.file_type().is_symlink()).unwrap_or(false)
+}
+fn ensure_tmp_clean(tmp: &Path) -> std::io::Result<()> {
+    use std::io::{Error, ErrorKind as K};
+    match std::fs::symlink_metadata(tmp) {
+        Ok(m) if m.file_type().is_symlink() => Err(Error::new(K::PermissionDenied, "symlink")),
+        Ok(m) if !m.is_file() => Err(Error::new(K::AlreadyExists, "tmp collision")),
+        Ok(_) => std::fs::remove_file(tmp),
+        Err(e) if e.kind() == K::NotFound => Ok(()),
+        Err(e) => Err(e),
     }
 }
-pub fn save_state(s: &PersistedState) -> std::io::Result<()> {
-    let Some(path) = state_path() else { return Ok(()) };
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+pub fn write_config_file(path: &PathBuf, payload: &str) -> std::io::Result<()> {
+    use std::io::{Error, ErrorKind as K};
+    let _guard = WRITE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let parent = path.parent().ok_or_else(|| Error::new(K::InvalidInput, "no parent"))?;
+    if is_sym(parent) || is_sym(path) {
+        return Err(Error::new(K::PermissionDenied, "symlink"));
     }
-    let tmp_path = path.with_file_name("state.cfg.tmp");
-    if std::fs::symlink_metadata(&tmp_path).map(|m| m.file_type().is_symlink()).unwrap_or(false) {
-        return Ok(());
+    std::fs::create_dir_all(parent)?;
+    if is_sym(parent) || is_sym(path) {
+        return Err(Error::new(K::PermissionDenied, "symlink"));
     }
-    std::fs::write(&tmp_path, serialize(s))?;
-    if std::fs::rename(&tmp_path, &path).is_err() {
-        let _ = std::fs::remove_file(&tmp_path);
-        std::fs::write(&path, serialize(s))?;
+    let tmp = path.with_file_name("state.cfg.tmp");
+    ensure_tmp_clean(&tmp)?;
+    let mut f = OpenOptions::new().write(true).create_new(true).open(&tmp)?;
+    if let Err(e) = f.write_all(payload.as_bytes()).and_then(|_| f.sync_all()) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
     }
-    clear_staged_state();
-    Ok(())
+    drop(f);
+    std::fs::rename(&tmp, path).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
 }
-pub fn serialize(s: &PersistedState) -> String {
-    let win_w = if s.win_w.is_finite() { s.win_w } else { 1180.0 };
-    let win_h = if s.win_h.is_finite() { s.win_h } else { 760.0 };
-    let mut out = format!(
-        "active_tab={}\ngroup_clones={}\ncompact_rows={}\nsort_col={}\nsort_asc={}\ncpu_show_grid={}\nmem_window_secs={}\ncpu_window_secs={}\nstorage_window_secs={}\nnetwork_window_secs={}\nnetwork_chart_mode={}\nnetwork_probe_enabled={}\nprocess_quick_filter={}\nwin_w={:.1}\nwin_h={:.1}\n",
-        s.active_tab.min(5), bool_str(s.group_clones), bool_str(s.compact_rows), sort_col_str(s.sort_col),
-        bool_str(s.sort_asc), bool_str(s.cpu_show_grid), s.mem_window_secs, s.cpu_window_secs,
-        s.storage_window_secs, s.network_window_secs, s.network_chart_mode.min(2),
-        bool_str(s.network_probe_enabled), s.process_quick_filter.min(3), win_w.clamp(MIN_WINDOW_WIDTH, 3840.0),
-        win_h.clamp(560.0, 2160.0),
-    );
-    if let Some(w) = s.cpu_col_widths {
-        out.push_str(&format!(
-            "cpu_col_widths={:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1}\n",
-            w[0], w[1], w[2], w[3], w[4], w[5], w[6]
-        ));
-    }
-    out
-}
-pub fn parse(text: &str) -> PersistedState {
-    let mut s = PersistedState::default();
-    for line in text.lines() {
-        let Some((k, v)) = line.split_once('=') else { continue };
-        let (k, v) = (k.trim(), v.trim());
-        match k {
-            "active_tab" => s.active_tab = v.parse::<u8>().unwrap_or(0).min(5),
-            "group_clones" => s.group_clones = parse_bool(v),
-            "compact_rows" => s.compact_rows = parse_bool(v),
-            "sort_col" => s.sort_col = sort_col_from_str(v),
-            "sort_asc" => s.sort_asc = parse_bool(v),
-            "cpu_show_grid" => s.cpu_show_grid = parse_bool(v),
-            "mem_window_secs" => s.mem_window_secs = valid_window(v.parse().unwrap_or(60)),
-            "cpu_window_secs" => s.cpu_window_secs = valid_window(v.parse().unwrap_or(60)),
-            "storage_window_secs" => {
-                s.storage_window_secs = valid_window(v.parse().unwrap_or(300)) as u64
-            }
-            "network_window_secs" => {
-                s.network_window_secs = valid_window(v.parse().unwrap_or(300)) as u64
-            }
-            "network_chart_mode" => s.network_chart_mode = v.parse::<u8>().unwrap_or(0).min(2),
-            "network_probe_enabled" => s.network_probe_enabled = parse_bool(v),
-            "process_quick_filter" => s.process_quick_filter = v.parse::<u8>().unwrap_or(0).min(3),
-            "win_w" => s.win_w = parse_f32_clamp(v, 1180.0, MIN_WINDOW_WIDTH, 3840.0),
-            "win_h" => s.win_h = parse_f32_clamp(v, 760.0, 560.0, 2160.0),
-            "cpu_col_widths" => s.cpu_col_widths = parse_col_widths(v),
-            _ => {}
+pub fn save_now(s: &PersistedState) {
+    if let Some(path) = state_path() {
+        if write_config_file(&path, &persist_codec::serialize(s)).is_err() {
+            WRITE_FAILED.store(true, Ordering::Relaxed);
+        } else {
+            WRITE_FAILED.store(false, Ordering::Relaxed);
         }
     }
-    s
+    clear_staged_state();
 }
-fn parse_col_widths(v: &str) -> Option<[f32; 7]> {
-    let parts: Vec<f32> =
-        v.split(',').map(|p| p.trim().parse::<f32>().unwrap_or(f32::NAN)).collect();
-    if parts.len() != 7 || !parts.iter().all(|x| x.is_finite() && *x >= 32.0) {
-        return None;
-    }
-    Some([parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]])
-}
-fn parse_f32_clamp(v: &str, def: f32, lo: f32, hi: f32) -> f32 {
-    v.parse::<f32>().ok().filter(|x: &f32| x.is_finite()).unwrap_or(def).clamp(lo, hi)
-}
-fn bool_str(b: bool) -> &'static str {
-    if b {
-        "1"
-    } else {
-        "0"
+pub fn save_if_due(s: &PersistedState) -> bool {
+    let Some(path) = state_path() else { return true };
+    match save_sender().try_send((path, persist_codec::serialize(s))) {
+        Ok(()) => {
+            clear_staged_state();
+            true
+        }
+        Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => false,
     }
 }
-fn parse_bool(v: &str) -> bool {
-    matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes")
+pub fn config_write_failed() -> bool {
+    WRITE_FAILED.load(Ordering::Relaxed)
 }
-fn valid_window(secs: u32) -> u32 {
-    if secs == 60 || secs == 300 || secs == 900 {
-        secs
-    } else {
-        60
-    }
-}
-pub fn active_tab_index(tab: ActiveTab) -> u8 {
-    match tab {
-        ActiveTab::Processes => 0,
-        ActiveTab::Memory => 1,
-        ActiveTab::Cpu => 2,
-        ActiveTab::Storage => 3,
-        ActiveTab::Network => 4,
-        ActiveTab::System => 5,
-    }
-}
-pub fn active_tab_from_index(idx: u8) -> ActiveTab {
-    match idx.min(5) {
-        1 => ActiveTab::Memory,
-        2 => ActiveTab::Cpu,
-        3 => ActiveTab::Storage,
-        4 => ActiveTab::Network,
-        5 => ActiveTab::System,
-        _ => ActiveTab::Processes,
-    }
-}
-pub fn chart_window_from_secs(secs: u32) -> ChartWindow {
-    match secs {
-        300 => ChartWindow::FiveMin,
-        900 => ChartWindow::FifteenMin,
-        _ => ChartWindow::OneMin,
-    }
-}
-pub fn secs_from_chart_window(w: ChartWindow) -> u32 {
-    w.seconds()
-}
-fn sort_col_str(col: CpuSortCol) -> &'static str {
-    match col {
-        CpuSortCol::Pid => "pid",
-        CpuSortCol::Name => "name",
-        CpuSortCol::CpuPct => "cpu",
-        CpuSortCol::RamBytes => "ram",
-        CpuSortCol::Delta => "delta",
-        CpuSortCol::CloneCount => "clones",
-        CpuSortCol::DiskIo => "disk_io",
-    }
-}
-fn sort_col_from_str(v: &str) -> CpuSortCol {
-    match v.trim().to_ascii_lowercase().as_str() {
-        "pid" => CpuSortCol::Pid,
-        "name" => CpuSortCol::Name,
-        "ram" => CpuSortCol::RamBytes,
-        "delta" => CpuSortCol::Delta,
-        "clones" => CpuSortCol::CloneCount,
-        "disk_io" => CpuSortCol::DiskIo,
-        _ => CpuSortCol::CpuPct,
-    }
-}
+#[allow(unused_imports)]
+pub use crate::core::persist_codec::{
+    active_tab_from_index, active_tab_index, chart_window_from_secs, parse, parse_col_widths,
+    secs_from_chart_window, serialize,
+};
+
 #[cfg(test)]
 #[path = "persist_tests.rs"]
 mod tests;

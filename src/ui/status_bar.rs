@@ -1,5 +1,6 @@
 //! Status Bar for PULSE.
 
+use crate::core::persist;
 use crate::core::SystemSnapshot;
 use crate::i18n::{os_locale_short, Key};
 use crate::theme::colors;
@@ -108,6 +109,15 @@ pub fn render_status_bar(
                 .color(colors::TEXT_SECONDARY),
         );
 
+        if persist::config_write_failed() {
+            ui.separator();
+            ui.label(
+                egui::RichText::new("CONFIG WRITE FAILED")
+                    .monospace()
+                    .size(11.0)
+                    .color(colors::ACCENT_RED),
+            );
+        }
         if let Some(ref snap) = snapshot {
             let diag = cached_diag(snap.pulse_ram_mb, last_ui_ms);
             ui.separator();
@@ -127,14 +137,14 @@ pub fn render_status_bar(
                 let any_heavy_process = mem.has_heavy_process;
                 let total_ram_pct = mem.ram_usage_percent();
                 if any_heavy_process {
-                    ("[ ▲ MODE: GAMING / HEAVY APP ]", colors::ACCENT_RED)
+                    ("[ ^ MODE: GAMING / HEAVY APP ]", colors::ACCENT_RED)
                 } else if total_ram_pct >= 75.0 {
-                    ("[ ▣ MODE: WORKSTATION LOAD ]", colors::ACCENT_AMBER)
+                    ("[ [o] MODE: WORKSTATION LOAD ]", colors::ACCENT_AMBER)
                 } else {
-                    ("[ ● MODE: DESKTOP IDLE ]", colors::ACCENT_CYAN)
+                    ("[ * MODE: DESKTOP IDLE ]", colors::ACCENT_CYAN)
                 }
             } else {
-                ("[ ● MODE: DESKTOP IDLE ]", colors::ACCENT_CYAN)
+                ("[ * MODE: DESKTOP IDLE ]", colors::ACCENT_CYAN)
             };
             ui.label(egui::RichText::new(mode_badge).monospace().size(11.0).color(mode_color));
 

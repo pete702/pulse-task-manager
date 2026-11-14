@@ -9,7 +9,7 @@ use crate::theme::{card_frame, colors};
 pub fn render_placeholder_tab(ui: &mut egui::Ui, tab_label: &str, target_version: &'static str) {
     card_frame().show(ui, |ui| {
         ui.label(
-            egui::RichText::new(format!("{} — Planned for {}", tab_label, target_version))
+            egui::RichText::new(format!("{} -- Planned for {}", tab_label, target_version))
                 .color(colors::TEXT_SECONDARY)
                 .size(14.0),
         );

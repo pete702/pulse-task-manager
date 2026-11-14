@@ -54,7 +54,7 @@ pub fn render_top_panel(
     let bar_w = ui.available_width();
     let top_rect = ui.available_rect_before_wrap();
     ui.horizontal(|ui| {
-        let title = if bar_w < 920.0 { "▲ PULSE" } else { Key::AppTitle.t() };
+        let title = if bar_w < 920.0 { "^ PULSE" } else { Key::AppTitle.t() };
         ui.heading(
             egui::RichText::new(title).monospace().size(18.0).color(colors::TEXT_PRIMARY),
         );
@@ -107,8 +107,9 @@ pub fn render_top_panel(
                 .wrap(false),
         )
         .on_hover_text(format!(
-            "PULSE: {ram_mb:.1} MB | UI: {last_ui_ms:.2} ms | OS: {} | Uptime: {uptime_str}",
-            os_locale_short()
+            "PULSE: {ram_mb:.1} MB | UI: {last_ui_ms:.2} ms | OS: {} | {}: {uptime_str}",
+            os_locale_short(),
+            crate::i18n::Key::UptimeLabel.t()
         ));
 
         // Right-aligned single System Health Pill (wide windows only).

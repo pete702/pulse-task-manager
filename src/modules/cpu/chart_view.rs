@@ -1,10 +1,13 @@
 //! Dual-series LTTB chart for CPU telemetry (1m / 5m / 15m).
 //! Mirrors memory/chart_view.rs architecture 1:1.
 
-use crate::modules::cpu::chart_axis::*;
+use crate::modules::cpu::chart_axis::selected_window;
 use crate::modules::cpu::chart_hud::*;
 use crate::modules::cpu::history::CpuHistory;
 use crate::theme::colors;
+use crate::ui::chart_scale::{
+    anchored, convert_to_minutes_ago, lock_time_chart_bounds, x_grid_spacer, PERCENT_Y_GRID,
+};
 use crate::ui::primitives::{cyber_accent, draw_cyber_corner_brackets};
 use eframe::egui;
 use egui_plot::{HLine, Line, LineStyle, Plot, PlotPoints};
@@ -27,8 +30,8 @@ pub fn render_cpu_chart(ui: &mut egui::Ui, h: &mut CpuHistory) {
         let peak_series: Arc<Vec<[f64; 2]>> = h.hottest_series(selected);
 
         // Convert timestamps to minutes-ago and anchor to right edge
-        let total_raw = anchored(convert_to_minutes_ago(&total_series, now), span);
-        let peak_raw = anchored(convert_to_minutes_ago(&peak_series, now), span);
+        let total_raw = anchored(convert_to_minutes_ago(&total_series, now));
+        let peak_raw = anchored(convert_to_minutes_ago(&peak_series, now));
 
         // Handle empty series (startup)
         const ONE_SEC_MIN: f64 = 1.0 / 60.0;
@@ -62,11 +65,11 @@ pub fn render_cpu_chart(ui: &mut egui::Ui, h: &mut CpuHistory) {
             .show_x(false)
             .show_y(false)
             .auto_bounds(egui::Vec2b::new(false, false))
-            .y_grid_spacer(move |_| cached_y_grid_marks())
+            .y_grid_spacer(move |_| PERCENT_Y_GRID.to_vec())
             .x_grid_spacer(move |input| x_grid_spacer(span, &input))
             .include_x(-span)
             .include_x(0.0)
-            .include_y(0.0)
+            .include_y(crate::ui::chart_kit::baseline_y())
             .include_y(100.0)
             .allow_scroll(false)
             .allow_zoom(false)
@@ -83,7 +86,7 @@ pub fn render_cpu_chart(ui: &mut egui::Ui, h: &mut CpuHistory) {
                 }
             })
             .show(ui, |pu| {
-                pu.set_plot_bounds(egui_plot::PlotBounds::from_min_max([-span, 0.0], [0.0, 100.0]));
+                lock_time_chart_bounds(pu, selected.seconds() as usize, 100.0);
                 pu.hline(
                     HLine::new(85.0)
                         .color(egui::Color32::from_rgba_unmultiplied(255, 42, 84, 110))

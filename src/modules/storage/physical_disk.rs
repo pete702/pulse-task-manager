@@ -58,8 +58,8 @@ impl Drop for VolumeHandle {
 }
 
 #[cfg(target_os = "windows")]
-fn handle_cache() -> &'static Mutex<HashMap<char, isize>> {
-    static CACHE: OnceLock<Mutex<HashMap<char, isize>>> = OnceLock::new();
+fn handle_cache() -> &'static Mutex<HashMap<char, VolumeHandle>> {
+    static CACHE: OnceLock<Mutex<HashMap<char, VolumeHandle>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -69,43 +69,33 @@ fn cached_volume(letter: char) -> Option<isize> {
     {
         let cache = handle_cache().lock().unwrap_or_else(|e| e.into_inner());
         if let Some(h) = cache.get(&letter) {
-            return Some(*h);
+            return Some(h.0);
         }
     }
     let volume = open_volume(letter)?;
     let raw = volume.0;
-    std::mem::forget(volume);
     let mut cache = handle_cache().lock().unwrap_or_else(|e| e.into_inner());
     if cache.len() >= 32 && !cache.contains_key(&letter) {
-        for handle in cache.values() {
-            if *handle != 0 && *handle != INVALID_HANDLE {
-                unsafe {
-                    CloseHandle(*handle as HANDLE);
-                }
-            }
-        }
         cache.clear();
     }
-    if let Some(old) = cache.insert(letter, raw) {
-        if old != raw {
-            unsafe {
-                CloseHandle(old as HANDLE);
-            }
-        }
-    }
+    let _ = cache.insert(letter, volume);
     Some(raw)
 }
 
 #[cfg(target_os = "windows")]
-#[allow(unsafe_code)]
 fn evict_handle(letter: char) {
     let mut cache = handle_cache().lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(raw) = cache.remove(&letter) {
-        unsafe {
-            CloseHandle(raw as HANDLE);
-        }
-    }
+    let _ = cache.remove(&letter);
 }
+
+#[cfg(target_os = "windows")]
+pub fn clear_handle_cache() {
+    let mut cache = handle_cache().lock().unwrap_or_else(|e| e.into_inner());
+    cache.clear();
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn clear_handle_cache() {}
 
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
@@ -198,7 +188,7 @@ pub fn perf_counters_for_mount(mount: &str) -> Option<(i64, i64)> {
             std::ptr::null_mut(),
         )
     };
-    if ok == 0 || returned < 16 {
+    if ok == 0 || returned < 48 {
         evict_handle(letter);
         return None;
     }
@@ -208,7 +198,7 @@ pub fn perf_counters_for_mount(mount: &str) -> Option<(i64, i64)> {
 }
 
 /// Sums hardware counters across mounts using IOCTL_DISK_PERFORMANCE.
-#[allow(dead_code)]
+#[cfg(test)]
 #[cfg(target_os = "windows")]
 pub fn sum_perf_counters(mounts: &[&str]) -> Option<(i64, i64)> {
     let mut read: i64 = 0;
@@ -232,12 +222,11 @@ pub fn physical_disk_for_mount(_mount: &str) -> Option<(u32, u32)> {
 pub fn perf_counters_for_mount(_mount: &str) -> Option<(i64, i64)> {
     None
 }
-#[allow(dead_code)]
+#[cfg(test)]
 #[cfg(not(target_os = "windows"))]
 pub fn sum_perf_counters(_mounts: &[&str]) -> Option<(i64, i64)> {
     None
 }
-#[allow(dead_code)]
 #[cfg(not(target_os = "windows"))]
 fn evict_handle(_letter: char) {}
 

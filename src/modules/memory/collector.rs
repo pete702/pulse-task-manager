@@ -6,15 +6,16 @@ use std::sync::Arc;
 use sysinfo::{ProcessRefreshKind, System};
 
 use crate::modules::memory::constants::MAX_SANE_VIRTUAL_BYTES;
-use crate::modules::memory::delta_tracker::{ProcessDeltaTracker, ProcessMemoryScan};
-use crate::modules::memory::model::{MemorySnapshot, ProcessSample};
+use crate::modules::memory::delta_tracker::ProcessDeltaTracker;
+use crate::modules::memory::model::{MemorySnapshot, ProcessSample, RawProcessRow};
+use crate::modules::memory::process_spike::MemorySpikeEvent;
 #[cfg(target_os = "windows")]
-use crate::modules::memory::win32_api::{collect_windows_kernel_metrics, KernelMetrics};
+use crate::platform::win32_api::{collect_windows_kernel_metrics, KernelMetrics};
 
 /// Collects current system memory state into a `MemorySnapshot`.
 /// `scan_duration_ms` is left at the default here; the worker loop stamps it
 /// once with the full telemetry tick duration so the metric stays honest.
-#[cfg_attr(not(target_os = "windows"), allow(dead_code, unused_mut))]
+#[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
 pub fn collect_memory(sys: &mut System) -> MemorySnapshot {
     sys.refresh_memory();
 
@@ -57,15 +58,27 @@ pub fn collect_memory(sys: &mut System) -> MemorySnapshot {
 /// same worker tick (the CPU pass already refreshed with
 /// `.with_memory().with_cpu().with_disk_usage().with_exe(UpdateKind::OnlyIfNotSet)`);
 /// falls back to refreshing memory only when the process list is empty.
+/// Result of a process memory collection pass.
+#[derive(Debug, Default)]
+pub struct ProcessMemoryResult {
+    pub processes: Vec<RawProcessRow>,
+    pub spike: Option<MemorySpikeEvent>,
+    pub has_heavy_process: bool,
+}
+
 pub fn collect_process_memory(
     sys: &mut System,
     total_ram: u64,
     current_ram_pct: f32,
     delta_tracker: &mut ProcessDeltaTracker,
     refresh_processes: bool,
-) -> (ProcessMemoryScan, bool) {
+) -> ProcessMemoryResult {
     if !refresh_processes {
-        return ((Vec::new(), None), false);
+        return ProcessMemoryResult {
+            processes: Vec::new(),
+            spike: None,
+            has_heavy_process: false,
+        };
     }
 
     // Skip second sysinfo scan when worker_loop already refreshed with
@@ -102,14 +115,14 @@ pub fn collect_process_memory(
     const HEAVY_THRESHOLD: u64 = 2560_u64 << 20; // 2.5 GiB
     let has_heavy_process = processes.iter().any(|(_, _, ram, _, _, _)| *ram >= HEAVY_THRESHOLD);
     let processes_with_delta = delta_tracker.track(&processes);
-    let spike = crate::modules::memory::process_model::detect_memory_spike(
+    let spike = crate::modules::memory::process_spike::detect_memory_spike(
         &processes_with_delta,
         total_ram,
         current_ram_pct,
     );
-    ((processes_with_delta, spike), has_heavy_process)
+    ProcessMemoryResult { processes: processes_with_delta, spike, has_heavy_process }
 }
 
 // Re-export Win32 API functions for backward compatibility
 #[allow(unused_imports)]
-pub use crate::modules::memory::win32_api::{own_working_set_mb, trim_own_working_set};
+pub use crate::platform::win32_api::{own_working_set_mb, trim_own_working_set};

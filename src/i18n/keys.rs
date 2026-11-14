@@ -1,7 +1,6 @@
 //! Translation key definitions for PULSE i18n.
 
 /// Translation key type for type-safe lookups.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
     // Top bar / window chrome
@@ -20,6 +19,7 @@ pub enum Key {
     AwaitingMemoryModel,
 
     // Self-test
+    #[cfg(test)]
     SelfTestPassedHeadless,
     SelfTestPassedLive,
     SelfTestFailed,
@@ -28,28 +28,48 @@ pub enum Key {
     StatusReady,
 
     // Memory module - Card headers
+    #[cfg(test)]
     PhysicalRamTitle,
+    #[cfg(test)]
     SwapCommitTitle,
+    #[cfg(test)]
     MemoryCompositionTitle,
 
     // Memory module - Grid labels (Card 1: RAM)
+    #[cfg(test)]
     UsedTotal,
+    #[cfg(test)]
     AvailableFree,
+    #[cfg(test)]
     CachedStandby,
+    #[cfg(test)]
     PeakSession,
 
     // Memory module - Grid labels (Card 2: Swap/Commit)
+    #[cfg(test)]
     SwapUsedTotal,
+    #[cfg(test)]
     CommitChargeLimit,
+    #[cfg(test)]
     CommitPercent,
 
     // Kernel mini-tiles
+    #[cfg(test)]
     KernelPool,
+    #[cfg(test)]
     CommitCharge,
+    #[cfg(test)]
     OsActivityTitle,
 
     // Chart
     MemoryHistoryTitle,
     RamPercent,
+    #[cfg(test)]
     SwapPercent,
+
+    // Memory process table
+    #[cfg(test)]
+    MemoryNoProcesses,
+    #[cfg(test)]
+    MemoryNoMatchingProcesses,
 }

@@ -1,6 +1,6 @@
 //! Multi-horizon neon chart for PULSE memory telemetry (1m / 5m / 15m).
 use crate::i18n::Key;
-use crate::modules::memory::chart_axis::{minutes_ago, window_minutes};
+use crate::modules::memory::chart_axis::{window_minutes, window_seconds};
 use crate::modules::memory::chart_chrome::render_header;
 use crate::modules::memory::chart_hud::{
     draw_hud_legend, draw_hud_scanner, draw_x_axis_hud_labels, draw_y_axis_hud_labels,
@@ -8,47 +8,14 @@ use crate::modules::memory::chart_hud::{
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::model::{ChartWindow, MemorySnapshot};
 use crate::theme::colors;
+use crate::ui::chart_scale::{
+    anchored, convert_to_minutes_ago, lock_time_chart_bounds, x_grid_spacer, ONE_SEC_MIN,
+    PERCENT_Y_GRID,
+};
 use crate::ui::primitives::{cyber_accent, draw_cyber_corner_brackets};
 use eframe::egui;
-use egui_plot::{GridInput, GridMark, HLine, Line, LineStyle, Plot, PlotBounds, PlotPoints};
+use egui_plot::{HLine, Line, LineStyle, Plot, PlotPoints};
 use std::sync::Arc;
-
-const Y_GRID: &[GridMark] = &[
-    GridMark { value: 0.0, step_size: 25.0 },
-    GridMark { value: 25.0, step_size: 25.0 },
-    GridMark { value: 50.0, step_size: 25.0 },
-    GridMark { value: 75.0, step_size: 25.0 },
-    GridMark { value: 100.0, step_size: 25.0 },
-];
-
-/// Custom X-axis grid spacer for consistent major/minor grid lines across all windows.
-/// X coordinates are in minutes (negative = minutes ago, 0 = now).
-/// Returns combined grid marks for the given window span.
-fn x_grid_spacer(span_min: f64, _input: &GridInput) -> Vec<GridMark> {
-    let (major_step, minor_step) = if span_min <= 1.0 {
-        // 1m window: major every 15s (0.25 min), minor every 5s (1/12 min)
-        (0.25, 1.0 / 12.0)
-    } else if span_min <= 5.0 {
-        // 5m window: major every 1m, minor every 15s (0.25 min)
-        (1.0, 0.25)
-    } else {
-        // 15m window: major every 3m, minor every 1m
-        (3.0, 1.0)
-    };
-
-    let mut marks = Vec::new();
-    // Major marks
-    for i in 0..=(span_min / major_step).ceil() as i32 {
-        let val = -i as f64 * major_step;
-        marks.push(GridMark { value: val, step_size: major_step });
-    }
-    // Minor marks
-    for i in 0..=(span_min / minor_step).ceil() as i32 {
-        let val = -i as f64 * minor_step;
-        marks.push(GridMark { value: val, step_size: minor_step });
-    }
-    marks
-}
 
 fn window_id() -> egui::Id {
     egui::Id::new("pulse_memory_chart_window")
@@ -64,35 +31,6 @@ pub fn set_window(ctx: &egui::Context, window: ChartWindow) {
     ctx.data_mut(|d| d.insert_temp(window_id(), window));
 }
 
-/// Anchors a series to the right edge (now = 0.0).
-/// For a single point (startup), draw a 1-second lead-in [-1/60, 0].
-/// For 2+ points, only anchor the right edge to 0.0 (if last_x < 0).
-/// The left edge grows naturally leftward as history accumulates.
-/// X coordinates are in MINUTES (see chart_axis::minutes_ago).
-const ONE_SEC_MIN: f64 = 1.0 / 60.0;
-
-fn anchored(points: &[[f64; 2]], _span: f64) -> Vec<[f64; 2]> {
-    if points.is_empty() {
-        return vec![];
-    }
-    if points.len() == 1 {
-        let y = points[0][1];
-        return vec![[-ONE_SEC_MIN, y], [0.0, y]];
-    }
-    // Only anchor right edge to 0.0; left edge grows naturally.
-    let mut out = points.to_vec();
-    if let Some(last) = out.last().copied() {
-        if last[0] < 0.0 {
-            out.push([0.0, last[1]]);
-        }
-    }
-    out
-}
-
-fn convert_to_minutes_ago(points: &[[f64; 2]], now: f64) -> Vec<[f64; 2]> {
-    points.iter().map(|p| [minutes_ago(p[0], now), p[1]]).collect()
-}
-
 pub fn render_memory_chart(
     ui: &mut egui::Ui,
     h: &mut MemoryHistory,
@@ -102,7 +40,7 @@ pub fn render_memory_chart(
     let mut selected = selected_window(ui.ctx());
     let _ = chart_height; // Keep signature; we compute actual height after header
     let ram_pct = h.current_ram_percent();
-    let resp = crate::theme::card_frame().show(ui, |ui| {
+    let resp = crate::ui::chart_kit::chart_frame().show(ui, |ui| {
         ui.vertical(|ui| {
             let ram = h.current_ram_percent();
             let commit = s.commit_usage_percent();
@@ -131,20 +69,29 @@ pub fn render_memory_chart(
                 if has_commit { h.commit_series(selected) } else { h.swap_series(selected) };
 
             // Convert timestamps to minutes-ago and anchor to right edge
-            let ram_raw = anchored(&convert_to_minutes_ago(&ram_series, now), span);
-            let purple_raw = anchored(&convert_to_minutes_ago(&purple_series, now), span);
+            let ram_raw = anchored(convert_to_minutes_ago(&ram_series, now));
+            let purple_raw = anchored(convert_to_minutes_ago(&purple_series, now));
 
             // Handle empty series (startup)
+            // Auto-trim status badge: "ARMED (85% trigger)" while waiting for threshold.
             let ram_points = if ram_raw.is_empty() {
-                PlotPoints::new(vec![[-ONE_SEC_MIN, ram as f64], [0.0, ram as f64]])
+                let mut pts = Vec::with_capacity(2);
+                pts.extend([[-ONE_SEC_MIN, ram as f64], [0.0, ram as f64]]);
+                PlotPoints::new(pts)
             } else {
-                PlotPoints::new(ram_raw.clone())
+                let mut pts = Vec::with_capacity(ram_raw.len());
+                pts.extend(ram_raw.clone());
+                PlotPoints::new(pts)
             };
             let purple_points = if purple_raw.is_empty() {
                 let flat = if has_commit { commit as f64 } else { swap as f64 };
-                PlotPoints::new(vec![[-ONE_SEC_MIN, flat], [0.0, flat]])
+                let mut pts = Vec::with_capacity(2);
+                pts.extend([[-ONE_SEC_MIN, flat], [0.0, flat]]);
+                PlotPoints::new(pts)
             } else {
-                PlotPoints::new(purple_raw.clone())
+                let mut pts = Vec::with_capacity(purple_raw.len());
+                pts.extend(purple_raw.clone());
+                PlotPoints::new(pts)
             };
 
             // Compute plot height AFTER header so bottom labels fit.
@@ -168,11 +115,11 @@ pub fn render_memory_chart(
                 .show_x(false)
                 .show_y(false)
                 .auto_bounds(egui::Vec2b::new(false, false))
-                .y_grid_spacer(move |_| Y_GRID.to_vec())
+                .y_grid_spacer(move |_| PERCENT_Y_GRID.to_vec())
                 .x_grid_spacer(move |input| x_grid_spacer(span, &input))
                 .include_x(-span)
                 .include_x(0.0)
-                .include_y(0.0)
+                .include_y(crate::ui::chart_kit::baseline_y())
                 .include_y(100.0)
                 .allow_scroll(false)
                 .allow_zoom(false)
@@ -192,7 +139,7 @@ pub fn render_memory_chart(
                     }
                 })
                 .show(ui, |pu| {
-                    pu.set_plot_bounds(PlotBounds::from_min_max([-span, 0.0], [0.0, 100.0]));
+                    lock_time_chart_bounds(pu, window_seconds(selected), 100.0);
                     pu.hline(
                         HLine::new(85.0)
                             .color(egui::Color32::from_rgba_unmultiplied(255, 42, 84, 110))

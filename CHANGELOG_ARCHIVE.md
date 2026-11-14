@@ -2,6 +2,208 @@
 
 Archived entries from 0.1.x. Recent 0.2.x entries live in CHANGELOG.md.
 
+## [0.4.97] - 2026-04-12
+
+- **Batch Actions (B09-B-01/B09-B-02)**: structured terminate/trim skip counts and clear summaries; no silent skips or early aborts.
+- **Handle Safety (B09-B-05/B09-B-06)**: query-first handle verification with live path-aware gate; error 87 mapped to access denied.
+- **Explorer/Compat (B09-B-07/B09-B-08/B09-B-10/B09-B-13)**: strict path sanitizer and existence checks, honest non-Windows stubs, renamed trim_processes_working_sets, expanded deterministic tests.
+
+## [0.4.96] - 2026-04-12
+
+- **Safety Lists (B09-B-04/B09-B-12)**: canonical normalized protected entries, removed dead .sys names, added ctfmon/smartscreen/mpcmdrun categories.
+- **Path-Aware Gate (B09-B-03)**: verify_pid_safety_gate_ex with fail-closed no-path and trusted-root checks for OS/Defender/anti-cheat names.
+- **Handle Identity (B09-B-11)**: live full-path 3-point verification with path-aware gate and full-path comparison semantics.
+- **Selection/Menu (B09-B-09)**: per-member path-aware selection gating; unprotected members remain actionable in mixed groups.
+
+## [0.4.95] - 2026-04-12
+
+- **Memory Targets (B08-B-01)**: per-member (pid, creation_time) OS actions with fail-closed invalid identity and protected-member guards.
+- **Memory Table (B08-B-03)**: double-click selects row/group and opens verified location without toggle-off.
+- **Terminate UX (B08-B-04)**: shared 3s confirm_kill TTL (arm/confirm/cancel), immutable verified targets, no kill on arming.
+- **Open Location (B08-B-05)**: TOCTOU-safe live handle/path verification per candidate, fail-closed on missing/zero/mismatch.
+
+## [0.4.94] - 2026-04-12
+
+- **Util/Grouping**: canonical `contains_ci` in util and shared case-insensitive group key for memory grouping/search/selection consistency.
+- **Memory Table**: grouped rows carry true member (pid, creation_time) targets with non-chimera leader identity; removed dead clone_text.
+- **Memory Selection/Cache**: fail-closed creation_time checks, captured selection identity, and full cache-key-first rebuild semantics.
+
+## [0.4.93] - 2026-11-12
+
+- **CPU Table State**: explicit min-dt floor/max-dt handling in RAM delta calc and FIFO-safe eco rollback restores at 512-entry cap with sync test.
+- **UI/Charts**: decoupled shared chart scale from memory ChartWindow (window_secs API) and updated CPU/Memory chart HUD callers and tests.
+
+## [0.4.92] - 2026-11-12
+
+- **App/Input**: hotkeys run before snapshot poll, fast process cadence for CPU/Processes/Memory, tab-scoped Escape with conditional dirty marking.
+- **App/Trim-Ingest**: bounded 30s retry backoff on failed self-trim, paused snapshot retention with freeze-at-T and immediate apply on resume.
+- **UI/Pause Labels**: clarified table Freeze List vs global Pause Telemetry labels and hover explanations.
+
+## [0.4.91] - 2026-11-12
+
+- **Persist/Tests**: removed rustfmt skip attributes in persist.rs, expanded distinct persist tests (version/coercion/bounds/tmp collision).
+- **Core/Selftest**: fixed LatestSlot overflow/trim invariants (cpu.process_count sync) and hardened selftest (25ms repaint, update ticks, OS-gated checks, protected PID/name guards).
+
+## [0.4.90] - 2026-11-12
+
+- **Persist/Safety**: safe panic hook (no re-entrant flush), fail-closed atomic config writes without symlink fallback.
+- **Persist/Schema**: version=1 state format, parse coercion diagnostics, and hardened CPU column-width bounds.
+
+## [0.4.89] - 2026-11-12
+
+- **Util/CPU**: wired `remove_capped_fifo` for production removals and removed dead-code allowance.
+- **CPU State**: dropped unread Instant tuple payloads from EcoQoS/priority override maps and updated readers/tests.
+
+## [0.4.88] - 2026-11-12
+
+- **Util**: merged core/util into src/util.rs, generalized clone-generic capped FIFO insert/remove, and refactored intern_name.
+- **History**: storage/network per-device histories now use FIFO eviction with order rings to keep oldest-entry eviction deterministic.
+
+## [0.4.87] - 2026-11-12
+
+- **Chart Scale**: moved shared X-axis tick/label helpers to ui::chart_scale and updated chart HUDs to import them directly.
+- **Chart Axes**: memory/cpu chart_axis modules now keep only window helpers with zero cross-module chart_* imports and consolidated chart tests.
+
+## [0.4.86] - 2026-11-12
+
+- **Charts**: removed storage/network CPU axis imports and CPU chart-axis pass-through wrappers in favor of shared ui::chart_scale helpers.
+- **CPU Axis**: unified CPU chart to the shared 1-arg anchored helper and kept only window state helpers in cpu/chart_axis.
+
+## [0.4.85] - 2026-11-12
+
+- **Chart Scale**: unified `lock_time_chart_bounds` to seconds with `window_secs_to_span_min`, moved shared axis/series helpers into `ui::chart_scale`, and added `chart_scale_tests`.
+- **Chart Axes**: Memory uses `window_seconds` and shared helpers without CPU axis import; CPU axis now delegates grid/series helpers to shared module.
+
+## [0.4.84] - 2026-11-12
+
+- **Charts**: CPU and Memory charts now lock time bounds via the shared helper each frame so 1m/5m/15m window switches reset to the selected span.
+- **Memory Chart**: reused cached X-axis grid marks and consume anchored minute-series Vec to avoid per-render grid rebuild and extra multi-point copy.
+
+## [0.4.83] - 2026-03-31
+
+- Added shared O(1) util::insert_capped_fifo helper and wired it across util.rs, exe_cache.rs, qos_action.rs, and table_state.rs to eliminate linear min_by_key and arbitrary keys().next() evictions.
+- Synchronized cpu/mod.rs 1920-sample capacity documentation and relaxed initial snapshot ID assertions in core/worker_tests.rs.
+
+## [0.4.82] - 2026-03-31
+
+- Extracted shared ui::chart_scale module (clean_4_axis_max, format_y_tick, lock_time_chart_bounds) for unified time-series chart scaling.
+- Enforced explicit PlotBounds locking on every frame in Storage and Network charts so switching 1m / 5m / 15m windows never retains stale cached plot bounds.
+
+## [0.4.81] - 2026-03-31
+
+- Added sub-tick elapsed time guards (>= 0.35s) in Storage and Network collectors to prevent artificial rate spikes during forced scans across 1m/5m/15m chart windows.
+- Hardened background config writer mutex/retry semantics in core/persist.rs and wired minimized-only working-set trim in app_trim.rs.
+- Wired strict sanitize_probe_target validation in network/latency_probe.rs, restored traffic magnitude scaling tests, and deduplicated record_eco_override.
+
+## [0.4.80] - 2026-03-31
+
+- Aligned Network latency chart minimum floor to Clean-4 (4.0 ms) and synchronized unit tests.
+- Compacted memory/top_cards.rs for 280-line headroom and hardened network/ping_modal.rs target validation.
+- Completed scheduled 10-build clean rebuild verification.
+
+## [0.4.79] - 2026-03-31
+
+- Offloaded state.cfg persistence writes to a non-blocking background writer and kept PULSE working set resident in RAM so UI interaction never stalls when Disk C: write queues saturate.
+- Fixed Storage and Network chart Y-axis scaling to use window-scoped max(read, write) / max(rx, tx) with fine-grained Clean-4 steps (300 MB/s scales to 360 MB/s instead of 600 MB/s).
+- Unified 1m / 5m / 15m real-time window retention across CPU, Memory, Storage, and Network histories under 2 Hz worker cadence.
+
+## [0.4.78] - 2026-03-31
+
+- **CPU Affinity**: added 64-core shift-safe `full_core_mask` / `core_bit` helpers and zero-mask Apply guard in the CPU Affinity modal.
+- **CPU Safety**: added `is_protected_pid` guard preventing termination of PID 0, PID 4, or the active PULSE process in context menus and batch kill modals.
+- **CPU Table**: blocked background CPU table keyboard navigation while Kill or Affinity modals are open and hardened group/row float sanitization.
+
+## [0.4.77] - 2026-04-17
+
+- **CPU Table**: single-entry bounded eviction for `eco_overrides` at the 512-entry cap in `table_state_deltas.rs` and `table_menu_actions.rs` (preventing mass reset of active EcoQoS overrides).
+- **Version bump to 0.4.77**.
+
+## [0.4.76] - 2026-04-17
+
+- **Charts**: clean-4 Y-axis scaling on Network and Storage charts (fixing `1 Mbps, 1, 0, 0` and fractional ticks), with dark HUD axis pills.
+- **Storage UI**: `MB/s` unit on Storage `TOP I/O`.
+- **Version bump to 0.4.76**.
+
+## [0.4.75] - 2026-04-17
+
+- **Ingest**: unified 4-module snapshot ingestion in `app_ingest.rs` and minimized snapshot draining without UI rendering.
+- **Charts**: `push_gap_anchored` time-gap clamping across CPU, Storage, and Network chart histories.
+- **Version bump to 0.4.75**.
+
+## [0.4.74] - 2026-04-17
+
+- **Trim/UI**: `core::win32::self_trim_working_set` result-aware 10s retry backoff and `OnceLock` app icon caching.
+- **CPU/Menu**: tri-state `EcoQoS` menu status (active/off/unprobed).
+- **Version bump to 0.4.74**.
+
+## [0.4.73] - 2026-04-17
+
+- **Trim/UI**: unified self-trim policy with 10s minimize cooldown and immediate repaint on snapshot ingest.
+- **CPU/Panic/CLI**: `CpuSnapshot.process_scan_id` decoupling, re-entrancy-guarded PID-scoped `create_new` panic hook, and unknown CLI flag warning.
+- **Version bump to 0.4.73**.
+
+## [0.4.72] - 2026-04-17
+
+- **Hotkeys/Resume**: pre-ingest hotkey handling, instant process scan on F10 and UI telemetry resume.
+- **UX/Scope**: tab-scoped Escape, fast process cadence predicate excluding Memory overview, and CPU table freeze tooltip.
+- **Ingest**: snapshot_id deduplication for ingest.
+- **Version bump to 0.4.72**.
+
+## [0.4.71] - 2026-04-17
+
+- **Worker Loop**: edge-triggered pause unpark swap, early-wakeup guard, and timestamp monotonicity only on scheduled due ticks.
+- **Process Tables**: scanned-gated `process_scan_id`/`last_scan_tick` and full CPU/Memory process cache restoration when not scanned.
+- **Version bump to 0.4.71**.
+
+## [0.4.70] - 2026-04-17
+
+- **Worker Safety/Cadence**: `SpawnedWorker` optional handle, pause scan-request handling with instant resume unpark, monotonic snapshot timestamps, and elapsed-ticks scan cadence with active minimized tick interval.
+- **Worker Invariants**: unified `raw_processes`/`process_count` assignment and due-gated storage/network collection reuse.
+- **Version bump to 0.4.70**.
+
+## [0.4.69] - 2026-04-17
+
+- **CPU History**: O(1) revision-tagged series caches, removed dead `cached_revision`, and bounded ring-buffer peak decay on eviction.
+- **CPU/Worker**: synced `cpu/mod.rs` 960-sample doc and added UI wakeup on `publish_payload` `Full`.
+- **Version bump to 0.4.69**.
+
+## [0.4.68] - 2026-03-31
+
+- **CPU UI**: removed duplicate Overview sub-view button and clarified `LOGICAL CORES / PROCS` label.
+- **Charts**: added dark backdrop pills behind axis labels and unified scanner time format in CPU/Memory HUDs.
+- **Memory**: fixed composition bar segment math so In Use + Cached + Free never exceeds total RAM.
+- **Version bump to 0.4.68**.
+
+## [0.4.67] - 2026-03-31
+
+- **Charts**: added vertical scanner, curve dots, and tactical tooltip to CPU chart.
+- **Charts**: unified Memory, Storage, and Network charts to single vertical scanner, arrow cursor, and no horizontal crosshair.
+- **Version bump to 0.4.67**.
+
+## [0.4.66] - 2026-03-31
+
+- **CPU Sub-view**: two-way toggle with `toggle_sub_view` and back-to-overview control from Processes.
+- **Window Width**: unified 860.0 literals on canonical `MIN_WINDOW_WIDTH` and shared top-cards offset.
+- **Version bump to 0.4.66**.
+
+## [0.4.65] - 2026-03-31
+
+- **CPU Hotkeys/UI**: Escape now surrenders CPU search focus unconditionally on the CPU tab.
+- **CPU Hardening/Tests**: extracted grid/bottleneck helpers and added regression tests for grid sizing, labels, badges, and quick filters.
+- **Version bump to 0.4.65**.
+
+## [0.4.64] - 2026-03-31
+
+- **CPU Chart**: cached Y-grid marks, preallocated time conversion/anchoring, and tactical scanner hover/cursor cleanup.
+- **CPU UI/State**: single Escape path for CPU search, CPU sub-view toggle, and shared min window width constant.
+- **Version bump to 0.4.64**.
+
+## [0.4.63] - 2026-03-31
+
+- **CPU Chart**: fixed legend rect lag/double frame/comment, separated legend state/button IDs, deduped/cached X grid marks, and added chart axis tests.
+- **Tests**: asserted exact priority class restoration in live EcoQoS roundtrip.
+- **Version bump to 0.4.63**.
+
 ## [0.4.62] - 2026-03-31
 
 - **CPU UI**: fixed bottleneck sentinel/idle states, tactical ticks at 0%, narrow layout thresholds, and core grid overflow/hover allocs.

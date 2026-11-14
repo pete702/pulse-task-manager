@@ -1,13 +1,10 @@
 //! Live `[04] Network` HUD: grade banner, KPIs, chart-first, adapter cards.
-
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 
 use eframe::egui;
 
 use crate::core::SystemSnapshot;
 use crate::modules::network::cards::render_adapter_cards;
-use crate::modules::network::chart_view::render_network_chart;
-use crate::modules::network::history::NetworkHistory;
 use crate::modules::network::latency_probe::{
     dns_flush_state, probe_enabled, set_probe_enabled, trigger_dns_flush, DnsFlushState,
 };
@@ -23,18 +20,18 @@ pub enum ChartMode {
     Split,
 }
 
-struct NetworkViewState {
-    history: NetworkHistory,
-    window_secs: usize,
-    mode: ChartMode,
-    last_sample_ts: Option<f64>,
-    selected: Option<Arc<str>>,
+pub struct NetworkViewState {
+    pub history: crate::modules::network::history::NetworkHistory,
+    pub window_secs: usize,
+    pub mode: ChartMode,
+    pub last_sample_ts: Option<f64>,
+    pub selected: Option<Arc<str>>,
 }
 
 impl Default for NetworkViewState {
     fn default() -> Self {
         Self {
-            history: NetworkHistory::new(),
+            history: crate::modules::network::history::NetworkHistory::new(),
             window_secs: 300,
             mode: ChartMode::Traffic,
             last_sample_ts: None,
@@ -43,63 +40,43 @@ impl Default for NetworkViewState {
     }
 }
 
-static STATE: OnceLock<Mutex<NetworkViewState>> = OnceLock::new();
-
-fn state() -> &'static Mutex<NetworkViewState> {
-    STATE.get_or_init(|| Mutex::new(NetworkViewState::default()))
-}
-
-/// Updates the chart window (called from chart window buttons).
-pub fn set_window_secs(secs: usize) {
-    let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
-    guard.window_secs = secs;
-}
-
-pub fn window_secs() -> usize {
-    state().lock().unwrap_or_else(|e| e.into_inner()).window_secs
-}
-
-/// Sets the chart mode (called from chart mode buttons).
-#[allow(dead_code)]
-pub fn set_chart_mode(latency: bool) {
-    set_mode(if latency { ChartMode::Latency } else { ChartMode::Traffic });
-}
-
-/// Sets the chart mode directly (Traffic/Latency/Split).
-pub fn set_mode(mode: ChartMode) {
-    let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
-    guard.mode = mode;
-}
-
-pub fn chart_mode_value() -> u8 {
-    let g = state().lock().unwrap_or_else(|e| e.into_inner());
-    match g.mode {
-        ChartMode::Latency => 1,
-        ChartMode::Split => 2,
-        ChartMode::Traffic => 0,
+impl NetworkViewState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn set_window_secs(&mut self, secs: usize) {
+        self.window_secs = secs;
+    }
+    pub fn window_secs(&self) -> usize {
+        self.window_secs
+    }
+    pub fn set_mode(&mut self, mode: ChartMode) {
+        self.mode = mode;
+    }
+    pub fn chart_mode_value(&self) -> u8 {
+        match self.mode {
+            ChartMode::Latency => 1,
+            ChartMode::Split => 2,
+            ChartMode::Traffic => 0,
+        }
+    }
+    pub fn set_chart_mode_value(&mut self, v: u8) {
+        self.mode = match v {
+            1 => ChartMode::Latency,
+            2 => ChartMode::Split,
+            _ => ChartMode::Traffic,
+        };
+    }
+    pub fn set_scope_all(&mut self) {
+        self.selected = None;
     }
 }
 
-pub fn set_chart_mode_value(v: u8) {
-    let mode = match v {
-        1 => ChartMode::Latency,
-        2 => ChartMode::Split,
-        _ => ChartMode::Traffic,
-    };
-    set_mode(mode);
-}
-
-/// Clears the adapter scope (called from the chart header Show All button).
-pub fn set_scope_all() {
-    let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
-    guard.selected = None;
-}
-
-/// Background ingestion on worker pause-adjusted timestamps.
-/// Traffic always pushes so the Mbps chart works with probe OFF/probing.
-/// Latency keeps None gaps (never fake 0.0); per-adapter RX/TX feed the scope.
-pub fn ingest_network_snapshot(snap: &std::sync::Arc<SystemSnapshot>) {
-    let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
+pub fn ingest_network_snapshot(
+    state: &mut NetworkViewState,
+    snap: &std::sync::Arc<SystemSnapshot>,
+) {
+    let guard = state;
     let elapsed = snap.memory.as_ref().map(|m| m.sample_elapsed_secs).unwrap_or(0.0);
     let due = guard.last_sample_ts.is_none_or(|last| elapsed > last);
     if due {
@@ -112,25 +89,22 @@ pub fn ingest_network_snapshot(snap: &std::sync::Arc<SystemSnapshot>) {
     }
 }
 
-/// Renders the live Network tab: chart immediately below the KPI strip.
-/// Traffic honors the selected adapter scope; latency is scope-free. Split is side-by-side.
-pub fn render_network_tab(ui: &mut egui::Ui, snap: &NetworkSnapshot) {
+pub fn render_network_tab(ui: &mut egui::Ui, snap: &NetworkSnapshot, state: &mut NetworkViewState) {
     let (first, second, lat_first, lat_second, window_secs, mode, scope, mut selected) = {
-        let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
-        let mode = guard.mode;
-        let window = guard.window_secs;
-        let sel = guard.selected.clone();
+        let mode = state.mode;
+        let window = state.window_secs;
+        let sel = state.selected.clone();
         let is_lat = mode == ChartMode::Latency;
         let scope: Option<String> = if is_lat { None } else { sel.as_ref().map(|s| s.to_string()) };
         let (a, b, la, lb) = if mode == ChartMode::Split {
-            let (ta, tb) = guard.history.traffic_series_scoped(scope.as_deref(), window);
-            let (la, lb) = guard.history.latency_series(window);
+            let (ta, tb) = state.history.traffic_series_scoped(scope.as_deref(), window);
+            let (la, lb) = state.history.latency_series(window);
             (ta, tb, la, lb)
         } else if is_lat {
-            let (la, lb) = guard.history.latency_series(window);
+            let (la, lb) = state.history.latency_series(window);
             (la.clone(), lb.clone(), la, lb)
         } else {
-            let (ta, tb) = guard.history.traffic_series_scoped(scope.as_deref(), window);
+            let (ta, tb) = state.history.traffic_series_scoped(scope.as_deref(), window);
             (ta.clone(), tb.clone(), ta, tb)
         };
         (a, b, la, lb, window, mode, scope, sel)
@@ -154,29 +128,30 @@ pub fn render_network_tab(ui: &mut egui::Ui, snap: &NetworkSnapshot) {
                 &lat_second,
                 window_secs,
                 scope.as_deref(),
+                state,
             );
         } else {
-            render_network_chart(
+            crate::modules::network::chart_view::render_network_chart(
                 ui,
                 &first,
                 &second,
                 window_secs,
                 mode == ChartMode::Latency,
                 scope.as_deref(),
+                state,
             );
         }
-        // Show All may have cleared guard.selected; sync before cards.
         {
-            let g = state().lock().unwrap_or_else(|e| e.into_inner());
-            if g.selected != sel_initial {
-                selected = g.selected.clone();
+            if state.selected != sel_initial {
+                selected = state.selected.clone();
             }
         }
         ui.add_space(8.0);
         render_adapter_cards(ui, snap, &mut selected);
     });
-    let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
-    guard.selected = selected;
+    if state.selected != selected {
+        state.selected = selected;
+    }
 }
 
 fn grade_color(grade: ConnectionGrade) -> egui::Color32 {
@@ -189,9 +164,10 @@ fn grade_color(grade: ConnectionGrade) -> egui::Color32 {
 }
 
 fn render_banner(ui: &mut egui::Ui, snap: &NetworkSnapshot) {
-    let effective = if snap.probe_enabled { snap.grade } else { ConnectionGrade::ProbeDisabled };
     card_frame().show(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
+            let effective =
+                if snap.probe_enabled { snap.grade } else { ConnectionGrade::ProbeDisabled };
             let text = format!("GRADE: {}", effective.badge());
             ui.label(
                 egui::RichText::new(text).monospace().size(13.0).color(grade_color(effective)),
@@ -246,11 +222,6 @@ fn kpi_cell(ui: &mut egui::Ui, label: &str, value: String, color: egui::Color32)
     });
 }
 
-/// Session GiB of one adapter since collector start.
 pub fn session_gib(bytes: u64) -> f64 {
     bytes as f64 / GIB
 }
-
-#[cfg(test)]
-#[path = "view_tests.rs"]
-mod tests;

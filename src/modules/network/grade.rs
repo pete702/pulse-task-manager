@@ -8,7 +8,6 @@ use crate::modules::network::model::ConnectionGrade;
 /// to OFFLINE/PACKET_LOSS without waiting for the full 20-sample window.
 /// Traffic-aware: active traffic above 0.25 Mbps proves connectivity, so
 /// firewall-blocked probes (e.g. :53 refused) never fake OFFLINE/PACKET_LOSS.
-#[allow(dead_code)]
 pub fn classify_grade(
     ping_ms: Option<f32>,
     jitter_ms: Option<f32>,

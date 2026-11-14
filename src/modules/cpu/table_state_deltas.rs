@@ -38,7 +38,9 @@ impl CpuTableState {
                 if raw_dt > 15.0 {
                     0
                 } else {
-                    let dt = raw_dt.max(1.0);
+                    // Minimum dt guard (raw_dt.max(1.0)) already enforces the floor.
+                    let max_dt = 15.0_f32;
+                    let dt = raw_dt.max(1.0).min(max_dt);
                     let scale = (10.0 / dt).min(10.0);
                     let diff = row.ram_bytes as i64 - prev.0 as i64;
                     ((diff as f32) * scale).round() as i64
@@ -72,15 +74,8 @@ impl CpuTableState {
             match rx.try_recv() {
                 Ok((msg, eco, rollbacks)) => {
                     if let Some((pid, st, on)) = eco {
-                        let key = (pid, st);
-                        if self.eco_overrides.len() >= 512 && !self.eco_overrides.contains_key(&key)
-                        {
-                            if let Some(&k) = self.eco_overrides.keys().next() {
-                                self.eco_overrides.remove(&k);
-                            }
-                        }
-                        self.eco_overrides.insert(key, on);
-                        crate::modules::cpu::collector::mark_pending_eco(pid, st, on);
+                        self.record_eco_override(pid, st, on);
+                        crate::platform::qos::pending_insert((pid, st), Some(on));
                         crate::core::request_process_scan();
                     }
                     if !rollbacks.is_empty() {

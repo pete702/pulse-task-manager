@@ -1,4 +1,4 @@
-//! Pure mathematical model for memory telemetry — zero dependencies on egui/sysinfo.
+//! Pure mathematical model for memory telemetry -- zero dependencies on egui/sysinfo.
 
 use std::sync::Arc;
 
@@ -18,10 +18,6 @@ pub struct RawProcessRow {
 
 /// Incoming process sample: (PID, name, RAM, virtual, exe path, sysinfo start time).
 pub type ProcessSample = (u32, Arc<str>, u64, u64, Option<Arc<str>>, u64);
-
-/// Number of history points to retain (960 points = 16 minutes at 1s interval).
-#[allow(dead_code)]
-pub const HISTORY_CAPACITY: usize = 960;
 
 /// Time window for chart display.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -98,7 +94,6 @@ impl MemorySnapshot {
     }
 
     /// Returns RAM usage as percentage, clamped to `[0.0, 100.0]`.
-    #[allow(dead_code)]
     #[inline]
     pub fn ram_usage_percent(&self) -> f32 {
         if self.ram_total_bytes == 0 {
@@ -109,7 +104,6 @@ impl MemorySnapshot {
     }
 
     /// Returns Swap usage as percentage, clamped to `[0.0, 100.0]`.
-    #[allow(dead_code)]
     #[inline]
     pub fn swap_usage_percent(&self) -> f32 {
         if self.swap_total_bytes == 0 {
@@ -120,7 +114,6 @@ impl MemorySnapshot {
     }
 
     /// Returns Commit usage as percentage, clamped to `[0.0, 100.0]`.
-    #[allow(dead_code)]
     #[inline]
     pub fn commit_usage_percent(&self) -> f32 {
         if self.commit_limit_bytes == 0 {
@@ -131,7 +124,6 @@ impl MemorySnapshot {
     }
 
     /// Alias for the Three Walls badge: Commit Charge percentage.
-    #[allow(dead_code)]
     #[inline]
     pub fn commit_charge_pct(&self) -> f32 {
         self.commit_usage_percent()

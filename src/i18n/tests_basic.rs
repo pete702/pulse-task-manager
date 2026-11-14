@@ -1,8 +1,6 @@
 //! Basic i18n tests: Lang enum, language switching, OS detection.
 
-use crate::i18n::{
-    current_lang, detect_os_language, init_language, os_locale_badge, set_lang, Lang,
-};
+use crate::i18n::{current_lang, detect_os_language, init_language, set_lang, Lang};
 
 #[test]
 fn test_lang_default_is_en() {
@@ -31,11 +29,4 @@ fn test_detect_os_language() {
     let (lang, lang_id) = detect_os_language();
     assert_eq!(lang, Lang::En);
     assert_ne!(lang_id, 0);
-}
-
-#[test]
-fn test_os_locale_badge() {
-    let badge = os_locale_badge();
-    assert!(!badge.is_empty());
-    assert!(badge.starts_with("LOCALE:"));
 }

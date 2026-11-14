@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn test_history_wrap_invalidates_cache() {
         let mut history = MemoryHistory::new();
-        for i in 0..965 {
+        for i in 0..1925 {
             let snap = MemorySnapshot {
                 ram_total_bytes: 1000,
                 ram_used_bytes: 500 + (i % 10) as u64,
@@ -191,7 +191,7 @@ mod tests {
             };
             history.push(&snap);
         }
-        assert_eq!(history.len(), 960, "ring buffer evicts the oldest samples");
+        assert_eq!(history.len(), 1920, "ring buffer evicts the oldest samples");
         history.chart_window = ChartWindow::FifteenMin;
         assert_eq!(history.windowed_ram_timed().count(), 901);
 
@@ -200,7 +200,7 @@ mod tests {
         history.push(&MemorySnapshot {
             ram_total_bytes: 1000,
             ram_used_bytes: 999,
-            sample_elapsed_secs: 966.0,
+            sample_elapsed_secs: 1926.0,
             ..Default::default()
         });
         let series_after = history.ram_series(ChartWindow::FifteenMin);

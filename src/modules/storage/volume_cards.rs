@@ -16,18 +16,7 @@ fn pt(
 ) {
     p.text(pos, a, s, egui::FontId::monospace(sz), c);
 }
-/// Honest 3-tier health: critical -- LOW FREE, >=80% -- HIGH USE, else OK.
-#[allow(dead_code)]
-pub fn health_label(vol: &DiskVolumeInfo) -> (String, egui::Color32) {
-    let pct = vol.used_pct;
-    if vol.is_critical_space {
-        (format!("LOW FREE ({pct:.0}% USED)"), crate::theme::TACTICAL_RED)
-    } else if pct >= 80.0 {
-        (format!("HIGH USE ({pct:.0}%)"), crate::theme::WARNING_AMBER)
-    } else {
-        (format!("OK ({pct:.0}% USED)"), crate::theme::EMERALD_GREEN)
-    }
-}
+
 fn bar_color(vol: &DiskVolumeInfo) -> egui::Color32 {
     if vol.used_pct >= 90.0 || vol.is_critical_space {
         colors::ACCENT_RED

@@ -15,10 +15,10 @@ pub enum WallState {
 impl WallState {
     pub fn label(self) -> &'static str {
         match self {
-            Self::Unconfirmed => "[ ⏳ INITIALIZING TELEMETRY ]",
-            Self::Optimal => "[ ● SYSTEM OPTIMAL ]",
-            Self::Elevated => "[ ● RAM ELEVATED ]",
-            Self::MemoryWall => "[ ▲ MEMORY WALL ]",
+            Self::Unconfirmed => "[ [~] INITIALIZING TELEMETRY ]",
+            Self::Optimal => "[ * SYSTEM OPTIMAL ]",
+            Self::Elevated => "[ * RAM ELEVATED ]",
+            Self::MemoryWall => "[ ^ MEMORY WALL ]",
         }
     }
 }
@@ -76,22 +76,22 @@ mod tests {
     #[test]
     fn test_memory_wall_state() {
         assert_eq!(evaluate(&snapshot(90, 10)), WallState::MemoryWall);
-        assert_eq!(WallState::MemoryWall.label(), "[ ▲ MEMORY WALL ]");
+        assert_eq!(WallState::MemoryWall.label(), "[ ^ MEMORY WALL ]");
     }
 
     #[test]
     fn test_ram_elevated_state() {
         assert_eq!(evaluate(&snapshot(75, 10)), WallState::Elevated);
         assert_eq!(evaluate(&snapshot(50, 85)), WallState::Elevated);
-        assert_eq!(WallState::Elevated.label(), "[ ● RAM ELEVATED ]");
+        assert_eq!(WallState::Elevated.label(), "[ * RAM ELEVATED ]");
     }
 
     #[test]
     fn test_optimal_state_and_missing_memory() {
         assert_eq!(evaluate(&snapshot(50, 50)), WallState::Optimal);
         assert_eq!(evaluate(&SystemSnapshot::new(1, 10.0, None)), WallState::Unconfirmed);
-        assert_eq!(WallState::Optimal.label(), "[ ● SYSTEM OPTIMAL ]");
-        assert_eq!(WallState::Unconfirmed.label(), "[ ⏳ INITIALIZING TELEMETRY ]");
+        assert_eq!(WallState::Optimal.label(), "[ * SYSTEM OPTIMAL ]");
+        assert_eq!(WallState::Unconfirmed.label(), "[ [~] INITIALIZING TELEMETRY ]");
     }
 
     #[test]

@@ -1,29 +1,22 @@
-use crate::modules::cpu::chart_axis::x_grid_spacer;
-use crate::modules::memory::downsampling::lttb_segments;
+use crate::core::downsampling::lttb_segments;
 use crate::modules::storage::chart_tip::{draw_hover_tip, draw_toggles};
 use crate::modules::storage::collector::IO_SPIKE_THRESHOLD_MB_S;
 use crate::modules::storage::view_helpers::truncate;
-use crate::theme::{card_frame, colors};
+use crate::theme::colors;
+use crate::ui::chart_scale::x_grid_spacer;
+#[allow(unused_imports)]
+pub(crate) use crate::ui::chart_scale::{clean_4_axis_max, format_y_tick, lock_time_chart_bounds};
 use crate::ui::primitives::{cyber_accent, draw_cyber_corner_brackets};
 use eframe::egui;
-use egui_plot::{GridMark, HLine, Line, LineStyle, Plot, PlotBounds, PlotPoints};
+use egui_plot::{GridMark, HLine, Line, LineStyle, Plot, PlotPoints};
 use std::sync::Arc;
+
 fn san(v: f64) -> f64 {
     if v.is_finite() {
         v.max(0.0)
     } else {
         0.0
     }
-}
-fn nice_ceil(v: f64) -> f64 {
-    let target = san(v).max(1.0);
-    let steps = [4.0, 8.0, 20.0, 40.0, 80.0, 160.0, 200.0, 400.0, 800.0, 1600.0, 4000.0, 8000.0];
-    for s in steps {
-        if target <= s {
-            return s;
-        }
-    }
-    ((target / 8000.0).ceil() * 8000.0).max(4.0)
 }
 pub(crate) fn stepped_ceiling(
     r: &Arc<Vec<[f64; 2]>>,
@@ -36,7 +29,7 @@ pub(crate) fn stepped_ceiling(
         .filter(|_| sr)
         .chain(w.iter().filter(|_| sw))
         .fold(0.0_f64, |a, p| a.max(san(p[1])));
-    nice_ceil(peak)
+    clean_4_axis_max(peak, 1.0)
 }
 pub(crate) fn next_visibility(sr: bool, sw: bool, is_read: bool) -> (bool, bool) {
     let nr = sr ^ is_read;
@@ -50,6 +43,7 @@ pub(crate) fn next_visibility(sr: bool, sw: bool, is_read: bool) -> (bool, bool)
 fn lbl(s: impl Into<String>, sz: f32, c: egui::Color32) -> egui::RichText {
     egui::RichText::new(s).monospace().size(sz).color(c)
 }
+#[allow(clippy::too_many_arguments)]
 pub fn render_storage_chart(
     ui: &mut egui::Ui,
     read: &Arc<Vec<[f64; 2]>>,
@@ -58,10 +52,11 @@ pub fn render_storage_chart(
     scope: Option<&str>,
     show_read: bool,
     show_write: bool,
+    state: &mut crate::modules::storage::view::StorageViewState,
 ) {
     let lr = read.last().map(|p| san(p[1]) as f32).unwrap_or(0.0);
     let lw = write.last().map(|p| san(p[1]) as f32).unwrap_or(0.0);
-    let resp = card_frame().show(ui, |ui| {
+    let resp = crate::ui::chart_kit::chart_frame().show(ui, |ui| {
         let header_w = ui.available_width();
         let (header_rect, _) =
             ui.allocate_exact_size(egui::vec2(header_w, 22.0), egui::Sense::hover());
@@ -88,14 +83,14 @@ pub fn render_storage_chart(
             egui::Layout::right_to_left(egui::Align::Center),
         );
         for (label, secs) in [("15m", 900), ("5m", 300), ("1m", 60)] {
-            pick_window(&mut right_ui, label, secs, window_secs);
+            pick_window(&mut right_ui, label, secs, window_secs, state);
         }
         if let Some(s) = scope_short {
             if right_ui
                 .add(egui::Button::new(lbl(format!("[ {s} x ]"), 10.0, colors::TEXT_SECONDARY)))
                 .clicked()
             {
-                crate::modules::storage::view::clear_selected();
+                state.clear_selected();
             }
         }
         ui.add_space(4.0);
@@ -120,7 +115,7 @@ pub fn render_storage_chart(
                 .x_grid_spacer(move |input| x_grid_spacer(span, &input))
                 .include_x(-span)
                 .include_x(0.0)
-                .include_y(0.0)
+                .include_y(crate::ui::chart_kit::baseline_y())
                 .include_y(ceil)
                 .allow_scroll(false)
                 .allow_zoom(false)
@@ -137,7 +132,7 @@ pub fn render_storage_chart(
                     format!("{label}: {:.1} MB/s ({when})", san(value.y))
                 })
                 .show(ui, |pu| {
-                    pu.set_plot_bounds(PlotBounds::from_min_max([-span, 0.0], [0.0, ceil]));
+                    lock_time_chart_bounds(pu, window_secs, ceil);
                     pu.hline(
                         HLine::new(IO_SPIKE_THRESHOLD_MB_S as f64)
                             .color(egui::Color32::from_rgba_unmultiplied(255, 42, 84, 110))
@@ -169,14 +164,20 @@ pub fn render_storage_chart(
         let hover = plot_resp.inner.response.hover_pos();
         draw_hud(ui, rect, span, ceil);
         draw_hover_tip(ui, rect, span, ceil, read, write, show_read, show_write, hover);
-        draw_toggles(ui, rect, show_read, show_write);
+        draw_toggles(ui, rect, show_read, show_write, state);
     });
     draw_cyber_corner_brackets(ui, resp.response.rect, cyber_accent((lr + lw).clamp(0.0, 100.0)));
 }
-fn pick_window(ui: &mut egui::Ui, label: &str, secs: usize, current: usize) {
+fn pick_window(
+    ui: &mut egui::Ui,
+    label: &str,
+    secs: usize,
+    current: usize,
+    state: &mut crate::modules::storage::view::StorageViewState,
+) {
     let c = if secs == current { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
     if ui.add(egui::Button::new(lbl(label, 11.0, c))).clicked() {
-        crate::modules::storage::view::set_window_secs(secs);
+        state.set_window_secs(secs);
     }
 }
 fn to_points(s: &Arc<Vec<[f64; 2]>>) -> PlotPoints {
@@ -249,7 +250,13 @@ mod tests {
                 true,
                 false
             ),
-            4.0
+            1.0
         );
+    }
+    #[test]
+    fn clean_4_axis_max_300mb_scales_to_360() {
+        assert_eq!(clean_4_axis_max(300.0, 1.0), 360.0);
+        assert_eq!(360.0 % 4.0, 0.0);
+        assert_eq!(clean_4_axis_max(300.0, 1.0) / 4.0, 90.0);
     }
 }

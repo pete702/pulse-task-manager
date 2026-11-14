@@ -27,26 +27,12 @@ pub fn draw_cell_heat_bar(
     } else {
         egui::Color32::from_rgba_unmultiplied(8, 145, 178, 62)
     };
-    let fr = egui::Rect::from_min_max(inner.min, egui::pos2(inner.min.x + w, inner.max.y));
-    ui.painter().rect_filled(fr, egui::Rounding::same(2.0), fc);
-    if w > 2.5 {
-        let cr = egui::Rect::from_min_max(egui::pos2(fr.max.x - 2.0, fr.min.y), fr.max);
-        let cc = if alert {
-            egui::Color32::from_rgb(254, 205, 211)
-        } else {
-            egui::Color32::from_rgb(240, 253, 250)
-        };
-        ui.painter().rect_filled(cr, egui::Rounding::ZERO, cc);
-    }
-    if r >= 0.08 || alert {
-        let sr = egui::Rect::from_min_max(inner.min, egui::pos2(inner.min.x + 2.0, inner.max.y));
-        let sc = if alert {
-            egui::Color32::from_rgba_unmultiplied(239, 68, 68, 185)
-        } else {
-            egui::Color32::from_rgba_unmultiplied(8, 145, 178, 185)
-        };
-        ui.painter().rect_filled(sr, egui::Rounding::same(2.0), sc);
-    }
+    let bar_h = 3.0_f32;
+    let fr = egui::Rect::from_min_max(
+        egui::pos2(inner.min.x, inner.max.y - bar_h),
+        egui::pos2(inner.min.x + w, inner.max.y),
+    );
+    ui.painter().rect_filled(fr, egui::Rounding::same(1.5), fc);
 }
 pub fn draw_segmented_led_bar(
     ui: &egui::Ui,

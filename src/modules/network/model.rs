@@ -3,7 +3,6 @@
 
 use std::sync::Arc;
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ConnectionGrade {
     TournamentReady,
@@ -17,7 +16,6 @@ pub enum ConnectionGrade {
 }
 
 impl ConnectionGrade {
-    #[allow(dead_code)]
     pub fn badge(self) -> &'static str {
         match self {
             ConnectionGrade::TournamentReady => "TOURNAMENT READY",
@@ -31,7 +29,6 @@ impl ConnectionGrade {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct NetworkAdapterInfo {
     pub name: Arc<str>,
@@ -41,7 +38,6 @@ pub struct NetworkAdapterInfo {
     pub total_tx_bytes: u64,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct NetworkSnapshot {
     pub adapters: Arc<[NetworkAdapterInfo]>,
@@ -55,9 +51,6 @@ pub struct NetworkSnapshot {
     pub grade: ConnectionGrade,
     pub probe_enabled: bool,
 }
-
-#[allow(unused_imports)]
-pub use crate::modules::network::history::NetworkHistory;
 
 #[cfg(test)]
 mod tests {

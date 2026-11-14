@@ -75,7 +75,6 @@ fn render_ram_top_card(ui: &mut egui::Ui, m: &MemorySnapshot, h: &MemoryHistory)
             if fw > 0.0 {
                 fill_seg(ui, r, x2, x3, egui::Color32::from_rgb(0x1E, 0x22, 0x30));
             }
-
             ui.painter().rect_stroke(
                 r,
                 egui::Rounding::same(3.0),
@@ -143,87 +142,45 @@ fn render_commit_top_card(ui: &mut egui::Ui, m: &MemorySnapshot) {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
                 let hdr = egui::Label::new(
-                    egui::RichText::new("COMMIT CHARGE & KERNEL POOLS")
-                        .monospace()
-                        .size(13.0)
-                        .color(colors::TEXT_PRIMARY),
+                    egui::RichText::new("COMMIT CHARGE & KERNEL POOLS").monospace().size(13.0).color(colors::TEXT_PRIMARY),
                 )
                 .wrap(false);
                 ui.add(hdr).on_hover_text(
                     "Commit Charge = virtual memory committed by programs (RAM + Pagefile). Kernel Pools = memory used by Windows core (paged/non-paged).",
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(
-                        egui::RichText::new(format!("{:.1}%", cp)).monospace().size(28.0).color(c),
-                    );
+                    ui.label(egui::RichText::new(format!("{:.1}%", cp)).monospace().size(28.0).color(c));
                 });
             });
             ui.add_space(8.0);
             let pv = if v { cp / 100.0 } else { 0.0 };
             let bw = ui.available_width().max(80.0);
             let (r, rs) = ui.allocate_exact_size(egui::vec2(bw, 16.0), egui::Sense::hover());
-            rs.on_hover_text(
-                "Virtual Commit Charge vs system Commit Limit (RAM + Pagefile). >85% = OOM risk.",
-            );
+            rs.on_hover_text("Virtual Commit Charge vs system Commit Limit (RAM + Pagefile). >85% = OOM risk.");
             draw_segmented_led_bar(ui, r, pv, 28, colors::ACCENT_PURPLE);
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("Pagefile Swap:")
-                        .monospace()
-                        .size(10.0)
-                        .color(colors::TEXT_SECONDARY),
-                );
+                ui.label(egui::RichText::new("Pagefile Swap:").monospace().size(10.0).color(colors::TEXT_SECONDARY));
+                ui.add(egui::Label::new(egui::RichText::new(format!("{:.1}%", m.swap_usage_percent())).monospace().size(11.0).color(colors::TEXT_PRIMARY)).wrap(false));
+                ui.label(egui::RichText::new("|").monospace().size(10.0).color(colors::TEXT_SECONDARY));
                 ui.add(
                     egui::Label::new(
-                        egui::RichText::new(format!("{:.1}%", m.swap_usage_percent()))
+                        egui::RichText::new(format!(
+                            "{} Procs / {} Threads / {} Handles",
+                            m.system_processes, m.system_threads, m.system_handles
+                        ))
                             .monospace()
                             .size(11.0)
                             .color(colors::TEXT_PRIMARY),
                     )
                     .wrap(false),
                 );
-                ui.label(
-                    egui::RichText::new("|").monospace().size(10.0).color(colors::TEXT_SECONDARY),
-                );
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(format!(
-                            "{} Procs / {} Threads",
-                            m.system_processes, m.system_threads
-                        ))
-                        .monospace()
-                        .size(11.0)
-                        .color(colors::TEXT_PRIMARY),
-                    )
-                    .wrap(false),
-                );
             });
             ui.add_space(10.0);
             egui::Grid::new("commit_top_grid").num_columns(3).spacing([16.0, 6.0]).show(ui, |ui| {
-                metric_cell(
-                    ui,
-                    "COMMIT / LIMIT",
-                    &format!("{:.2} / {:.2} GiB", m.commit_total_gib(), m.commit_limit_gib()),
-                    colors::ACCENT_PURPLE,
-                );
-                metric_cell(
-                    ui,
-                    "KERNEL POOLS",
-                    &format!(
-                        "{:.2} GiB ({:.0}/{:.0}M)",
-                        m.kernel_total_mib() / 1024.0,
-                        m.kernel_paged_mib(),
-                        m.kernel_nonpaged_mib()
-                    ),
-                    colors::ACCENT_AMBER,
-                );
-                metric_cell(
-                    ui,
-                    "AVAILABLE COMMIT",
-                    &format_bytes(m.commit_limit_bytes.saturating_sub(m.commit_total_bytes)),
-                    colors::TEXT_PRIMARY,
-                );
+                metric_cell(ui, "COMMIT / LIMIT", &format!("{:.2} / {:.2} GiB", m.commit_total_gib(), m.commit_limit_gib()), colors::ACCENT_PURPLE);
+                metric_cell(ui, "KERNEL POOLS", &format!("{:.2} GiB ({:.0}/{:.0}M)", m.kernel_total_mib() / 1024.0, m.kernel_paged_mib(), m.kernel_nonpaged_mib()), colors::ACCENT_AMBER);
+                metric_cell(ui, "AVAILABLE COMMIT", &format_bytes(m.commit_limit_bytes.saturating_sub(m.commit_total_bytes)), colors::TEXT_PRIMARY);
                 ui.end_row();
             });
         });

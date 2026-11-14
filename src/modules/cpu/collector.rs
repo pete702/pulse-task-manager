@@ -4,11 +4,9 @@ pub use crate::modules::cpu::collector_cpu::{collect_cpu, warmup_cpu};
 use crate::modules::cpu::collector_eco;
 use crate::modules::cpu::model::RawProcessCpuRow;
 #[allow(unused_imports)]
-pub use crate::modules::cpu::qos_action::mark_pending_eco;
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 use sysinfo::{ProcessRefreshKind, System, UpdateKind};
-#[allow(dead_code)]
 pub struct CpuCollector {
     pub seen_pids: HashSet<(u32, u64)>,
     eco_cache: HashMap<(u32, u64), (bool, Instant)>,
@@ -18,7 +16,6 @@ pub struct CpuCollector {
     last_scan: Option<Instant>,
 }
 impl CpuCollector {
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             seen_pids: HashSet::new(),
@@ -29,22 +26,21 @@ impl CpuCollector {
             last_scan: None,
         }
     }
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn set_eco_cached(&mut self, pid: u32, start_time: u64, on: bool) {
         if self.eco_cache.len() > 512 {
             self.eco_cache.clear();
         }
         self.eco_cache.insert((pid, start_time), (on, Instant::now()));
     }
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn invalidate_eco(&mut self, pid: u32, start_time: u64) {
         self.eco_cache.remove(&(pid, start_time));
     }
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn is_new(&self, pid: u32, start_time: u64) -> bool {
         !self.seen_pids.contains(&(pid, start_time))
     }
-    #[allow(dead_code)]
     pub fn collect_process_cpu(
         &mut self,
         sys: &mut System,
@@ -132,16 +128,15 @@ impl CpuCollector {
         raw_rows
     }
     fn fill_eco_qos(&mut self, rows: &mut [RawProcessCpuRow]) {
-        let pending: HashMap<(u32, u64), Option<bool>> =
-            crate::modules::cpu::qos_action::PENDING_ECO
-                .get()
-                .map(|slot| {
-                    std::mem::take(&mut *slot.lock().unwrap_or_else(|e| e.into_inner()))
-                        .into_iter()
-                        .map(|(k, (v, _))| (k, v))
-                        .collect()
-                })
-                .unwrap_or_default();
+        let pending: HashMap<(u32, u64), Option<bool>> = crate::platform::qos::PENDING_ECO
+            .get()
+            .map(|slot| {
+                let mut g = slot.lock().unwrap_or_else(|e| e.into_inner());
+                let map = std::mem::take(&mut g.0);
+                g.1.clear();
+                map.into_iter().collect()
+            })
+            .unwrap_or_default();
         for row in rows.iter_mut() {
             if row.pid == 0 || row.pid == 4 {
                 row.eco_qos = Some(false);

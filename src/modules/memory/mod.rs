@@ -1,68 +1,25 @@
-//! Memory module for PULSE: pure math model, sysinfo collector, HUD view,
-//! multi-horizon chart, and the virtualized process table.
+//! Memory module for PULSE: RAM/swap collector, HUD view, chart, and safety helpers.
 
-// The legacy memory process table is retained for tests and future diagnostics;
-// the master Processes tab is now the single UI entry point.
-#![allow(dead_code)]
-
-pub mod action_bar;
-pub mod action_bar_status;
-pub mod action_bar_tests;
-pub mod action_bar_view;
-pub mod actions;
 pub mod chart_axis;
 pub mod chart_chrome;
 pub mod chart_hud;
 pub mod chart_view;
 pub mod collector;
-pub mod composition_bar;
 pub mod constants;
 pub mod delta_tracker;
 pub mod delta_tracker_tests;
-pub mod downsampling;
 pub mod formatters;
 pub mod history;
 pub mod history_tests;
-pub mod kernel_tiles;
 pub mod model;
 pub mod model_conversions;
 pub mod page;
-pub mod process_item;
-pub mod process_model;
-pub mod process_model_tests;
 pub mod process_spike;
-pub mod process_target;
-pub mod protected_lists;
-pub mod ram_card;
-pub mod safe_handle;
-pub mod selection;
-pub mod selection_tests;
-pub mod swap_commit_card;
-mod table_body;
-pub mod table_body_tests;
-mod table_cache;
-mod table_context_menu;
-mod table_name_cell;
-pub mod table_selection;
-pub mod table_selection_tests;
-mod table_sort;
-pub mod table_state;
-pub mod table_view;
-pub mod table_view_tests;
-mod table_widgets;
 pub mod top_cards;
 pub mod view;
-pub mod view_cards;
-pub mod win32_api;
 
-pub use crate::modules::memory::safe_handle::query_creation_time_by_pid;
-pub use crate::modules::memory::win32_api::query_process_exe_path;
-
-#[cfg(test)]
-mod actions_tests;
+pub use crate::platform::handle::query_creation_time_by_pid;
+pub use crate::platform::win32_api::query_process_exe_path;
 
 #[cfg(test)]
 mod chart_tests;
-
-#[cfg(test)]
-mod table_selection_cache_tests;

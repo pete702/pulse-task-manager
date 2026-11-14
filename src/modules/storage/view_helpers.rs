@@ -2,37 +2,7 @@
 use crate::modules::storage::model::{DiskVolumeInfo, StorageSnapshot};
 use crate::theme::{card_frame, colors};
 use eframe::egui;
-fn rt(s: impl Into<String>, sz: f32, c: egui::Color32) -> egui::RichText {
-    egui::RichText::new(s).monospace().size(sz).color(c)
-}
-#[allow(dead_code)]
-pub(crate) fn render_blackbox(ui: &mut egui::Ui, snap: &StorageSnapshot) {
-    ui.vertical(|ui| {
-        ui.label(rt("BLACKBOX", 10.0, colors::TEXT_SECONDARY));
-        if let Some(spike) = snap.last_io_spike.as_ref() {
-            let sub = format!(
-                "{} {:.1} MB/s ({}s ago)",
-                spike.process_name, spike.peak_mb_s, spike.ticks_ago
-            );
-            let tip = format!(
-                "PID {} at {} - R {:.1} / W {:.1} MB/s - peak {:.1} MB/s",
-                spike.pid, spike.timestamp_hms, spike.read_mb_s, spike.write_mb_s, spike.peak_mb_s
-            );
-            let resp = ui.label(rt("SPIKE ALERT", 13.0, colors::ACCENT_RED));
-            resp.on_hover_text(tip);
-            ui.label(rt(truncate(&sub, 28), 9.0, colors::TEXT_SECONDARY));
-        } else {
-            ui.label(rt("ARMED", 13.0, crate::theme::OPTIMAL_EMERALD));
-        }
-    });
-}
-#[allow(dead_code)]
-pub(crate) fn col_kpi(ui: &mut egui::Ui, label: &str, value: String, color: egui::Color32) {
-    ui.vertical(|ui| {
-        ui.label(rt(label, 10.0, colors::TEXT_SECONDARY));
-        ui.label(rt(value, 13.0, color));
-    });
-}
+
 pub(super) fn truncate(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         return text.to_owned();
@@ -63,7 +33,6 @@ pub(crate) fn scope_label_for(
     })
 }
 /// Fixed 4-column KPI strip with top padding.
-#[allow(dead_code)]
 pub(crate) fn render_status_and_kpis(
     ui: &mut egui::Ui,
     snap: &StorageSnapshot,

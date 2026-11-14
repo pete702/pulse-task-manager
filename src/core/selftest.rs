@@ -9,14 +9,14 @@ use std::time::Duration;
 use crate::core::selftest_app::SelfTestApp;
 use crate::core::spawn_telemetry_worker;
 use crate::i18n::{current_lang, set_lang, Lang};
-use crate::modules::memory::actions::{
-    open_process_file_location, purge_system_working_sets, terminate_process_group,
-    trim_process_group, ReclaimReport, TrimSkipReason,
-};
 use crate::modules::memory::history::MemoryHistory;
-use crate::modules::memory::process_target::ProcessTarget;
-use crate::modules::memory::safe_handle::{
+use crate::platform::actions::{open_process_file_location, terminate_process_group};
+use crate::platform::handle::{
     is_app_elevated, is_protected_process, verify_pid_safety_gate, SafeHandle,
+};
+use crate::platform::target::ProcessTarget;
+use crate::platform::trim::{
+    trim_process_group, trim_processes_working_sets, ReclaimReport, TrimSkipReason,
 };
 
 /// Runs a completely headless self-test without eframe/OpenGL.
@@ -45,18 +45,26 @@ pub fn run_headless_self_test() -> Result<(), String> {
         "[SelfTest] Received snapshot: uptime={}s, pulse_ram_mb={:.1}",
         snap.uptime_secs, snap.pulse_ram_mb
     );
-    if snap.uptime_secs == 0 {
-        return Err("uptime_secs is 0".to_string());
+    #[cfg(target_os = "windows")]
+    {
+        if snap.uptime_secs == 0 {
+            return Err("uptime_secs is 0".to_string());
+        }
+        if snap.pulse_ram_mb <= 0.0 {
+            return Err(
+                "pulse_ram_mb <= 0.0 (K32GetProcessMemoryInfo failed or returned zero)".to_string()
+            );
+        }
     }
-    if snap.pulse_ram_mb <= 0.0 {
-        return Err(
-            "pulse_ram_mb <= 0.0 (K32GetProcessMemoryInfo failed or returned zero)".to_string()
-        );
+    #[cfg(not(target_os = "windows"))]
+    {
+        if !snap.pulse_ram_mb.is_finite() {
+            return Err("pulse_ram_mb not finite".to_string());
+        }
     }
     if snap.cpu.is_none() {
         return Err("Selftest snapshot missing CPU telemetry".to_string());
     }
-    // storage read_bytes_per_sec / write_bytes_per_sec and network rx_bytes_per_sec / tx_bytes_per_sec
     if !(snap.storage.read_mb_s.is_finite() && snap.storage.write_mb_s.is_finite()) {
         return Err("Selftest storage rates are not finite".to_string());
     }
@@ -73,44 +81,46 @@ pub fn run_headless_self_test() -> Result<(), String> {
             "[SelfTest] MemorySnapshot: ram_total={} bytes, ram_used={} bytes, swap_total={} bytes",
             mem.ram_total_bytes, mem.ram_used_bytes, mem.swap_total_bytes
         );
-        if mem.ram_total_bytes == 0 {
-            return Err("ram_total_bytes is 0".to_string());
+        #[cfg(target_os = "windows")]
+        {
+            if mem.ram_total_bytes == 0 {
+                return Err("ram_total_bytes is 0".to_string());
+            }
+            if mem.ram_usage_percent() <= 0.0 {
+                return Err(format!(
+                    "ram_usage_percent is {:.2} (expected > 0)",
+                    mem.ram_usage_percent()
+                ));
+            }
         }
-        if mem.ram_usage_percent() <= 0.0 {
-            return Err(format!(
-                "ram_usage_percent is {:.2} (expected > 0)",
-                mem.ram_usage_percent()
-            ));
+        #[cfg(not(target_os = "windows"))]
+        {
+            if !mem.ram_usage_percent().is_finite() {
+                return Err("ram_usage_percent not finite".to_string());
+            }
         }
-        println!(
-            "[SelfTest] FULL scan: scan_ms={:.3}, processes={}, snapshot_id={}, process_scan_id={}, overflows={}",
-            mem.scan_duration_ms,
-            mem.processes.len(),
-            mem.snapshot_id,
-            mem.process_scan_id,
-            mem.channel_overflows
-        );
+        println!("[SelfTest] FULL scan: scan_ms={:.3}, processes={}, snapshot_id={}, process_scan_id={}, overflows={}",
+            mem.scan_duration_ms, mem.processes.len(), mem.snapshot_id, mem.process_scan_id, mem.channel_overflows);
         if let Some(ref fast) = samples[1].memory {
             let shared = std::sync::Arc::ptr_eq(&mem.processes, &fast.processes);
-            println!(
-                "[SelfTest] FAST RAM tick: scan_ms={:.3}, processes={}, snapshot_id={}, process_scan_id={}, arc_shared={}",
-                fast.scan_duration_ms,
-                fast.processes.len(),
-                fast.snapshot_id,
-                fast.process_scan_id,
-                shared
-            );
+            println!("[SelfTest] FAST RAM tick: scan_ms={:.3}, processes={}, snapshot_id={}, process_scan_id={}, arc_shared={}",
+                fast.scan_duration_ms, fast.processes.len(), fast.snapshot_id, fast.process_scan_id, shared);
         }
         let mut history = MemoryHistory::new();
         history.push(mem);
         if history.len() != 1 {
             return Err(format!("MemoryHistory len is {} (expected 1)", history.len()));
         }
+        #[cfg(target_os = "windows")]
         if history.peak_ram_percent <= 0.0 {
             return Err(format!(
                 "peak_ram_percent is {:.2} (expected > 0)",
                 history.peak_ram_percent
             ));
+        }
+        #[cfg(not(target_os = "windows"))]
+        if !history.peak_ram_percent.is_finite() {
+            return Err("peak_ram_percent not finite".to_string());
         }
         println!(
             "[SelfTest] MemoryHistory: len={}, peak_ram={:.2}%",
@@ -131,18 +141,24 @@ pub fn run_headless_self_test() -> Result<(), String> {
     }
     println!("[SelfTest] i18n set_lang: En OK");
     let _ = is_app_elevated();
-    if !is_protected_process(0, "system") {
-        return Err("PID 0 must be blocked by the safety gate".to_string());
+    for (pid, name) in
+        [(0u32, "System"), (4u32, "System"), (std::process::id(), "pulse_manager.exe")]
+    {
+        if !is_protected_process(pid, name) || verify_pid_safety_gate(pid, name).is_ok() {
+            return Err(format!("PID {pid} must be rejected by safety/protected guards"));
+        }
     }
-    if !verify_pid_safety_gate(0, "system").is_err() {
-        return Err("PID 0 must be rejected by verify_pid_safety_gate".to_string());
+    for name in ["csrss.exe", "lsass.exe"] {
+        if !is_protected_process(12345, name) || verify_pid_safety_gate(12345, name).is_ok() {
+            return Err(format!("{name} must be rejected by safety/protected guards"));
+        }
     }
-    if SafeHandle::open(0, 0).is_some() {
-        return Err("PID 0 must not yield a usable process handle".to_string());
+    if SafeHandle::open(0, 0).is_some() || SafeHandle::open_process(4).is_some() {
+        return Err("Protected kernel PIDs must not yield usable process handles".to_string());
     }
     let _targets: &[ProcessTarget] = &[];
     let _report: ReclaimReport = trim_process_group(_targets);
-    let _ = purge_system_working_sets(_targets);
+    let _ = trim_processes_working_sets(_targets);
     let _ = terminate_process_group(_targets);
     assert!(
         open_process_file_location(std::path::Path::new("")).is_err(),

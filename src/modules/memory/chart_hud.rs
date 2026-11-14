@@ -1,8 +1,8 @@
 //! In-canvas HUD drawing for the memory chart: axis labels and interactive legend.
 
-use crate::modules::memory::chart_axis::{format_tick_label, x_axis_ticks};
 use crate::modules::memory::model::ChartWindow;
 use crate::theme::colors;
+use crate::ui::chart_scale::{format_tick_label, x_axis_ticks};
 use eframe::egui;
 
 fn draw_label_bg(
@@ -55,7 +55,8 @@ pub fn draw_x_axis_hud_labels(ui: &egui::Ui, plot_rect: egui::Rect, window: Char
     let p = ui.painter();
     let c = egui::Color32::from_rgba_unmultiplied(148, 163, 184, 165);
     let f = egui::FontId::monospace(11.0);
-    let ticks = x_axis_ticks(window);
+    let secs = window.seconds() as usize;
+    let ticks = x_axis_ticks(secs);
     let y = plot_rect.bottom() - 5.0;
     let count = ticks.len();
     for (idx, tick) in ticks.iter().enumerate() {
@@ -64,7 +65,7 @@ pub fn draw_x_axis_hud_labels(ui: &egui::Ui, plot_rect: egui::Rect, window: Char
         } else {
             plot_rect.left()
         };
-        let label = format_tick_label(window, *tick);
+        let label = format_tick_label(secs, *tick);
         let (align, x_adj) = if idx == 0 {
             (egui::Align2::LEFT_BOTTOM, plot_rect.left() + 8.0)
         } else if idx + 1 == count {
@@ -174,10 +175,6 @@ fn fmt_rel_time(x_min: f64) -> String {
     }
 }
 
-fn nearest_sample(points: &[[f64; 2]], x: f64) -> Option<[f64; 2]> {
-    points.iter().copied().min_by(|a, b| (a[0] - x).abs().total_cmp(&(b[0] - x).abs()))
-}
-
 #[allow(clippy::too_many_arguments)]
 pub fn draw_hud_scanner(
     ui: &egui::Ui,
@@ -222,22 +219,24 @@ pub fn draw_hud_scanner(
         if !enabled {
             continue;
         }
-        if let Some(pt) = nearest_sample(pts, x_min) {
-            let v = if pt[1].is_finite() { pt[1].clamp(0.0, 100.0) } else { 0.0 };
-            let y = plot_rect.bottom() - (v as f32 / 100.0) * plot_rect.height();
-            let pos = egui::pos2(pointer.x, y);
-            p.circle_filled(
-                pos,
-                5.0,
-                egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 70),
-            );
-            p.circle_filled(pos, 3.5, color);
-            p.circle_stroke(
-                pos,
-                3.5,
-                egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(240, 253, 250)),
-            );
-            tip.push((format!("{label}: {v:.1}%"), color));
+        if let Some(i) = crate::ui::chart_kit::find_nearest_index(pts, x_min) {
+            if let Some(pt) = pts.get(i).copied() {
+                let v = if pt[1].is_finite() { pt[1].clamp(0.0, 100.0) } else { 0.0 };
+                let y = plot_rect.bottom() - (v as f32 / 100.0) * plot_rect.height();
+                let pos = egui::pos2(pointer.x, y);
+                p.circle_filled(
+                    pos,
+                    5.0,
+                    egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 70),
+                );
+                p.circle_filled(pos, 3.5, color);
+                p.circle_stroke(
+                    pos,
+                    3.5,
+                    egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(240, 253, 250)),
+                );
+                tip.push((format!("{label}: {v:.1}%"), color));
+            }
         }
     }
     if tip.len() <= 1 {

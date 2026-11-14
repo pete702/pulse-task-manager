@@ -9,10 +9,8 @@ use sysinfo::{DiskKind, Disks};
 use crate::modules::cpu::model::RawProcessCpuRow;
 use crate::modules::storage::model::{DiskMediaKind, DiskVolumeInfo};
 
-#[allow(dead_code)]
 pub const TOP_IO_MIN_MB_S: f32 = 0.05;
 
-#[allow(dead_code)]
 pub fn media_kind(disk: &sysinfo::Disk) -> DiskMediaKind {
     if disk.is_removable() {
         DiskMediaKind::Removable
@@ -25,7 +23,6 @@ pub fn media_kind(disk: &sysinfo::Disk) -> DiskMediaKind {
     }
 }
 
-#[allow(dead_code)]
 pub fn volumes_from_disks(disks: &Disks) -> Vec<DiskVolumeInfo> {
     let mut volumes: Vec<DiskVolumeInfo> = disks
         .list()
@@ -58,7 +55,6 @@ pub fn volumes_from_disks(disks: &Disks) -> Vec<DiskVolumeInfo> {
     volumes
 }
 
-#[allow(dead_code)]
 pub fn clamp_rate(v: f32) -> f32 {
     if v.is_finite() {
         v.clamp(0.0, 100_000.0)
@@ -67,7 +63,6 @@ pub fn clamp_rate(v: f32) -> f32 {
     }
 }
 
-#[allow(dead_code)]
 #[allow(clippy::type_complexity)]
 pub fn aggregate_io(raw: &[RawProcessCpuRow]) -> (f32, f32, Option<(u32, Arc<str>, f32)>) {
     let mut read_total = 0.0f32;
@@ -101,7 +96,6 @@ pub fn aggregate_io(raw: &[RawProcessCpuRow]) -> (f32, f32, Option<(u32, Arc<str
 
 /// Per-physical-disk process I/O fallback when IOCTL counters are missing.
 /// Known letters of unmapped volumes never fall through to Disk 0.
-#[allow(dead_code)]
 #[allow(clippy::type_complexity)]
 pub fn aggregate_io_by_disk(
     raw: &[RawProcessCpuRow],
@@ -145,7 +139,6 @@ pub fn aggregate_io_by_disk(
     out
 }
 
-#[allow(dead_code)]
 pub(super) fn aggregate_io_by_letter(raw: &[RawProcessCpuRow]) -> HashMap<char, (f64, f64)> {
     let mut out: HashMap<char, (f64, f64)> = HashMap::new();
     for row in raw {

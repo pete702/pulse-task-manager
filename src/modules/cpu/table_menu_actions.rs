@@ -1,8 +1,8 @@
 //! Bottom action bar and grouped process actions (split from table_menu.rs).
 use crate::modules::cpu::model::{ProcessCpuItem, RawProcessCpuRow};
-use crate::modules::cpu::qos_action as q;
 use crate::modules::cpu::table_menu::{action_button, resolve_group_targets, GroupTarget};
 use crate::modules::cpu::table_state::CpuTableState;
+use crate::platform::qos as q;
 use crate::theme::colors;
 use eframe::egui;
 use std::time::Instant;
@@ -51,13 +51,7 @@ pub(crate) fn spawn_eco(
         .map(|t| ((t.pid, t.start_time), state.eco_overrides.get(&(t.pid, t.start_time)).copied()))
         .collect();
     for t in &targets {
-        let key = (t.pid, t.start_time);
-        if state.eco_overrides.len() >= 512 && !state.eco_overrides.contains_key(&key) {
-            if let Some(&k) = state.eco_overrides.keys().next() {
-                state.eco_overrides.remove(&k);
-            }
-        }
-        state.eco_overrides.insert(key, enable);
+        state.record_eco_override(t.pid, t.start_time, enable);
     }
     let total = targets.len();
     let (lead, lst) = (targets[0].pid, targets[0].start_time);
@@ -110,7 +104,12 @@ pub(crate) fn spawn_kill(state: &mut CpuTableState, targets: Vec<GroupTarget>, n
     wk(state);
     state.spawn_menu_action(move || {
         let (mut ok, mut last) = (0, String::new());
+        let mut skipped_protected = 0usize;
         for t in targets {
+            if crate::modules::cpu::kill_modal::is_protected_pid(t.pid) {
+                skipped_protected += 1;
+                continue;
+            }
             if !ct_ok(&t) {
                 continue;
             }
@@ -120,11 +119,13 @@ pub(crate) fn spawn_kill(state: &mut CpuTableState, targets: Vec<GroupTarget>, n
             }
         }
         let m = if total == 1 {
-            if ok == 1 {
-                "Task ended".to_owned()
-            } else {
-                format!("End blocked: {last}")
-            }
+            crate::modules::cpu::kill_modal::termination_status(ok, total, skipped_protected, &last)
+        } else if skipped_protected > 0 && ok == 0 && skipped_protected == total {
+            "Skipped protected/self process".to_owned()
+        } else if skipped_protected > 0 {
+            format!(
+                "Terminated {ok}/{total} processes in {name} group (skipped {skipped_protected} protected/self)"
+            )
         } else {
             format!("Terminated {ok}/{total} processes in {name} group")
         };
@@ -144,9 +145,12 @@ pub(crate) fn render_bottom_action_bar(
     }
     ui.horizontal(|ui| {
         let can_act = selected.is_some();
-        state.confirm_kill = state.confirm_kill.filter(|(pid, at)| {
-            Instant::now().duration_since(*at).as_secs() < 3 && state.selected_pid == Some(*pid)
-        });
+        if let Some((pid, _, at)) = state.confirm_kill.as_ref() {
+            if Instant::now().duration_since(*at).as_secs() >= 3 || state.selected_pid != Some(*pid)
+            {
+                state.confirm_kill = None;
+            }
+        }
         if let Some(item) = selected {
             if action_button(ui, can_act, "[ Trim RAM ]", colors::ACCENT_CYAN).clicked() {
                 let t = resolve_group_targets(item, state.group_clones, raw);
@@ -160,7 +164,7 @@ pub(crate) fn render_bottom_action_bar(
                 let t = resolve_group_targets(item, state.group_clones, raw);
                 spawn_open(state, t);
             }
-            if let Some((armed, _)) = state.confirm_kill {
+            if let Some((armed, _, _)) = state.confirm_kill {
                 if armed == item.pid {
                     if action_button(ui, true, "[ Cancel ]", colors::TEXT_SECONDARY).clicked() {
                         state.confirm_kill = None;
@@ -169,14 +173,16 @@ pub(crate) fn render_bottom_action_bar(
                     if action_button(ui, true, "[ Confirm Kill (3s) ]", colors::ACCENT_RED)
                         .clicked()
                     {
-                        let t = resolve_group_targets(item, state.group_clones, raw);
-                        spawn_kill(state, t, item.name.to_string());
+                        let frozen =
+                            state.confirm_kill.take().map(|(_, t, _)| t).unwrap_or_default();
+                        spawn_kill(state, frozen, item.name.to_string());
                     }
                 } else {
                     state.confirm_kill = None;
                 }
             } else if action_button(ui, can_act, "[ End Task ]", colors::ACCENT_RED).clicked() {
-                state.confirm_kill = Some((item.pid, Instant::now()));
+                let gc = state.group_clones;
+                crate::modules::cpu::table_menu::arm_context_menu_kill(state, item, gc, raw);
                 let m =
                     format!("Click Confirm Kill within 3s to end {} (PID {})", item.name, item.pid);
                 state.last_action_msg = Some((m, Instant::now()));

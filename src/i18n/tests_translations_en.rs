@@ -6,7 +6,7 @@ use crate::i18n::{set_lang, Key, Lang};
 fn test_key_translation_en() {
     set_lang(Lang::En);
     // Top bar / window chrome
-    assert_eq!(Key::AppTitle.t(), "▲ PULSE // TELEMETRY");
+    assert_eq!(Key::AppTitle.t(), "^ PULSE // TELEMETRY");
     assert_eq!(Key::VersionPrefix.t(), "v");
     assert_eq!(Key::UptimeLabel.t(), "Uptime");
 
@@ -26,11 +26,11 @@ fn test_key_translation_en() {
     assert_eq!(Key::SelfTestFailed.t(), "SELF-TEST FAILED");
 
     // Status bar
-    assert_eq!(Key::StatusReady.t(), "● READY");
+    assert_eq!(Key::StatusReady.t(), "* READY");
 
     // Memory module - Card headers
-    assert_eq!(Key::PhysicalRamTitle.t(), "• PHYSICAL MEMORY (RAM)");
-    assert_eq!(Key::SwapCommitTitle.t(), "• SWAP FILE & COMMIT");
+    assert_eq!(Key::PhysicalRamTitle.t(), "* PHYSICAL MEMORY (RAM)");
+    assert_eq!(Key::SwapCommitTitle.t(), "* SWAP FILE & COMMIT");
 
     // Memory module - Grid labels (Card 1: RAM)
     assert_eq!(Key::UsedTotal.t(), "Used / Total");
@@ -49,7 +49,11 @@ fn test_key_translation_en() {
     assert_eq!(Key::OsActivityTitle.t(), "OS Activity");
 
     // Chart
-    assert_eq!(Key::MemoryHistoryTitle.t(), "● MEMORY UTILIZATION HISTORY");
+    assert_eq!(Key::MemoryHistoryTitle.t(), "* MEMORY UTILIZATION HISTORY");
     assert_eq!(Key::RamPercent.t(), "RAM %");
     assert_eq!(Key::SwapPercent.t(), "Swap %");
+
+    // Memory process table
+    assert_eq!(Key::MemoryNoProcesses.t(), "No processes available");
+    assert_eq!(Key::MemoryNoMatchingProcesses.t(), "No processes match current search");
 }

@@ -2,9 +2,6 @@
 
 use crate::i18n::Key;
 use crate::modules::cpu::table_state::CpuTableState;
-use crate::modules::memory::action_bar::MemoryActionBarState;
-use crate::modules::memory::page::MemorySubView;
-use crate::modules::memory::table_state::MemoryTableState;
 use eframe::egui;
 
 /// Active tab in the left sidebar.
@@ -49,15 +46,38 @@ impl ActiveTab {
     }
 }
 
+/// Applies Escape to the active tab only. Returns true if persisted/filter state changed.
+pub(crate) fn apply_escape(active_tab: ActiveTab, cpu_table_state: &mut CpuTableState) -> bool {
+    match active_tab {
+        ActiveTab::Cpu | ActiveTab::Processes => {
+            if !cpu_table_state.search_query.is_empty() {
+                cpu_table_state.search_query.clear();
+                cpu_table_state.mark_dirty();
+                true
+            } else if cpu_table_state.selected_pid.is_some()
+                || cpu_table_state.selected_name.is_some()
+                || cpu_table_state.confirm_kill.is_some()
+            {
+                cpu_table_state.selected_pid = None;
+                cpu_table_state.selected_start_time = None;
+                cpu_table_state.selected_name = None;
+                cpu_table_state.confirm_kill = None;
+                cpu_table_state.mark_dirty();
+                true
+            } else {
+                false
+            }
+        }
+        ActiveTab::Memory | ActiveTab::Storage | ActiveTab::Network | ActiveTab::System => false,
+    }
+}
+
 /// Handles global hotkeys for the application.
 /// Returns true if a hotkey was handled and the UI should repaint immediately.
 pub fn handle_global_hotkeys(
     ctx: &egui::Context,
     active_tab: &mut ActiveTab,
-    memory_sub_view: &mut MemorySubView,
-    table_state: &mut MemoryTableState,
     cpu_table_state: &mut CpuTableState,
-    action_state: &mut MemoryActionBarState,
     telemetry_paused: &mut bool,
 ) -> bool {
     let wants_input = ctx.wants_keyboard_input();
@@ -92,13 +112,11 @@ pub fn handle_global_hotkeys(
     // Ctrl+F: Focus search in the master Processes tab
     if ctrl_f && !wants_input {
         *active_tab = ActiveTab::Processes;
-        *memory_sub_view = MemorySubView::Overview;
         cpu_table_state.focus_search_next_frame = true;
-        table_state.focus_search_next_frame = true;
         ctx.request_repaint();
         handled = true;
     }
-    // Escape: tab-scoped clear search or selection
+    // Escape: tab-scoped clear search or selection only for active tab.
     if esc {
         if matches!(*active_tab, ActiveTab::Cpu | ActiveTab::Processes) {
             ctx.memory_mut(|m| {
@@ -107,31 +125,9 @@ pub fn handle_global_hotkeys(
                     m.surrender_focus(id);
                 }
             });
-            if !cpu_table_state.search_query.is_empty() {
-                cpu_table_state.search_query.clear();
-                cpu_table_state.mark_dirty();
-                handled = true;
-            } else if cpu_table_state.selected_pid.is_some()
-                || cpu_table_state.confirm_kill.is_some()
-            {
-                cpu_table_state.selected_pid = None;
-                cpu_table_state.selected_start_time = None;
-                cpu_table_state.selected_name = None;
-                cpu_table_state.confirm_kill = None;
-                cpu_table_state.mark_dirty();
-                handled = true;
-            }
-        } else if *active_tab == ActiveTab::Memory {
-            if !table_state.search_query.is_empty() {
-                table_state.clear_search();
-                handled = true;
-            } else if table_state.selected_pid.is_some() {
-                table_state.clear_selection_state();
-                action_state.cancel_confirm();
-                handled = true;
-            } else {
-                action_state.cancel_confirm();
-            }
+        }
+        if apply_escape(*active_tab, cpu_table_state) {
+            handled = true;
         }
     }
     // Ctrl+1..Ctrl+6: switch tabs quickly
@@ -151,4 +147,24 @@ pub fn handle_global_hotkeys(
         }
     }
     handled
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_is_scoped_to_active_tab() {
+        let mut cpu = CpuTableState::default();
+        cpu.search_query = "cpuq".to_owned();
+        cpu.selected_pid = Some(22);
+        cpu.selected_name = Some("proc".to_owned());
+
+        assert!(apply_escape(ActiveTab::Cpu, &mut cpu));
+        assert!(cpu.search_query.is_empty());
+
+        cpu.search_query = "cpuq".to_owned();
+        assert!(!apply_escape(ActiveTab::Storage, &mut cpu));
+        assert_eq!(cpu.search_query, "cpuq");
+    }
 }

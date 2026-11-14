@@ -4,7 +4,7 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.2.10  | Current release |
+| 0.4.x   | Current release |
 
 Only the latest minor release in the `0.2.x` series receives security updates.
 

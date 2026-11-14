@@ -52,19 +52,6 @@ fn test_card_frame_properties() {
 }
 
 #[test]
-fn test_sidebar_active_frame() {
-    let frame = theme::sidebar_active_frame();
-    assert_eq!(frame.fill, colors::SIDEBAR_ACTIVE_BG);
-    assert_eq!(frame.stroke.width, 2.0);
-    assert_eq!(frame.stroke.color, colors::SIDEBAR_ACTIVE_BORDER);
-    assert_eq!(frame.rounding, egui::Rounding::same(colors::RADIUS));
-    assert_eq!(frame.inner_margin.left, 8.0);
-    assert_eq!(frame.inner_margin.right, 8.0);
-    assert_eq!(frame.inner_margin.top, 8.0);
-    assert_eq!(frame.inner_margin.bottom, 8.0);
-}
-
-#[test]
 fn test_status_bar_frame() {
     let frame = theme::status_bar_frame();
     assert_eq!(frame.fill, colors::STATUS_BAR_BG);

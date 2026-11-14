@@ -1,113 +1,63 @@
 # Changelog
-
 All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
-
-## [0.4.77] - 2026-04-17
-
-- **CPU Table**: single-entry bounded eviction for `eco_overrides` at the 512-entry cap in `table_state_deltas.rs` and `table_menu_actions.rs` (preventing mass reset of active EcoQoS overrides).
-- **Version bump to 0.4.77**.
-
-## [0.4.76] - 2026-04-17
-
-- **Charts**: clean-4 Y-axis scaling on Network and Storage charts (fixing `1 Mbps, 1, 0, 0` and fractional ticks), with dark HUD axis pills.
-- **Storage UI**: `MB/s` unit on Storage `TOP I/O`.
-- **Version bump to 0.4.76**.
-
-## [0.4.75] - 2026-04-17
-
-- **Ingest**: unified 4-module snapshot ingestion in `app_ingest.rs` and minimized snapshot draining without UI rendering.
-- **Charts**: `push_gap_anchored` time-gap clamping across CPU, Storage, and Network chart histories.
-- **Version bump to 0.4.75**.
-
-## [0.4.74] - 2026-04-17
-
-- **Trim/UI**: `core::win32::self_trim_working_set` result-aware 10s retry backoff and `OnceLock` app icon caching.
-- **CPU/Menu**: tri-state `EcoQoS` menu status (active/off/unprobed).
-- **Version bump to 0.4.74**.
-
-## [0.4.73] - 2026-04-17
-
-- **Trim/UI**: unified self-trim policy with 10s minimize cooldown and immediate repaint on snapshot ingest.
-- **CPU/Panic/CLI**: `CpuSnapshot.process_scan_id` decoupling, re-entrancy-guarded PID-scoped `create_new` panic hook, and unknown CLI flag warning.
-- **Version bump to 0.4.73**.
-
-## [0.4.72] - 2026-04-17
-
-- **Hotkeys/Resume**: pre-ingest hotkey handling, instant process scan on F10 and UI telemetry resume.
-- **UX/Scope**: tab-scoped Escape, fast process cadence predicate excluding Memory overview, and CPU table freeze tooltip.
-- **Ingest**: snapshot_id deduplication for ingest.
-- **Version bump to 0.4.72**.
-
-## [0.4.71] - 2026-04-17
-
-- **Worker Loop**: edge-triggered pause unpark swap, early-wakeup guard, and timestamp monotonicity only on scheduled due ticks.
-- **Process Tables**: scanned-gated `process_scan_id`/`last_scan_tick` and full CPU/Memory process cache restoration when not scanned.
-- **Version bump to 0.4.71**.
-
-## [0.4.70] - 2026-04-17
-
-- **Worker Safety/Cadence**: `SpawnedWorker` optional handle, pause scan-request handling with instant resume unpark, monotonic snapshot timestamps, and elapsed-ticks scan cadence with active minimized tick interval.
-- **Worker Invariants**: unified `raw_processes`/`process_count` assignment and due-gated storage/network collection reuse.
-- **Version bump to 0.4.70**.
-
-## [0.4.69] - 2026-04-17
-
-- **CPU History**: O(1) revision-tagged series caches, removed dead `cached_revision`, and bounded ring-buffer peak decay on eviction.
-- **CPU/Worker**: synced `cpu/mod.rs` 960-sample doc and added UI wakeup on `publish_payload` `Full`.
-- **Version bump to 0.4.69**.
-
-## [0.4.68] - 2026-03-31
-
-- **CPU UI**: removed duplicate Overview sub-view button and clarified `LOGICAL CORES / PROCS` label.
-- **Charts**: added dark backdrop pills behind axis labels and unified scanner time format in CPU/Memory HUDs.
-- **Memory**: fixed composition bar segment math so In Use + Cached + Free never exceeds total RAM.
-- **Version bump to 0.4.68**.
-
-## [0.4.67] - 2026-03-31
-
-- **Charts**: added vertical scanner, curve dots, and tactical tooltip to CPU chart.
-- **Charts**: unified Memory, Storage, and Network charts to single vertical scanner, arrow cursor, and no horizontal crosshair.
-- **Version bump to 0.4.67**.
-
-## [0.4.66] - 2026-03-31
-
-- **CPU Sub-view**: two-way toggle with `toggle_sub_view` and back-to-overview control from Processes.
-- **Window Width**: unified 860.0 literals on canonical `MIN_WINDOW_WIDTH` and shared top-cards offset.
-- **Version bump to 0.4.66**.
-
-## [0.4.65] - 2026-03-31
-
-- **CPU Hotkeys/UI**: Escape now surrenders CPU search focus unconditionally on the CPU tab.
-- **CPU Hardening/Tests**: extracted grid/bottleneck helpers and added regression tests for grid sizing, labels, badges, and quick filters.
-- **Version bump to 0.4.65**.
-
-## [0.4.64] - 2026-03-31
-
-- **CPU Chart**: cached Y-grid marks, preallocated time conversion/anchoring, and tactical scanner hover/cursor cleanup.
-- **CPU UI/State**: single Escape path for CPU search, CPU sub-view toggle, and shared min window width constant.
-- **Version bump to 0.4.64**.
-
-## [0.4.63] - 2026-03-31
-
-- **CPU Chart**: fixed legend rect lag/double frame/comment, separated legend state/button IDs, deduped/cached X grid marks, and added chart axis tests.
-- **Tests**: asserted exact priority class restoration in live EcoQoS roundtrip.
-- **Version bump to 0.4.63**.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+## [0.4.120] - 2026-04-12
+- **Network probe**: non-blocking DNS flush via spawned thread; atomic `probe_snapshot()`.
+- **Network collector**: rollback guard for counter resets.
+- **Network view**: conditional selection write-back.
+## [0.4.119] - 2026-04-12
+- **Memory chart**: explicit auto-trim badge text and pre-allocated plot series.
+- **Storage chart**: clamped tooltip width, binary-search nearest point, no-data fallback, dimmed last toggle.
+## [0.4.118] - 2026-04-12
+- **Fast cadence**: removed `Memory` from fast process cadence (B05 N-3).
+- **Elevation cache**: `is_app_elevated()` cached in `OnceLock<bool>` (B03 N-6).
+- **Sidebar badges**: deduplicated via shared helper and bounded `(u8,u16)` cache (B18-B-01).
+## [0.4.117] - 2026-04-12
+- **Chart kit production**: wired `chart_kit` helpers (nearest point, baseline, frame) in all 4 modules.
+- **Latency probe**: production `LatencyProbe` with `Drop` cleanup; removed test-only gating.
+- **Storage**: summed group throughput, inspector cache keyed by scan/filter.
+## [0.4.116] - 2026-04-12
+- **Chart kit**: added `src/ui/chart_kit.rs` with binary-search nearest point and shared baseline.
+- **rustfmt skip**: removed all format-skip attributes; docs_guard now checks src.
+- **CPU table**: fixed progress bars and added Ctrl+C row copy; trimmed table_state.
+## [0.4.115] - 2026-04-12
+- **P4 UI state**: removed global `OnceLock`/`Mutex` UI state from storage and network views; state now owned in `PulseApp`.
+- **Network probe**: clean worker shutdown command + join; removed dead_code in network/cpu.
+## [0.4.114] - 2026-04-12
+- **Storage cleanup**: removed `allow(dead_code)` in model/io_agg/view; RAII `VolumeHandle` cache with safe eviction and worker-exit clear (B14-B-01).
+- **i18n cleanup**: removed `allow(dead_code)` across frame/keys; gated test-only keys.
+## [0.4.113] - 2026-04-12
+- **Ring history**: wired `core::ring_history` into storage/history and network/history (monotonic guard, window slicing, capacity).
+- **Dead code**: cleaned `#[allow(dead_code)]` in storage, network, memory conversions, collector; named struct for process memory result.
+## [0.4.112] - 2026-04-12
+- **Ring history**: wired `core::ring_history` into cpu and memory history (monotonic guard, window slicing).
+## [0.4.111] - 2026-04-12
+- **Ring history**: integrated `core::ring_history` into cpu/history and memory/history (monotonic guard).
+- **Platform split**: trim extracted from actions.rs.
+## [0.4.110] - 2026-04-12
+- **Core**: added `src/core/ring_history.rs` shared ring-buffer helpers and cache key.
+## [0.4.109] - 2026-04-12
+- **Platform split**: `actions.rs` split into `actions.rs` (terminate) + `trim.rs` (working-set trim).
+## [0.4.108] - 2026-04-12
+- **P5 cleanup**: removed dead code in storage, network, i18n, theme, util; wired UptimeLabel in chrome.
+## [0.4.107] - 2026-04-12
+- **Dead code sweep**: removed module-wide `#![allow(dead_code)]` from memory/mod.rs; deleted dead constants/helpers in memory/constants, formatters, history, model.
+- **Physical disk**: require >= 48 bytes from DISK_PERFORMANCE.
+## [0.4.106] - 2026-04-12
+- **Platform move**: real code moved into `src/platform/` (actions, location, qos, win32_api, win32_cpu) with zero re-export shims.
+## [0.4.105] - 2026-04-12
+- **Platform move**: real code moved into `src/platform/` (handle, protected, target) with zero re-export shims.
+## [0.4.104] - 2026-04-12
+- **Platform**: added `src/platform/` layer with DWM dark title bar on startup.
+- **Spike tie-break**: process_spike now picks largest absolute growth.
+## [0.4.103] - 2026-04-12
+- **Platform layer**: added `src/platform/` (handle, protected, location, actions, qos, sys_metrics) with DWM dark title bar on startup.
+- **License/Docs**: MIT license, rewritten README/ARCHITECTURE, CI linux-clippy job, issue templates.
+## [0.4.102] - 2026-04-12
+- **License**: switched repository from proprietary to MIT; added MIT LICENSE file.
+- **Docs**: rewrote README.md and ARCHITECTURE.md for human users, 100% docs_guard compliant.
+- **CI/Templates**: added linux-clippy job and bug/feature issue templates.
+## [0.4.100] - 2026-04-12
+- **B06 N-1**: restored triangle symbol in window title via pure-ASCII Rust escape.
+- **Startup Self-Trim**: one safe K32EmptyWorkingSet self-trim ~5s after startup.
+- **B05 N-1/N-2**: removed dead `paused_at_uptime_secs`; resume-apply now handles snapshots with `memory == None`.
+- **B06 N-2**: surfaced `write_config_file` failures via explicit error flag; split persist helpers into `persist_codec.rs`.

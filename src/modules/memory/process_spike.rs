@@ -6,7 +6,6 @@ use crate::util::format_timestamp_now;
 
 /// Memory spike event for "black box" logging.
 #[derive(Clone, Debug, Default, PartialEq)]
-#[allow(dead_code)]
 pub struct MemorySpikeEvent {
     pub timestamp: Arc<str>,
     pub peak_ram_pct: f32,
@@ -16,7 +15,6 @@ pub struct MemorySpikeEvent {
 }
 
 /// Detects memory spike events (RAM usage >= 85%).
-#[allow(dead_code)]
 pub fn detect_memory_spike(
     processes: &[crate::modules::memory::model::RawProcessRow],
     total_ram: u64,
@@ -27,8 +25,8 @@ pub fn detect_memory_spike(
     }
     let culprit = processes
         .iter()
-        .filter(|r| r.delta_bytes_per_sec > 0)
-        .max_by_key(|r| r.delta_bytes_per_sec)
+        .filter(|r| r.delta_bytes_per_sec != 0)
+        .max_by_key(|r| r.delta_bytes_per_sec.unsigned_abs())
         .or_else(|| processes.iter().max_by_key(|r| r.ram_bytes));
     culprit.map(|row| MemorySpikeEvent {
         timestamp: Arc::from(format_timestamp_now()),
@@ -76,7 +74,7 @@ mod tests {
         ];
         let event = detect_memory_spike(&rows, 16 * 1024 * 1024 * 1024, 90.0);
         let event = event.unwrap_or_default();
-        assert_eq!(event.culprit_pid, 100);
+        assert_eq!(event.culprit_pid, 200);
     }
 
     #[test]

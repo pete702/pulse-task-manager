@@ -1,12 +1,9 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Instant;
-
 use crate::modules::cpu::model::{ProcessCpuItem, RawProcessCpuRow};
 use crate::modules::cpu::table_sort::{filter_group_and_sort, sort_slice};
+use std::collections::{HashMap, VecDeque};
+use std::{sync::Arc, time::Instant};
 pub(crate) type ActionMsg = (String, Option<(u32, u64, bool)>, Vec<((u32, u64), Option<bool>)>);
 pub use super::quick_filter::ProcessQuickFilter;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CpuSortCol {
     #[default]
@@ -36,7 +33,8 @@ pub struct CpuTableState {
     pub last_action_msg: Option<(String, Instant)>,
     pub action_rx: Option<std::sync::mpsc::Receiver<ActionMsg>>,
     pub eco_overrides: HashMap<(u32, u64), bool>,
-    pub confirm_kill: Option<(u32, Instant)>,
+    pub(crate) eco_override_order: VecDeque<(u32, u64)>,
+    pub confirm_kill: Option<(u32, Vec<crate::modules::cpu::table_menu::GroupTarget>, Instant)>,
     pub baseline_scan_gen: u64,
     dirty: bool,
     cached_rows: Option<Arc<[ProcessCpuItem]>>,
@@ -44,7 +42,6 @@ pub struct CpuTableState {
     cached_scan_generation: u64,
     ram_baseline: HashMap<(u32, u64), (u64, Instant, i64)>,
 }
-
 impl Default for CpuTableState {
     fn default() -> Self {
         Self {
@@ -62,6 +59,7 @@ impl Default for CpuTableState {
             last_action_msg: None,
             action_rx: None,
             eco_overrides: HashMap::new(),
+            eco_override_order: VecDeque::new(),
             confirm_kill: None,
             dirty: false,
             cached_rows: None,
@@ -131,7 +129,6 @@ impl CpuTableState {
         self.dirty = raw_rows.is_empty() && first_build;
         true
     }
-
     fn preserve_selection(&mut self, rows: &[ProcessCpuItem]) {
         if let Some(pid) = self.selected_pid {
             if let Some(found) = rows.iter().find(|r| r.pid == pid) {
@@ -218,29 +215,41 @@ impl CpuTableState {
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
     }
+    pub(crate) fn record_eco_override(&mut self, pid: u32, start_time: u64, eco: bool) {
+        crate::util::insert_capped_fifo(
+            &mut self.eco_overrides,
+            &mut self.eco_override_order,
+            512,
+            (pid, start_time),
+            eco,
+        );
+    }
     pub(crate) fn apply_eco_rollbacks(&mut self, rollbacks: &[((u32, u64), Option<bool>)]) {
         if rollbacks.is_empty() {
             return;
         }
         for &(key, prev) in rollbacks {
             if let Some(old) = prev {
-                if self.eco_overrides.len() >= 512 && !self.eco_overrides.contains_key(&key) {
-                    if let Some(k) = self.eco_overrides.keys().next().copied() {
-                        self.eco_overrides.remove(&k);
-                    }
-                }
-                self.eco_overrides.insert(key, old);
+                crate::util::insert_capped_fifo(
+                    &mut self.eco_overrides,
+                    &mut self.eco_override_order,
+                    512,
+                    key,
+                    old,
+                );
             } else {
-                self.eco_overrides.remove(&key);
+                crate::util::remove_capped_fifo(
+                    &mut self.eco_overrides,
+                    &mut self.eco_override_order,
+                    &key,
+                );
             }
         }
         self.dirty = true;
     }
 }
-
 #[path = "table_state_deltas.rs"]
 mod table_state_deltas;
-
 #[cfg(test)]
 #[path = "table_state_tests.rs"]
 mod table_state_tests;

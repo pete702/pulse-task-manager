@@ -163,3 +163,21 @@ fn all_rs_files_under_src_and_tests_respect_line_limit() {
         }
     }
 }
+
+#[test]
+fn no_rustfmt_skip_in_src() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    walk_text_files(&root.join("src"), &mut files);
+    for path in &files {
+        if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            let content = fs::read_to_string(path)
+                .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
+            assert!(
+                !content.contains("rustfmt::skip"),
+                "{} contains rustfmt::skip",
+                path.display()
+            );
+        }
+    }
+}

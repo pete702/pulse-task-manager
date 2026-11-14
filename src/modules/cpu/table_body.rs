@@ -202,6 +202,18 @@ pub fn render_virtualized_table(
             }
         },
     );
+    if ui.ctx().input(|i| i.key_pressed(egui::Key::C) && i.modifiers.ctrl)
+        && !ui.ctx().wants_keyboard_input()
+    {
+        if let Some(item) = rows.iter().find(|r| {
+            state.selected_pid == Some(r.pid) && state.selected_start_time == Some(r.start_time)
+        }) {
+            let mem_mb = item.ram_bytes as f64 / 1_048_576.0;
+            let summary =
+                format!("{}\t{}\t{:.1}\t{:.1}", item.name, item.pid, item.cpu_pct, mem_mb);
+            ui.ctx().copy_text(summary);
+        }
+    }
     draw_separators(ui, tbl_r, &mut widths, rows);
     ui.style_mut().interaction.selectable_labels = prev_selectable;
 }

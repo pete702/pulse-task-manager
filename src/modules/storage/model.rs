@@ -5,10 +5,6 @@ use std::sync::Arc;
 
 pub const GIB: u64 = 1024 * 1024 * 1024;
 
-#[allow(dead_code)]
-pub const CRITICAL_AVAILABLE_BYTES: u64 = 15 * GIB;
-
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DiskMediaKind {
     Ssd,
@@ -19,7 +15,6 @@ pub enum DiskMediaKind {
 }
 
 impl DiskMediaKind {
-    #[allow(dead_code)]
     pub fn badge(self) -> &'static str {
         match self {
             DiskMediaKind::Ssd => "SSD",
@@ -30,7 +25,6 @@ impl DiskMediaKind {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DiskVolumeInfo {
     pub mount_point: Arc<str>,
@@ -47,7 +41,6 @@ pub struct DiskVolumeInfo {
     pub write_mb_s: f32,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PhysicalDiskGroup {
     pub disk_index: Option<u32>,
@@ -58,7 +51,6 @@ pub struct PhysicalDiskGroup {
 }
 
 /// Groups volumes by physical disk (None entries stay distinct).
-#[allow(dead_code)]
 pub fn group_physical_disks(volumes: &[DiskVolumeInfo]) -> Vec<PhysicalDiskGroup> {
     let mut groups: Vec<PhysicalDiskGroup> = Vec::new();
     for vol in volumes {
@@ -80,15 +72,18 @@ pub fn group_physical_disks(volumes: &[DiskVolumeInfo]) -> Vec<PhysicalDiskGroup
     for group in &mut groups {
         if let Some(first) = group.volumes.first().cloned() {
             group.kind = first.kind;
-            group.read_mb_s = first.read_mb_s;
-            group.write_mb_s = first.write_mb_s;
         }
+        let (read, write) = group
+            .volumes
+            .iter()
+            .fold((0.0f32, 0.0f32), |(r, w), v| (r + v.read_mb_s, w + v.write_mb_s));
+        group.read_mb_s = read;
+        group.write_mb_s = write;
     }
     groups
 }
 
 impl DiskVolumeInfo {
-    #[allow(dead_code)]
     pub fn new(
         mount_point: Arc<str>,
         name: Arc<str>,
@@ -116,7 +111,6 @@ impl DiskVolumeInfo {
     }
 }
 
-#[allow(dead_code)]
 pub fn used_pct_for(total_bytes: u64, available_bytes: u64) -> f32 {
     if total_bytes == 0 {
         return 0.0;
@@ -125,12 +119,10 @@ pub fn used_pct_for(total_bytes: u64, available_bytes: u64) -> f32 {
     used.clamp(0.0, 100.0) as f32
 }
 
-#[allow(dead_code)]
 pub fn is_critical_space(used_pct: f32, total_bytes: u64, available_bytes: u64) -> bool {
     used_pct >= 90.0 || (total_bytes >= 64 * GIB && available_bytes < 10 * GIB)
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct IoSpikeEvent {
     pub pid: u32,
@@ -142,7 +134,6 @@ pub struct IoSpikeEvent {
     pub ticks_ago: u32,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct StorageSnapshot {
     pub volumes: Arc<[DiskVolumeInfo]>,
@@ -216,8 +207,8 @@ mod tests {
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].disk_index, Some(0));
         assert_eq!(groups[0].volumes.len(), 2);
-        assert!((groups[0].read_mb_s - 14.2).abs() < 0.5);
-        assert!((groups[0].write_mb_s - 3.1).abs() < 0.5);
+        assert!((groups[0].read_mb_s - 28.4).abs() < 0.5);
+        assert!((groups[0].write_mb_s - 6.2).abs() < 0.5);
         assert_eq!(groups[1].disk_index, Some(1));
     }
 }

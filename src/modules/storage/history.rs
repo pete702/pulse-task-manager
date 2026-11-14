@@ -5,10 +5,12 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
-use crate::modules::memory::downsampling::lttb_downsample;
+use crate::core::downsampling::lttb_downsample;
+use crate::core::ring_history::{is_newer, window_bounds, HISTORY_CAPACITY};
 
 type SeriesCache = (Option<u32>, u64, usize, Arc<Vec<[f64; 2]>>, Arc<Vec<[f64; 2]>>);
 type DiskSample = (f64, f32, f32);
+
 fn san_f32(v: f32) -> f32 {
     if v.is_finite() {
         v.max(0.0)
@@ -26,73 +28,71 @@ fn push_gap_anchored(pts: &mut Vec<[f64; 2]>, x: f64, y: f64) {
     pts.push([x, y]);
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
 pub struct StorageHistory {
     samples: VecDeque<DiskSample>,
     per_disk: HashMap<u32, VecDeque<DiskSample>>,
+    per_disk_order: VecDeque<u32>,
     revision: u64,
     cached: Option<SeriesCache>,
 }
 
 impl StorageHistory {
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
     }
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.samples.len()
     }
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.samples.is_empty()
     }
-    #[allow(dead_code)]
     pub fn push(&mut self, timestamp: f64, read_mb_s: f32, write_mb_s: f32) {
         if !timestamp.is_finite() || timestamp < 0.0 {
             return;
         }
-        if let Some(last) = self.samples.back() {
-            if timestamp <= last.0 {
-                return;
-            }
+        if !is_newer(self.samples.back().map(|s| s.0), timestamp) {
+            return;
         }
-        let read = if read_mb_s.is_finite() { read_mb_s.max(0.0) } else { 0.0 };
-        let write = if write_mb_s.is_finite() { write_mb_s.max(0.0) } else { 0.0 };
-        if self.samples.len() == 900 {
+        let read = san_f32(read_mb_s);
+        let write = san_f32(write_mb_s);
+        if self.samples.len() == HISTORY_CAPACITY {
             self.samples.pop_front();
         }
         self.samples.push_back((timestamp, read, write));
         self.revision = self.revision.wrapping_add(1);
         self.cached = None;
     }
-    #[allow(dead_code)]
     pub fn push_disk(&mut self, disk: u32, timestamp: f64, read_mb_s: f32, write_mb_s: f32) {
         if !timestamp.is_finite() || timestamp < 0.0 {
             return;
         }
-        if self.per_disk.len() >= 32 && !self.per_disk.contains_key(&disk) {
-            if let Some(&victim) = self.per_disk.keys().find(|&k| *k != disk) {
-                self.per_disk.remove(&victim);
-            }
+        if !self.per_disk.contains_key(&disk) {
+            crate::util::insert_capped_fifo(
+                &mut self.per_disk,
+                &mut self.per_disk_order,
+                32,
+                disk,
+                VecDeque::new(),
+            );
         }
-        let entry = self.per_disk.entry(disk).or_default();
-        if let Some(last) = entry.back() {
-            if timestamp <= last.0 {
-                return;
-            }
+        let Some(entry) = self.per_disk.get_mut(&disk) else { return };
+        if !is_newer(entry.back().map(|s| s.0), timestamp) {
+            return;
         }
-        let read = if read_mb_s.is_finite() { read_mb_s.max(0.0) } else { 0.0 };
-        let write = if write_mb_s.is_finite() { write_mb_s.max(0.0) } else { 0.0 };
-        if entry.len() == 900 {
+        let read = san_f32(read_mb_s);
+        let write = san_f32(write_mb_s);
+        if entry.len() == HISTORY_CAPACITY {
             entry.pop_front();
         }
         entry.push_back((timestamp, read, write));
         self.revision = self.revision.wrapping_add(1);
         self.cached = None;
     }
-    #[allow(dead_code)]
+    #[cfg(test)]
     #[allow(clippy::type_complexity)]
     pub fn series_points(
         &mut self,
@@ -100,7 +100,6 @@ impl StorageHistory {
     ) -> (Arc<Vec<[f64; 2]>>, Arc<Vec<[f64; 2]>>) {
         self.series_points_scoped(None, window_secs)
     }
-    #[allow(dead_code)]
     #[allow(clippy::type_complexity)]
     pub fn series_points_scoped(
         &mut self,
@@ -118,11 +117,24 @@ impl StorageHistory {
             Some((disk, self.revision, window_secs, Arc::clone(&out.0), Arc::clone(&out.1)));
         out
     }
-    #[allow(dead_code)]
-    fn build_series(&self, window_secs: usize) -> (Vec<[f64; 2]>, Vec<[f64; 2]>) {
-        self.build_series_scoped(None, window_secs)
+    #[cfg(test)]
+    pub fn window_peak_scoped(&self, disk: Option<u32>, window_secs: usize) -> f64 {
+        let samples = match disk {
+            Some(d) => match self.per_disk.get(&d) {
+                Some(s) => s,
+                None => return 0.0,
+            },
+            None => &self.samples,
+        };
+        let Some(latest) = samples.back().map(|s| s.0) else { return 0.0 };
+        let win = window_secs as f64;
+        let timestamps: VecDeque<f64> = samples.iter().map(|s| s.0).collect();
+        let (start, _) = window_bounds(samples.len(), latest, &timestamps, win);
+        samples
+            .iter()
+            .skip(start)
+            .fold(0.0_f64, |acc, s| acc.max(san_f32(s.1).max(san_f32(s.2)) as f64))
     }
-    #[allow(dead_code)]
     fn build_series_scoped(
         &self,
         disk: Option<u32>,
@@ -141,13 +153,8 @@ impl StorageHistory {
         let latest = samples.back().map(|s| s.0).unwrap_or(0.0);
         let win = window_secs as f64;
         let window_min = win / 60.0;
-        let mut start_idx = 0;
-        for (i, s) in samples.iter().enumerate() {
-            if latest - s.0 <= win {
-                start_idx = i;
-                break;
-            }
-        }
+        let timestamps: VecDeque<f64> = samples.iter().map(|s| s.0).collect();
+        let (start_idx, _) = window_bounds(samples.len(), latest, &timestamps, win);
         let mut read = Vec::new();
         let mut write = Vec::new();
         for s in samples.iter().skip(start_idx) {
@@ -197,15 +204,15 @@ mod tests {
         assert_eq!(r3[0][1], 0.0);
     }
     #[test]
-    fn history_evicts_oldest_past_900() {
+    fn history_evicts_oldest_past_capacity() {
         let mut h = StorageHistory::new();
-        for i in 0..905u32 {
+        for i in 0..1925u32 {
             h.push(i as f64, i as f32, 1.0);
         }
-        assert_eq!(h.len(), 900);
-        let (r, _) = h.series_points(900);
-        assert_eq!(r.len(), 900);
-        assert_eq!(r[899][1], 904.0);
+        assert_eq!(h.len(), 1920);
+        let (r, _) = h.series_points(2000);
+        assert_eq!(r.len(), 920);
+        assert_eq!(r.last().unwrap()[1], 1924.0);
     }
     #[test]
     fn per_disk_series_is_separate() {
@@ -238,5 +245,25 @@ mod tests {
         assert_eq!(r[2][1], 0.0);
         assert_eq!(w[1][1], 0.0);
         assert_eq!(w[2][1], 0.0);
+    }
+    #[test]
+    fn window_scoped_peak_uses_max_not_sum() {
+        let mut h = StorageHistory::new();
+        for i in 0..10u32 {
+            h.push(i as f64, 300.0, 300.0);
+        }
+        assert_eq!(h.window_peak_scoped(None, 60), 300.0);
+        assert_eq!(h.window_peak_scoped(None, 300), 300.0);
+        assert_eq!(h.window_peak_scoped(None, 900), 300.0);
+        h.push(100.0, 500.0, 100.0);
+        assert_eq!(h.window_peak_scoped(None, 5), 500.0);
+        assert_eq!(h.window_peak_scoped(None, 60), 500.0);
+    }
+    #[test]
+    fn per_disk_cap_evicts_earliest() {
+        let mut h = StorageHistory::new();
+        (0..33u32).for_each(|i| h.push_disk(i, i as f64, 1.0, 1.0));
+        assert!(h.per_disk.len() == 32 && !h.per_disk.contains_key(&0));
+        assert!(h.per_disk.contains_key(&1) && h.per_disk.contains_key(&32));
     }
 }

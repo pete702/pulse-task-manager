@@ -1,25 +1,13 @@
 //! Sorting, grouping, and row construction for the CPU process table.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use crate::modules::cpu::collector::pid_contains;
 use crate::modules::cpu::model::{ProcessCpuItem, RawProcessCpuRow};
+use crate::modules::cpu::table_rows;
 use crate::modules::cpu::table_state::CpuSortCol;
 
-/// Case-insensitive substring check.
-#[inline]
-pub fn contains_ci(haystack: &str, needle_lower: &str) -> bool {
-    if needle_lower.is_empty() {
-        return true;
-    }
-    if haystack.is_ascii() && needle_lower.is_ascii() {
-        let nb = needle_lower.as_bytes();
-        return haystack.len() >= nb.len()
-            && haystack.as_bytes().windows(nb.len()).any(|w| w.eq_ignore_ascii_case(nb));
-    }
-    haystack.to_lowercase().contains(&needle_lower.to_lowercase())
-}
+pub use crate::util::contains_ci;
 
 /// Builds one display item from a raw row plus its RAM delta.
 pub fn item_from_raw_cpu(row: &RawProcessCpuRow, delta: i64) -> ProcessCpuItem {
@@ -66,32 +54,7 @@ pub fn filter_group_and_sort(
         })
         .collect();
     if group_clones {
-        let mut grouped: HashMap<Arc<str>, ProcessCpuItem> = HashMap::new();
-        for item in items {
-            let key: Arc<str> = Arc::clone(&item.name).to_ascii_lowercase().into();
-            grouped
-                .entry(key)
-                .and_modify(|ex| {
-                    let add_cpu =
-                        if item.cpu_pct.is_finite() { item.cpu_pct.clamp(0.0, 100.0) } else { 0.0 };
-                    ex.cpu_pct = (ex.cpu_pct + add_cpu).clamp(0.0, 100.0);
-                    ex.is_cpu_hog |= add_cpu >= crate::modules::cpu::model::CPU_HOG_THRESHOLD_PCT;
-                    ex.ram_bytes = ex.ram_bytes.saturating_add(item.ram_bytes);
-                    ex.disk_read_mb_s += item.disk_read_mb_s;
-                    ex.disk_write_mb_s += item.disk_write_mb_s;
-                    ex.ram_delta_10s = ex.ram_delta_10s.saturating_add(item.ram_delta_10s);
-                    ex.clone_count += 1;
-                    ex.update_formatted();
-                })
-                .or_insert(item);
-        }
-        items = grouped.into_values().collect();
-        items.sort_by(|a, b| {
-            a.name
-                .to_ascii_lowercase()
-                .cmp(&b.name.to_ascii_lowercase())
-                .then_with(|| a.pid.cmp(&b.pid))
-        });
+        items = crate::modules::cpu::table_groups::aggregate_grouped_items(items);
     }
     sort_slice(&mut items, sort_col, sort_asc);
     items
@@ -112,13 +75,8 @@ pub fn sort_slice(items: &mut [ProcessCpuItem], col: CpuSortCol, asc: bool) {
             CpuSortCol::RamBytes => a.ram_bytes.cmp(&b.ram_bytes),
             CpuSortCol::CloneCount => a.clone_count.cmp(&b.clone_count),
             CpuSortCol::Delta => a.ram_delta_10s.cmp(&b.ram_delta_10s),
-            CpuSortCol::CpuPct => {
-                let aq = (a.cpu_pct * 10.0).round() as i64;
-                let bq = (b.cpu_pct * 10.0).round() as i64;
-                aq.cmp(&bq)
-            }
-            CpuSortCol::DiskIo => (a.disk_read_mb_s + a.disk_write_mb_s)
-                .total_cmp(&(b.disk_read_mb_s + b.disk_write_mb_s)),
+            CpuSortCol::CpuPct => table_rows::cmp_cpu_pct(a, b),
+            CpuSortCol::DiskIo => table_rows::cmp_disk_io(a, b),
         };
         let directed = if asc { ord } else { ord.reverse() };
         if directed != std::cmp::Ordering::Equal {
@@ -134,6 +92,7 @@ pub fn sort_slice(items: &mut [ProcessCpuItem], col: CpuSortCol, asc: bool) {
 #[cfg(test)]
 mod table_sort_tests {
     use super::*;
+    use std::sync::Arc;
 
     fn raw(pid: u32, name: &str, read: f32, write: f32) -> RawProcessCpuRow {
         RawProcessCpuRow {
@@ -185,10 +144,10 @@ mod table_sort_tests {
 
     #[test]
     fn contains_ci_and_pid_zero_alloc_match() {
-        assert!(contains_ci("Chrome.exe", "chrome"));
-        assert!(contains_ci("chrome.exe", "CHROM"));
-        assert!(!contains_ci("chrome.exe", "edge"));
-        assert!(contains_ci("a", ""));
+        assert!(crate::util::contains_ci("Chrome.exe", "chrome"));
+        assert!(crate::util::contains_ci("chrome.exe", "CHROM"));
+        assert!(!crate::util::contains_ci("chrome.exe", "edge"));
+        assert!(crate::util::contains_ci("a", ""));
         assert!(pid_contains(12345, "234"));
         assert!(!pid_contains(12345, "999"));
         let rows = [raw(12345, "Chrome.exe", 0.0, 0.0), raw(1, "notepad.exe", 0.0, 0.0)];

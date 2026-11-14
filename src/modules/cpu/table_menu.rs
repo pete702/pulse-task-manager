@@ -1,7 +1,9 @@
 //! Process row context menu and sort button for PULSE CPU table.
+use crate::modules::cpu::kill_modal::is_protected_pid;
 use crate::modules::cpu::model::{ProcessCpuItem, RawProcessCpuRow};
 use crate::modules::cpu::table_menu_actions::{spawn_eco, spawn_open, spawn_trim};
 use crate::modules::cpu::table_state::CpuTableState;
+use crate::platform::qos::is_system_process;
 use crate::theme::colors;
 use eframe::egui;
 use std::time::Instant;
@@ -57,6 +59,7 @@ pub(crate) fn resolve_group_targets(
         .filter(|r| r.pid != 0 && r.pid != 4 && r.name.eq_ignore_ascii_case(&item.name))
         .filter(|r| match (&le, r.exe_path.as_deref()) {
             (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
+            (Some(_), None) => false,
             _ => true,
         })
         .map(|r| GroupTarget {
@@ -73,11 +76,17 @@ pub(crate) fn resolve_group_targets(
         v
     }
 }
-pub fn arm_context_menu_kill(state: &mut CpuTableState, item: &ProcessCpuItem) {
+pub fn arm_context_menu_kill(
+    state: &mut CpuTableState,
+    item: &ProcessCpuItem,
+    group_clones: bool,
+    raw: &[RawProcessCpuRow],
+) {
     state.selected_pid = Some(item.pid);
     state.selected_start_time = Some(item.start_time);
     state.selected_name = Some(item.name.to_string());
-    state.confirm_kill = Some((item.pid, Instant::now()));
+    let targets = resolve_group_targets(item, group_clones, raw);
+    state.confirm_kill = Some((item.pid, targets, Instant::now()));
     let m = format!("Confirm Kill for {} (PID {}) in bottom bar (3s)", item.name, item.pid);
     state.last_action_msg = Some((m, Instant::now()));
 }
@@ -116,9 +125,18 @@ pub fn show_row_menu(
         ui.close_menu();
     }
     ui.separator();
-    let k = egui::RichText::new("Terminate Process").color(colors::ACCENT_RED);
-    if ui.add(egui::Button::new(k)).clicked() {
-        arm_context_menu_kill(state, item);
+    let protected = is_protected_pid(item.pid) || is_system_process(&item.name);
+    let k = egui::RichText::new("Terminate Process").color(if protected {
+        colors::TEXT_SECONDARY
+    } else {
+        colors::ACCENT_RED
+    });
+    let resp = ui.add_enabled(!protected, egui::Button::new(k));
+    if protected {
+        resp.on_hover_text("Protected system or self process");
+    } else if resp.clicked() {
+        let gc = state.group_clones;
+        arm_context_menu_kill(state, item, gc, raw);
         ui.close_menu();
     }
     ui.separator();

@@ -1,4 +1,4 @@
-//! CPU module -- 960-sample (15m) dual-series history, process telemetry, and UI.
+//! CPU module -- 1920-sample (15m @ 2 Hz) dual-series history, process telemetry, and UI.
 
 pub mod bottleneck_card;
 pub mod chart_axis;
@@ -10,17 +10,19 @@ pub mod collector_eco;
 pub mod core_grid;
 pub mod exe_cache;
 pub mod history;
+pub mod kill_modal;
 pub mod model;
 pub mod page;
-pub mod qos_action;
+
 pub mod quick_filter;
 pub mod table;
 pub mod table_body;
 pub mod table_cols;
+pub mod table_groups;
 pub mod table_menu;
 pub mod table_menu_actions;
+pub mod table_rows;
 pub mod table_sort;
 pub mod table_state;
 pub mod top_cards;
 pub mod total_load_card;
-pub mod win32_cpu;

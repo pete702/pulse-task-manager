@@ -1,5 +1,5 @@
 //! Frame/window chrome translations and formatting for PULSE i18n.
-//! **100% English Code** — Ukrainian translations removed.
+//! **100% English Code** -- Ukrainian translations removed.
 
 use super::{Key, Lang};
 
@@ -8,7 +8,7 @@ impl Lang {
     pub(super) fn translate_frame(self, key: Key) -> Option<&'static str> {
         match (self, key) {
             // Top bar / window chrome
-            (Lang::En, Key::AppTitle) => Some("▲ PULSE // TELEMETRY"),
+            (Lang::En, Key::AppTitle) => Some("^ PULSE // TELEMETRY"),
             (Lang::En, Key::VersionPrefix) => Some("v"),
             (Lang::En, Key::UptimeLabel) => Some("Uptime"),
 
@@ -25,12 +25,13 @@ impl Lang {
             }
 
             // Self-test
+            #[cfg(test)]
             (Lang::En, Key::SelfTestPassedHeadless) => Some("SELF-TEST PASSED (HEADLESS CI)"),
             (Lang::En, Key::SelfTestPassedLive) => Some("SELF-TEST PASSED (LIVE GUI)"),
             (Lang::En, Key::SelfTestFailed) => Some("SELF-TEST FAILED"),
 
             // Status bar
-            (Lang::En, Key::StatusReady) => Some("● READY"),
+            (Lang::En, Key::StatusReady) => Some("* READY"),
 
             _ => None,
         }
@@ -63,40 +64,11 @@ pub mod locale {
             .clone()
     }
 
-    /// Short locale badge for top bar (e.g., "LOCALE: UK-UA" without hex LCID).
-    /// Uses OnceLock<String> - zero allocations after init, no leak.
-    #[allow(dead_code)]
-    #[cfg(target_os = "windows")]
-    pub fn os_locale_badge() -> &'static str {
-        static BADGE_CACHE: OnceLock<String> = OnceLock::new();
-        BADGE_CACHE.get_or_init(|| format!("LOCALE: {}", real_locale_upper())).as_str()
-    }
-
-    /// Full locale string for hover tooltip (e.g., "System Locale: UK-UA").
-    #[allow(dead_code)]
-    #[cfg(target_os = "windows")]
-    pub fn os_locale_full() -> &'static str {
-        static FULL_CACHE: OnceLock<String> = OnceLock::new();
-        FULL_CACHE.get_or_init(|| format!("System Locale: {}", real_locale_upper())).as_str()
-    }
-
     /// Bare short code for top bar (e.g., "UK-UA").
     #[cfg(target_os = "windows")]
     pub fn os_locale_short() -> &'static str {
         static SHORT_CACHE: OnceLock<String> = OnceLock::new();
         SHORT_CACHE.get_or_init(real_locale_upper).as_str()
-    }
-
-    /// Short badge fallback for non-Windows targets.
-    #[cfg(not(target_os = "windows"))]
-    pub fn os_locale_badge() -> &'static str {
-        "LOCALE: EN-US"
-    }
-
-    /// Full fallback for non-Windows targets.
-    #[cfg(not(target_os = "windows"))]
-    pub fn os_locale_full() -> &'static str {
-        "System Locale: EN-US"
     }
 
     /// Bare short fallback for non-Windows targets.
@@ -106,28 +78,28 @@ pub mod locale {
     }
 }
 
-/// Formats the system-cache subtitle, e.g. "OS Reserve • 13.4% of RAM".
-#[allow(dead_code)]
+/// Formats the system-cache subtitle, e.g. "OS Reserve * 13.4% of RAM".
+#[cfg(test)]
 pub fn system_cache_subtitle(pct: f64) -> String {
     let pct = if pct.is_finite() { pct.clamp(0.0, 100.0) } else { 0.0 };
-    format!("OS Reserve • {pct:.1}% of RAM")
+    format!("OS Reserve * {pct:.1}% of RAM")
 }
 
 /// Formats the kernel pool paged/non-paged detail line.
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn kernel_pool_detail(paged: &str, nonpaged: &str) -> String {
     format!("Paged: {paged} / Non-paged: {nonpaged}")
 }
 
 /// Formats the commit limit line with its usage percentage.
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn commit_limit_label(limit: &str, pct: f32) -> String {
     let pct = if pct.is_finite() { pct.clamp(0.0, 100.0) } else { 0.0 };
     format!("Limit: {limit} ({pct:.1}%)")
 }
 
 /// Formats the OS activity counts (processes, threads, handles).
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn os_activity(processes: u32, threads: u32, handles: u32) -> String {
     format!("{processes} processes | {threads} threads | {handles} handles")
 }

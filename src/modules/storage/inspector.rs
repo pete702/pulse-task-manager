@@ -122,7 +122,7 @@ fn draw_table_row(
 }
 fn render_consumers(ui: &mut egui::Ui, raw: &[RawProcessCpuRow], filter: Option<&[char]>) {
     ui.set_min_height(150.0);
-    let top = cached_consumers(raw, filter);
+    let top = cached_consumers(raw.as_ptr() as u64, raw, filter);
     let active = top.iter().any(|g| g.total >= 0.05);
     if !active {
         let ago = last_scan()

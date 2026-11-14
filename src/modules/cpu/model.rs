@@ -1,4 +1,4 @@
-//! Pure mathematical model for CPU telemetry — zero dependencies on egui/sysinfo.
+//! Pure mathematical model for CPU telemetry -- zero dependencies on egui/sysinfo.
 
 use std::sync::Arc;
 
@@ -24,7 +24,6 @@ pub struct RawProcessCpuRow {
 /// A single process CPU entry for display and analysis.
 /// Pre-formatted fields avoid format! calls during frame rendering.
 #[derive(Clone, Debug, Default, PartialEq)]
-#[allow(dead_code)]
 pub struct ProcessCpuItem {
     pub pid: u32,
     pub start_time: u64,
@@ -59,7 +58,6 @@ pub struct ProcessCpuItem {
 }
 
 impl ProcessCpuItem {
-    #[allow(dead_code)]
     pub fn new(
         pid: u32,
         name: Arc<str>,
@@ -199,8 +197,8 @@ pub struct CpuSnapshot {
 }
 
 impl CpuSnapshot {
+    #[cfg(test)]
     #[inline]
-    #[allow(dead_code)]
     pub fn empty() -> Self {
         Self::default()
     }

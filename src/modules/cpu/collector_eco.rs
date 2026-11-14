@@ -64,7 +64,20 @@ pub(super) fn fill_eco_qos(
     eco_cache: &mut HashMap<(u32, u64), (bool, Instant)>,
     eco_cursor: &mut usize,
 ) {
-    fill_eco_qos_with(items, eco_cache, eco_cursor, super::qos_action::probe_eco_qos_budgeted);
+    let probe = |pid: u32, budget: &mut u8| -> Option<bool> {
+        if pid == 0 || pid == 4 {
+            return Some(false);
+        }
+        if *budget == 0 {
+            return None;
+        }
+        let v = crate::platform::qos::is_process_eco_qos(pid);
+        if v.is_some() {
+            *budget -= 1;
+        }
+        v
+    };
+    fill_eco_qos_with(items, eco_cache, eco_cursor, probe);
 }
 
 #[cfg(test)]

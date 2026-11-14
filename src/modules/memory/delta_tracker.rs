@@ -7,11 +7,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::modules::memory::model::{ProcessSample, RawProcessRow};
-use crate::modules::memory::process_spike::MemorySpikeEvent;
-use crate::modules::memory::safe_handle::query_creation_time_by_pid;
 
-/// Result of a process memory collection pass.
-pub type ProcessMemoryScan = (Vec<RawProcessRow>, Option<MemorySpikeEvent>);
+use crate::platform::handle::query_creation_time_by_pid;
 
 /// Minimum elapsed seconds used when normalising deltas (divide-by-zero guard).
 const MIN_DT_SECS: f64 = 0.1;
@@ -30,7 +27,7 @@ struct DeltaState {
 /// Internal state for tracking process memory deltas across ticks.
 /// Single HashMap keyed by (pid, start_time) where start_time = sysinfo Process::start_time().
 /// On first sighting (Vacant entry), we call query_creation_time_by_pid() ONCE and cache it.
-/// Subsequent sightings (Occupied entry) reuse the cached creation_time — zero syscalls steady-state.
+/// Subsequent sightings (Occupied entry) reuse the cached creation_time -- zero syscalls steady-state.
 pub struct ProcessDeltaTracker {
     states: HashMap<(u32, u64), DeltaState>,
     current_gen: u32,
@@ -93,7 +90,7 @@ impl ProcessDeltaTracker {
             }
 
             // Use the cached creation_time (FILETIME) for PID-reuse safety in actions (Open Location / Terminate).
-            // No fallback to Unix start_time — they are incompatible time bases.
+            // No fallback to Unix start_time -- they are incompatible time bases.
             let identity = state.creation_time;
 
             let is_new = state.last_gen == 0 || dt > 15.0;

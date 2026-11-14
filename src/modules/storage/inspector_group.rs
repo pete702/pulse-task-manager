@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
-use crate::modules::cpu::exe_cache::cached_exe_path;
 use crate::modules::cpu::model::RawProcessCpuRow;
 
 #[derive(Clone)]
@@ -18,14 +17,14 @@ pub struct Grouped {
     pub drive: Option<char>,
 }
 
-type CacheKey = (usize, usize, u32, u32, u64);
+type CacheKey = (u64, bool, u64);
 type ConsumerCache = (CacheKey, Arc<Vec<Grouped>>);
 static CONSUMER_CACHE: OnceLock<Mutex<ConsumerCache>> = OnceLock::new();
 static LAST_SCAN: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 static FILTER_ON: OnceLock<Mutex<bool>> = OnceLock::new();
 
 fn consumer_cache() -> &'static Mutex<ConsumerCache> {
-    CONSUMER_CACHE.get_or_init(|| Mutex::new(((0, 0, 0, 0, 0), Arc::new(Vec::new()))))
+    CONSUMER_CACHE.get_or_init(|| Mutex::new(((0, false, 0), Arc::new(Vec::new()))))
 }
 
 pub fn last_scan() -> &'static Mutex<Option<Instant>> {
@@ -33,19 +32,8 @@ pub fn last_scan() -> &'static Mutex<Option<Instant>> {
 }
 
 pub fn filter_on() -> &'static Mutex<bool> {
-    // Default ON so the selected disk's letters auto-filter the table.
-    FILTER_ON.get_or_init(|| Mutex::new(true))
-}
-
-#[allow(dead_code)]
-pub(crate) fn exe_drive(pid: u32, start_time: u64) -> Option<char> {
-    let path = cached_exe_path(pid, start_time);
-    let b = path.as_bytes();
-    if b.len() >= 2 && b[1] == b':' && b[0].is_ascii_alphabetic() {
-        Some(b[0].to_ascii_uppercase() as char)
-    } else {
-        None
-    }
+    // Default to All Drives so the table is not over-filtered on first view.
+    FILTER_ON.get_or_init(|| Mutex::new(false))
 }
 
 fn drive_mask(filter: Option<&[char]>) -> u64 {
@@ -66,28 +54,18 @@ fn drive_mask(filter: Option<&[char]>) -> u64 {
     }
 }
 
-fn scan_key(raw: &[RawProcessCpuRow], filter: Option<&[char]>) -> CacheKey {
-    let mut rsum = 0.0f32;
-    let mut wsum = 0.0f32;
-    for r in raw {
-        rsum += if r.disk_read_mb_s.is_finite() && r.disk_read_mb_s > 0.0 {
-            r.disk_read_mb_s
-        } else {
-            0.0
-        };
-        wsum += if r.disk_write_mb_s.is_finite() && r.disk_write_mb_s > 0.0 {
-            r.disk_write_mb_s
-        } else {
-            0.0
-        };
-    }
-    (raw.as_ptr() as usize, raw.len(), rsum.to_bits(), wsum.to_bits(), drive_mask(filter))
+fn cache_key(scan_id: u64, filter: Option<&[char]>) -> CacheKey {
+    (scan_id, filter.is_some(), drive_mask(filter))
 }
 
 /// Returns cached top-8 grouped consumers; ABA-safe key prevents stale hits.
 /// `filter` is the set of drive letters for the selected disk (None = all).
-pub fn cached_consumers(raw: &[RawProcessCpuRow], filter: Option<&[char]>) -> Arc<Vec<Grouped>> {
-    let key = scan_key(raw, filter);
+pub fn cached_consumers(
+    scan_id: u64,
+    raw: &[RawProcessCpuRow],
+    filter: Option<&[char]>,
+) -> Arc<Vec<Grouped>> {
+    let key = cache_key(scan_id, filter);
     {
         let guard = consumer_cache().lock().unwrap_or_else(|e| e.into_inner());
         if guard.0 == key {

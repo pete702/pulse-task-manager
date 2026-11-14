@@ -4,7 +4,7 @@ use std::sync::Arc;
 use sysinfo::{CpuRefreshKind, System};
 
 use crate::modules::cpu::model::CpuSnapshot;
-use crate::modules::cpu::win32_cpu::{read_cpu_brand, read_cpu_frequencies, warmup_cpu_refresh};
+use crate::platform::win32_cpu::{read_cpu_brand, read_cpu_frequencies, warmup_cpu_refresh};
 
 /// Collects current system CPU state into a `CpuSnapshot`.
 /// Live MHz and brand come from Win32 OnceLock. See worker_loop.

@@ -1,24 +1,19 @@
 //! Virtualized CPU process table with search, clone grouping, sorting, and actions.
 use crate::modules::cpu::model::{CpuSnapshot, ProcessCpuItem, RawProcessCpuRow};
-use crate::modules::cpu::qos_action::trim_process_working_set;
 use crate::modules::cpu::table_body::render_virtualized_table;
 use crate::modules::cpu::table_menu::{action_button, GroupTarget};
 use crate::modules::cpu::table_state::CpuTableState;
-use crate::modules::memory::safe_handle::is_app_elevated;
+use crate::platform::handle::is_app_elevated;
+use crate::platform::qos::trim_process_working_set;
 use crate::theme::{card_frame, colors};
 use eframe::egui;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::OnceLock;
-static ELEVATED: OnceLock<bool> = OnceLock::new();
 static PURGE_RUNNING: AtomicBool = AtomicBool::new(false);
 struct PurgeGuard;
 impl Drop for PurgeGuard {
     fn drop(&mut self) {
         PURGE_RUNNING.store(false, Ordering::SeqCst);
     }
-}
-fn cached_elevated() -> bool {
-    *ELEVATED.get_or_init(is_app_elevated)
 }
 pub fn render_cpu_table(
     ui: &mut egui::Ui,
@@ -53,7 +48,7 @@ pub fn render_cpu_table(
     });
 }
 fn badge(ui: &mut egui::Ui) {
-    let elevated = cached_elevated();
+    let elevated = is_app_elevated();
     let (text, color) = if elevated {
         ("[ ADMIN ]", colors::ACCENT_CYAN)
     } else {
@@ -146,11 +141,11 @@ fn right_controls(
             do_purge(raw_rows, state);
         }
         ui.add_space(8.0);
-        let pause_label = if state.paused { "> Resume" } else { "|| Pause" };
+        let pause_label = if state.paused { "Resume List" } else { "Freeze List" };
         if ui
             .button(pause_label)
             .on_hover_text(
-                "Freeze CPU table sorting and row order (Space). Live telemetry charts continue updating; use F10 for global telemetry pause.",
+                "Freeze only table row order/updates while live charts and background telemetry continue (unlike F10, which pauses global telemetry).",
             )
             .clicked()
         {
@@ -173,7 +168,11 @@ fn render_toolbar(
     rows: &[ProcessCpuItem],
     raw_rows: &[RawProcessCpuRow],
 ) {
-    let selected_row = state.selected_pid.and_then(|pid| rows.iter().find(|row| row.pid == pid));
+    let selected_row = state.selected_pid.and_then(|pid| {
+        rows.iter().find(|row| {
+            row.pid == pid && state.selected_start_time.is_none_or(|st| row.start_time == st)
+        })
+    });
     let avail_w = ui.available_width();
     if avail_w >= 1180.0 {
         ui.horizontal(|ui| {
@@ -204,11 +203,11 @@ fn render_toolbar(
                         do_purge(raw_rows, state);
                     }
                     ui.add_space(8.0);
-                    let pause_label = if state.paused { "> Resume" } else { "|| Pause" };
+                    let pause_label = if state.paused { "Resume List" } else { "Freeze List" };
                     if ui
                         .button(pause_label)
                         .on_hover_text(
-                            "Freeze CPU table sorting and row order (Space). Live telemetry charts continue updating; use F10 for global telemetry pause.",
+                            "Freeze only table row order/updates while live charts and background telemetry continue (unlike F10, which pauses global telemetry).",
                         )
                         .clicked()
                     {

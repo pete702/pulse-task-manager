@@ -23,16 +23,31 @@ impl PulseApp {
                 self.cpu_history.push(cpu.total_pct, cpu.hottest_core_pct, mem.sample_elapsed_secs);
             }
         }
-        crate::modules::storage::view::ingest_storage_snapshot(snap);
-        crate::modules::network::view::ingest_network_snapshot(snap);
+        crate::modules::storage::view::ingest_storage_snapshot(&mut self.storage_view_state, snap);
+        crate::modules::network::view::ingest_network_snapshot(&mut self.network_view_state, snap);
         self.latest_snapshot = Some(Arc::clone(snap));
         true
     }
 
     pub(crate) fn poll_snapshots(&mut self) -> bool {
         if self.telemetry_paused {
-            while self.snapshot_rx.try_recv().is_ok() {}
-            let _ = self.worker.drain_overflow_snapshots();
+            let mut batch: Vec<Arc<SystemSnapshot>> = Vec::new();
+            while let Ok(snap) = self.snapshot_rx.try_recv() {
+                batch.push(snap);
+            }
+            batch.extend(self.worker.drain_overflow_snapshots());
+            if !batch.is_empty() {
+                if batch.len() > 1 {
+                    batch.sort_by(|a, b| {
+                        let ka = a.memory.as_ref().map(|m| m.sample_elapsed_secs).unwrap_or(0.0);
+                        let kb = b.memory.as_ref().map(|m| m.sample_elapsed_secs).unwrap_or(0.0);
+                        ka.total_cmp(&kb)
+                    });
+                }
+                if let Some(newest) = batch.into_iter().last() {
+                    self.paused_pending_snapshot = Some(newest);
+                }
+            }
             return false;
         }
         let mut batch: Vec<Arc<SystemSnapshot>> = Vec::new();
@@ -57,10 +72,5 @@ impl PulseApp {
             }
         }
         ingested
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn collect_snapshots(&mut self) {
-        let _ = self.poll_snapshots();
     }
 }

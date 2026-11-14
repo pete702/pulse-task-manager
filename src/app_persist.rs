@@ -21,9 +21,9 @@ impl PulseApp {
         self.cpu_history.set_show_core_grid(s.cpu_show_grid);
         self.last_viewport_size = Some(egui::Vec2::new(s.win_w, s.win_h));
         // Full-tab persistence: storage/network windows, chart mode, probe.
-        crate::modules::storage::view::set_window_secs(s.storage_window_secs as usize);
-        crate::modules::network::view::set_window_secs(s.network_window_secs as usize);
-        crate::modules::network::view::set_chart_mode_value(s.network_chart_mode);
+        self.storage_view_state.set_window_secs(s.storage_window_secs as usize);
+        self.network_view_state.set_window_secs(s.network_window_secs as usize);
+        self.network_view_state.set_chart_mode_value(s.network_chart_mode);
         crate::modules::network::latency_probe::set_probe_enabled(s.network_probe_enabled);
         crate::modules::cpu::table_cols::set_persisted_col_widths(s.cpu_col_widths);
         self.last_saved = s.clone();
@@ -42,9 +42,9 @@ impl PulseApp {
             cpu_show_grid: self.cpu_history.show_core_grid(),
             mem_window_secs: persist::secs_from_chart_window(self.memory_history.chart_window),
             cpu_window_secs: persist::secs_from_chart_window(self.cpu_history.chart_window),
-            storage_window_secs: crate::modules::storage::view::window_secs() as u64,
-            network_window_secs: crate::modules::network::view::window_secs() as u64,
-            network_chart_mode: crate::modules::network::view::chart_mode_value(),
+            storage_window_secs: self.storage_view_state.window_secs() as u64,
+            network_window_secs: self.network_view_state.window_secs() as u64,
+            network_chart_mode: self.network_view_state.chart_mode_value(),
             network_probe_enabled: crate::modules::network::latency_probe::probe_enabled(),
             process_quick_filter: self.cpu_table_state.quick_filter.to_u8(),
             cpu_col_widths: crate::modules::cpu::table_cols::get_persisted_col_widths(),
@@ -60,7 +60,7 @@ impl PulseApp {
         let cur = self.collect_persisted();
         if force {
             if cur != self.last_saved {
-                let _ = persist::save_state(&cur);
+                persist::save_now(&cur);
                 self.last_saved = cur;
                 self.dirty_since = None;
                 self.dirty_state_snapshot = None;
@@ -78,8 +78,7 @@ impl PulseApp {
             return;
         }
         let due = self.dirty_since.is_some_and(|t| t.elapsed() >= Duration::from_millis(500));
-        if due {
-            let _ = persist::save_state(&cur);
+        if due && persist::save_if_due(&cur) {
             self.last_saved = cur;
             self.dirty_since = None;
             self.dirty_state_snapshot = None;

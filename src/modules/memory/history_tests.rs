@@ -25,7 +25,7 @@ mod tests {
     #[test]
     fn test_history_ring_buffer_eviction() {
         let mut h = MemoryHistory::new();
-        for i in 0..965 {
+        for i in 0..1925 {
             let snap = MemorySnapshot {
                 ram_total_bytes: 1000,
                 ram_used_bytes: 500 + (i % 10) as u64,
@@ -34,7 +34,7 @@ mod tests {
             };
             h.push(&snap);
         }
-        assert_eq!(h.len(), 960, "ring buffer evicts the oldest samples");
+        assert_eq!(h.len(), 1920, "ring buffer evicts the oldest samples");
     }
 
     #[test]

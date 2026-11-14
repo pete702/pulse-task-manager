@@ -66,21 +66,7 @@ fn spike_expires_after_120_ticks() {
     }
     assert!(snap.last_io_spike.is_none());
 }
-#[test]
-fn dedup_selects_one_per_disk() {
-    let entries = [("C:\\", Some(0)), ("D:\\", Some(0)), ("H:\\", Some(1))];
-    let unique = dedupe_disk_mounts(&entries);
-    assert_eq!(unique.len(), 2);
-    assert!(unique.contains(&"C:\\"));
-    assert!(unique.contains(&"H:\\"));
-    assert!(!unique.contains(&"D:\\"));
-    let entries2 = [("C:\\", None), ("D:\\", None), ("H:\\", Some(1))];
-    let unique2 = dedupe_disk_mounts(&entries2);
-    assert_eq!(unique2.len(), 3);
-    assert!(unique2.contains(&"C:\\"));
-    assert!(unique2.contains(&"D:\\"));
-    assert!(unique2.contains(&"H:\\"));
-}
+
 #[test]
 fn unmapped_volume_gets_per_letter_rates_without_disk0_inflation() {
     use crate::modules::storage::io_agg::{aggregate_io_by_disk, aggregate_io_by_letter};

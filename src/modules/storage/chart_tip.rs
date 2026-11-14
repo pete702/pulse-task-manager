@@ -51,34 +51,38 @@ pub(crate) fn draw_hover_tip(
         if !show {
             continue;
         }
-        if let Some(pt) =
-            s.iter().copied().min_by(|a, b| (a[0] - target).abs().total_cmp(&(b[0] - target).abs()))
-        {
-            let yv = san(pt[1]);
-            let y = if ceil > 0.0 {
-                rect.bottom() - ((yv / ceil).clamp(0.0, 1.0) as f32) * rect.height()
+        if let Some(pt) = crate::ui::chart_kit::find_nearest_point(s, target, f64::INFINITY) {
+            if (pt[0] - target).abs() <= 1.0 / 60.0 {
+                let yv = san(pt[1]);
+                let y = if ceil > 0.0 {
+                    rect.bottom() - ((yv / ceil).clamp(0.0, 1.0) as f32) * rect.height()
+                } else {
+                    rect.bottom()
+                };
+                let dot = egui::pos2(pos.x, y);
+                p.circle_filled(
+                    dot,
+                    5.0,
+                    egui::Color32::from_rgba_unmultiplied(col.r(), col.g(), col.b(), 70),
+                );
+                p.circle_filled(dot, 3.5, col);
+                p.circle_stroke(
+                    dot,
+                    3.5,
+                    egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(240, 253, 250)),
+                );
+                lines.push((format!("{name}: {yv:.1} MB/s ({})", when_str(ago)), col));
             } else {
-                rect.bottom()
-            };
-            let dot = egui::pos2(pos.x, y);
-            p.circle_filled(
-                dot,
-                5.0,
-                egui::Color32::from_rgba_unmultiplied(col.r(), col.g(), col.b(), 70),
-            );
-            p.circle_filled(dot, 3.5, col);
-            p.circle_stroke(
-                dot,
-                3.5,
-                egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(240, 253, 250)),
-            );
-            lines.push((format!("{name}: {yv:.1} MB/s ({})", when_str(ago)), col));
+                lines.push(("no data".to_owned(), colors::TEXT_SECONDARY));
+            }
+        } else {
+            lines.push(("no data".to_owned(), colors::TEXT_SECONDARY));
         }
     }
     if lines.is_empty() {
         return;
     }
-    let tw = 240.0_f32;
+    let tw = rect.width().min(240.0);
     let th = lines.len() as f32 * 16.0 + 10.0;
     let x =
         (pos.x + 14.0).clamp(rect.left() + 4.0, (rect.right() - tw - 4.0).max(rect.left() + 4.0));
@@ -102,7 +106,13 @@ pub(crate) fn draw_hover_tip(
     }
 }
 /// Interactive Read/Write legend toggles on the plot top edge.
-pub(crate) fn draw_toggles(ui: &mut egui::Ui, rect: egui::Rect, sr: bool, sw: bool) {
+pub(crate) fn draw_toggles(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    sr: bool,
+    sw: bool,
+    state: &mut crate::modules::storage::view::StorageViewState,
+) {
     let y = rect.top() + 3.0;
     let items = [
         ("Read MB/s", colors::ACCENT_CYAN, sr, true, 64.0, "storage_chart_show_read"),
@@ -118,13 +128,30 @@ pub(crate) fn draw_toggles(ui: &mut egui::Ui, rect: egui::Rect, sr: bool, sw: bo
         if resp.clicked() {
             let (nr, nw) = next_visibility(sr, sw, is_read);
             if is_read {
-                crate::modules::storage::view::set_show_read(nr);
+                state.set_show_read(nr);
             } else {
-                crate::modules::storage::view::set_show_write(nw);
+                state.set_show_write(nw);
             }
         }
-        let ca = if active { 195 } else { 60 };
-        let ta = if active { 175 } else { 60 };
+        let is_last = if is_read { sr && !sw } else { sw && !sr };
+        let ca = if active {
+            if is_last {
+                110
+            } else {
+                195
+            }
+        } else {
+            60
+        };
+        let ta = if active {
+            if is_last {
+                90
+            } else {
+                175
+            }
+        } else {
+            60
+        };
         let cc = egui::Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), ca);
         let tc = egui::Color32::from_rgba_unmultiplied(148, 163, 184, ta);
         p.circle_filled(egui::pos2(r.min.x + 6.0, r.min.y + 7.0), 3.5, cc);

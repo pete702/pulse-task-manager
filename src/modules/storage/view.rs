@@ -8,69 +8,52 @@ use crate::modules::storage::physical_disk::drive_letter;
 use crate::modules::storage::view_helpers::{render_status_and_kpis, scope_label_for};
 use crate::modules::storage::volume_cards::{render_all_selector, render_volume_cards};
 use eframe::egui;
-use std::sync::{Arc, Mutex, OnceLock};
-struct StorageViewState {
-    history: StorageHistory,
-    window_secs: usize,
-    last_sample_ts: Option<f64>,
-    selected_mount: Option<Arc<str>>,
-    show_read: bool,
-    show_write: bool,
+use std::sync::Arc;
+
+#[derive(Default)]
+pub struct StorageViewState {
+    pub history: StorageHistory,
+    pub window_secs: usize,
+    pub last_sample_ts: Option<f64>,
+    pub selected_mount: Option<Arc<str>>,
+    pub show_read: bool,
+    pub show_write: bool,
 }
-impl Default for StorageViewState {
-    fn default() -> Self {
-        Self {
-            history: StorageHistory::new(),
-            window_secs: 300,
-            last_sample_ts: None,
-            selected_mount: None,
-            show_read: true,
-            show_write: true,
-        }
+
+impl StorageViewState {
+    pub fn new() -> Self {
+        Self { window_secs: 300, show_read: true, show_write: true, ..Default::default() }
+    }
+    pub fn set_window_secs(&mut self, secs: usize) {
+        self.window_secs = secs;
+    }
+    pub fn window_secs(&self) -> usize {
+        self.window_secs
+    }
+    pub fn set_show_read(&mut self, v: bool) {
+        self.show_read = v || (self.show_read && !self.show_write);
+    }
+    pub fn set_show_write(&mut self, v: bool) {
+        self.show_write = v || (self.show_write && !self.show_read);
+    }
+    pub fn clear_selected(&mut self) {
+        self.selected_mount = None;
+    }
+    #[cfg(test)]
+    pub fn selected_mount(&self) -> Option<Arc<str>> {
+        self.selected_mount.clone()
+    }
+    #[cfg(test)]
+    pub fn set_selected_for_test(&mut self, value: Option<Arc<str>>) {
+        self.selected_mount = value;
     }
 }
-static STATE: OnceLock<Mutex<StorageViewState>> = OnceLock::new();
-fn state() -> &'static Mutex<StorageViewState> {
-    STATE.get_or_init(|| Mutex::new(StorageViewState::default()))
-}
-/// Updates the chart window (called from chart window buttons).
-pub fn set_window_secs(secs: usize) {
-    let mut g = state().lock().unwrap_or_else(|e| e.into_inner());
-    g.window_secs = secs;
-}
-pub fn set_show_read(v: bool) {
-    let mut g = state().lock().unwrap_or_else(|e| e.into_inner());
-    g.show_read = v || (g.show_read && !g.show_write);
-}
-pub fn set_show_write(v: bool) {
-    let mut g = state().lock().unwrap_or_else(|e| e.into_inner());
-    g.show_write = v || (g.show_write && !g.show_read);
-}
-pub fn window_secs() -> usize {
-    state().lock().unwrap_or_else(|e| e.into_inner()).window_secs
-}
-/// Clears selection back to All Disks (called from chart scope button).
-pub fn clear_selected() {
-    let mut g = state().lock().unwrap_or_else(|e| e.into_inner());
-    g.selected_mount = None;
-}
-/// Current selected mount (None = All Disks).
-#[allow(dead_code)]
-pub fn selected_mount() -> Option<Arc<str>> {
-    state().lock().unwrap_or_else(|e| e.into_inner()).selected_mount.clone()
-}
-#[cfg(test)]
-pub(crate) fn set_selected_for_test(value: Option<Arc<str>>) {
-    let mut g = state().lock().unwrap_or_else(|e| e.into_inner());
-    g.selected_mount = value;
-}
-fn history_key_for_volume(v: &DiskVolumeInfo) -> Option<u32> {
-    v.physical_disk
-        .or_else(|| drive_letter(v.mount_point.as_ref()).map(|ch| 0x8000_0000 | (ch as u32)))
-}
-/// Background ingestion on worker pause-adjusted timestamps.
-pub fn ingest_storage_snapshot(snap: &std::sync::Arc<SystemSnapshot>) {
-    let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
+
+pub fn ingest_storage_snapshot(
+    state: &mut StorageViewState,
+    snap: &std::sync::Arc<SystemSnapshot>,
+) {
+    let guard = state;
     let elapsed = snap.memory.as_ref().map(|m| m.sample_elapsed_secs).unwrap_or(0.0);
     let due = guard.last_sample_ts.is_none_or(|last| elapsed > last);
     if !due {
@@ -89,12 +72,12 @@ pub fn ingest_storage_snapshot(snap: &std::sync::Arc<SystemSnapshot>) {
     }
     guard.last_sample_ts = Some(elapsed);
 }
-fn sync_sel(selected: &mut Option<Arc<str>>, init: &Option<Arc<str>>) {
-    let g = state().lock().unwrap_or_else(|e| e.into_inner());
-    if g.selected_mount != *init {
-        *selected = g.selected_mount.clone();
-    }
+
+fn history_key_for_volume(v: &DiskVolumeInfo) -> Option<u32> {
+    v.physical_disk
+        .or_else(|| drive_letter(v.mount_point.as_ref()).map(|ch| 0x8000_0000 | (ch as u32)))
 }
+
 #[allow(clippy::too_many_arguments)]
 fn status_chart(
     ui: &mut egui::Ui,
@@ -110,22 +93,21 @@ fn status_chart(
     disk: Option<u32>,
     selected: &mut Option<Arc<str>>,
     init: &Option<Arc<str>>,
+    state: &mut StorageViewState,
 ) {
     render_status_and_kpis(ui, snap, kr, kw, disk);
     ui.add_space(8.0);
-    render_storage_chart(ui, r, w, window, scope.as_deref(), sr, sw);
-    sync_sel(selected, init);
+    render_storage_chart(ui, r, w, window, scope.as_deref(), sr, sw, state);
+    let _ = (selected, init);
 }
-/// Renders the Storage tab as master-detail cockpit or narrow stack.
+
 pub fn render_storage_tab(
     ui: &mut egui::Ui,
     snap: &StorageSnapshot,
     raw_processes: &[RawProcessCpuRow],
+    state: &mut StorageViewState,
 ) {
-    let mut selected = {
-        let guard = state().lock().unwrap_or_else(|e| e.into_inner());
-        guard.selected_mount.clone()
-    };
+    let mut selected = state.selected_mount.clone();
     let sel_initial = selected.clone();
     if selected.is_some() {
         let valid = snap.volumes.iter().any(|v| selected.as_ref() == Some(&v.mount_point));
@@ -147,10 +129,9 @@ pub fn render_storage_tab(
     };
     let scope_label = scope_label_for(snap, scope_disk, history_key_for_volume);
     let (rs, ws, window, sr, sw) = {
-        let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
-        let win = guard.window_secs;
-        let (r, w) = guard.history.series_points_scoped(scope_disk, win);
-        (r, w, win, guard.show_read, guard.show_write)
+        let win = state.window_secs;
+        let (r, w) = state.history.series_points_scoped(scope_disk, win);
+        (r, w, win, state.show_read, state.show_write)
     };
     if ui.available_width() >= 680.0 {
         let full_h = ui.available_height().max(320.0);
@@ -190,6 +171,7 @@ pub fn render_storage_tab(
                         scope_disk,
                         &mut selected,
                         &sel_initial,
+                        state,
                     );
                     ui.add_space(8.0);
                     render_selection_split(ui, snap, raw_processes, &selected);
@@ -212,6 +194,7 @@ pub fn render_storage_tab(
                 scope_disk,
                 &mut selected,
                 &sel_initial,
+                state,
             );
             ui.add_space(8.0);
             render_all_selector(ui, snap.read_mb_s, snap.write_mb_s, &mut selected);
@@ -221,17 +204,18 @@ pub fn render_storage_tab(
             render_selection_split(ui, snap, raw_processes, &selected);
         });
     }
-    let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
-    guard.selected_mount = selected;
+    state.selected_mount = selected;
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn clear_selected_persists_after_show_all() {
-        set_selected_for_test(Some(Arc::from("C:\\")));
-        clear_selected();
-        assert_eq!(selected_mount(), None);
-        set_selected_for_test(None);
+        let mut s = StorageViewState::new();
+        s.set_selected_for_test(Some(Arc::from("C:\\")));
+        s.clear_selected();
+        assert_eq!(s.selected_mount(), None);
+        s.set_selected_for_test(None);
     }
 }

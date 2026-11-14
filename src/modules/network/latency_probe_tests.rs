@@ -14,14 +14,24 @@ fn probe_defaults_and_dns_guard() {
         g.1 = Some(std::time::Instant::now());
     }
     assert_eq!(dns_flush_state(), DnsFlushState::Success);
-    assert!(dns_flushed_recently());
+    {
+        let g = dns_slot().lock().unwrap_or_else(|e| e.into_inner());
+        assert!(
+            g.0 == DnsFlushState::Success && g.1.is_some_and(|t| t.elapsed().as_millis() < 3000)
+        );
+    }
     {
         let mut g = dns_slot().lock().unwrap_or_else(|e| e.into_inner());
         g.0 = DnsFlushState::Idle;
         g.1 = None;
     }
     assert_eq!(dns_flush_state(), DnsFlushState::Idle);
-    assert!(!dns_flushed_recently());
+    {
+        let g = dns_slot().lock().unwrap_or_else(|e| e.into_inner());
+        assert!(
+            !(g.0 == DnsFlushState::Success && g.1.is_some_and(|t| t.elapsed().as_millis() < 3000))
+        );
+    }
 }
 #[test]
 fn timeout_clears_ping_and_jitter() {
@@ -45,4 +55,16 @@ fn disable_clears_history_without_fake_loss() {
     assert_eq!(probe_failures(), 0);
     assert_eq!(probe_state().0, None);
     set_probe_enabled(true);
+}
+
+#[test]
+fn sanitize_probe_target_strict() {
+    assert_eq!(sanitize_probe_target(" 1.1.1.1:53 "), Some("1.1.1.1:53"));
+    assert_eq!(sanitize_probe_target("dns.google"), Some("dns.google"));
+    assert_eq!(sanitize_probe_target(""), None);
+    assert_eq!(sanitize_probe_target("bad host"), None);
+    assert_eq!(sanitize_probe_target("a;b"), None);
+    assert_eq!(sanitize_probe_target("x\"y"), None);
+    assert_eq!(sanitize_probe_target("a\nb"), None);
+    assert_eq!(sanitize_probe_target(&"a".repeat(254)), None);
 }

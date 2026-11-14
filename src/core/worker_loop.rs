@@ -5,13 +5,13 @@ use crate::core::{
 };
 use crate::modules::cpu::collector::{collect_cpu, warmup_cpu, CpuCollector};
 use crate::modules::cpu::model::{CpuSnapshot, RawProcessCpuRow};
-use crate::modules::cpu::win32_cpu::init_cpu_brand_and_base_mhz;
 use crate::modules::memory::collector::{collect_memory, collect_process_memory};
 use crate::modules::memory::delta_tracker::ProcessDeltaTracker;
 use crate::modules::memory::model::RawProcessRow;
-use crate::modules::memory::win32_api::own_working_set_mb;
 use crate::modules::network::collector::NetworkCollector;
 use crate::modules::storage::collector::StorageCollector;
+use crate::platform::win32_api::own_working_set_mb;
+use crate::platform::win32_cpu::init_cpu_brand_and_base_mhz;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::thread;
@@ -27,11 +27,6 @@ pub(crate) struct SpawnedWorker {
 }
 
 static WORKER_PAUSED: AtomicBool = AtomicBool::new(false);
-
-#[allow(dead_code)]
-pub fn is_worker_paused() -> bool {
-    WORKER_PAUSED.load(Ordering::SeqCst)
-}
 
 pub fn set_worker_paused(paused: bool) {
     let was_paused = WORKER_PAUSED.swap(paused, Ordering::SeqCst);
@@ -144,19 +139,19 @@ pub fn spawn_worker(
                         cpu.process_count = last_cpu_raw_rows.len();
                         cpu.process_scan_id = process_scan_id;
                         last_cpu = Some(cpu.clone());
-                        let ((processes, spike), heavy) = collect_process_memory(
+                        let result = collect_process_memory(
                             &mut sys,
                             memory.ram_total_bytes,
                             memory.ram_usage_percent(),
                             &mut delta_tracker,
                             true,
                         );
-                        let shared = Arc::new(processes);
+                        let shared = Arc::new(result.processes);
                         last_processes = Arc::clone(&shared);
                         memory.processes = shared;
-                        memory.has_heavy_process = heavy;
-                        last_heavy = heavy;
-                        last_spike = spike;
+                        memory.has_heavy_process = result.has_heavy_process;
+                        last_heavy = result.has_heavy_process;
+                        last_spike = result.spike;
                     }
                 }
                 if !scanned {

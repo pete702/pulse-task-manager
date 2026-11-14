@@ -1,78 +1,68 @@
 //! Cached badge text helpers and tab badge painting for the sidebar.
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
+
+const BADGE_CACHE_CAP: usize = 256;
+
+#[allow(clippy::type_complexity)]
+static BADGE_CACHE: OnceLock<Mutex<HashMap<(u8, u16), Arc<str>>>> = OnceLock::new();
+
+fn badge_cache() -> &'static Mutex<HashMap<(u8, u16), Arc<str>>> {
+    BADGE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn cached_formatted(kind: u8, key: u16, make: impl FnOnce() -> String) -> Arc<str> {
+    {
+        let cache = badge_cache().lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(value) = cache.get(&(kind, key)) {
+            return Arc::clone(value);
+        }
+    }
+    let value = Arc::from(make());
+    let mut cache = badge_cache().lock().unwrap_or_else(|e| e.into_inner());
+    if cache.len() >= BADGE_CACHE_CAP {
+        cache.clear();
+    }
+    cache.insert((kind, key), Arc::clone(&value));
+    value
+}
+
 pub fn cached_pct(pct: f32) -> Arc<str> {
     let pct = if pct.is_finite() { pct.clamp(0.0, 100.0) } else { 0.0 };
     let key = (pct * 10.0).round() as u16;
-    static C: OnceLock<Mutex<(u16, Arc<str>)>> = OnceLock::new();
-    let mut cache = C
-        .get_or_init(|| Mutex::new((u16::MAX, Arc::from(""))))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if cache.0 != key {
-        cache.0 = key;
-        cache.1 = Arc::from(format!("{}%", pct.round() as u32));
-    }
-    Arc::clone(&cache.1)
+    cached_formatted(0, key, || format!("{}%", pct.round() as u32))
 }
+
 pub fn cached_cpu_pct(pct: f32) -> Arc<str> {
     let pct = if pct.is_finite() { pct.clamp(0.0, 100.0) } else { 0.0 };
     let key = (pct * 10.0).round() as u16;
-    static C: OnceLock<Mutex<(u16, Arc<str>)>> = OnceLock::new();
-    let mut cache = C
-        .get_or_init(|| Mutex::new((u16::MAX, Arc::from(""))))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if cache.0 != key {
-        cache.0 = key;
-        cache.1 = Arc::from(format!("{}%", pct.round() as u32));
-    }
-    Arc::clone(&cache.1)
+    cached_formatted(1, key, || format!("{}%", pct.round() as u32))
 }
+
 pub fn cached_network_badge(total_mbps: f32) -> Arc<str> {
     let total = if total_mbps.is_finite() { total_mbps.max(0.0) } else { 0.0 };
-    let key = (total * 10.0).round() as u64;
-    static C: OnceLock<Mutex<(u64, Arc<str>)>> = OnceLock::new();
-    let mut cache = C
-        .get_or_init(|| Mutex::new((u64::MAX, Arc::from(""))))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if cache.0 != key {
-        cache.0 = key;
-        cache.1 = if total >= 1000.0 {
-            Arc::from(format!("{:.2} Gbps", total / 1000.0))
+    let key = (total * 10.0).round().min(u16::MAX as f32) as u16;
+    cached_formatted(2, key, || {
+        if total >= 1000.0 {
+            format!("{:.2} Gbps", total / 1000.0)
         } else {
-            Arc::from(format!("{:.1} Mbps", total))
-        };
-    }
-    Arc::clone(&cache.1)
+            format!("{:.1} Mbps", total)
+        }
+    })
 }
+
 pub fn cached_count(count: u32) -> Arc<str> {
-    static C: OnceLock<Mutex<(u32, Arc<str>)>> = OnceLock::new();
-    let mut cache = C
-        .get_or_init(|| Mutex::new((u32::MAX, Arc::from(""))))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if cache.0 != count {
-        cache.0 = count;
-        cache.1 = Arc::from(count.to_string());
-    }
-    Arc::clone(&cache.1)
+    let key = count.min(u16::MAX as u32) as u16;
+    cached_formatted(3, key, || count.to_string())
 }
+
 pub fn cached_storage_badge(total_mb_s: f32) -> Arc<str> {
     let total = if total_mb_s.is_finite() { total_mb_s.max(0.0) } else { 0.0 };
-    let key = (total * 10.0).round() as u32;
-    static C: OnceLock<Mutex<(u32, Arc<str>)>> = OnceLock::new();
-    let mut cache = C
-        .get_or_init(|| Mutex::new((u32::MAX, Arc::from(""))))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if cache.0 != key {
-        cache.0 = key;
-        cache.1 = Arc::from(format!("{:.1} MB/s", total));
-    }
-    Arc::clone(&cache.1)
+    let key = (total * 10.0).round().min(u16::MAX as f32) as u16;
+    cached_formatted(4, key, || format!("{:.1} MB/s", total))
 }
+
 pub fn badge_active(total: f32, state: &mut bool) -> bool {
     let total = if total.is_finite() { total.max(0.0) } else { 0.0 };
     if *state {
@@ -84,6 +74,7 @@ pub fn badge_active(total: f32, state: &mut bool) -> bool {
     }
     *state
 }
+
 pub(super) fn hysteresis_active(slot: &AtomicBool, total: f32) -> bool {
     let total = if total.is_finite() { total.max(0.0) } else { 0.0 };
     let mut cur = slot.load(Ordering::Relaxed);
@@ -91,6 +82,7 @@ pub(super) fn hysteresis_active(slot: &AtomicBool, total: f32) -> bool {
     slot.store(next, Ordering::Relaxed);
     next
 }
+
 pub(super) fn draw_badge_text(
     ui: &eframe::egui::Ui,
     rect: eframe::egui::Rect,
@@ -107,6 +99,7 @@ pub(super) fn draw_badge_text(
         color,
     );
 }
+
 pub(super) fn draw_tab_badge(
     ui: &eframe::egui::Ui,
     rect: eframe::egui::Rect,
@@ -175,6 +168,7 @@ pub(super) fn draw_tab_badge(
         ),
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;

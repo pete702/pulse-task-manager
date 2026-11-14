@@ -19,6 +19,7 @@ mod app_trim;
 mod core;
 mod i18n;
 mod modules;
+mod platform;
 mod theme;
 mod theme_fonts;
 mod ui;
@@ -73,7 +74,7 @@ fn build_pulse_icon() -> Arc<egui::IconData> {
 
 fn print_version() {
     println!("PULSE {} (pulse_manager)", env!("CARGO_PKG_VERSION"));
-    println!("Copyright (c) 2026 Petro (pete702). All Rights Reserved. Proprietary.");
+    println!("Copyright (c) 2026 Petro (pete702). Licensed under the MIT License.");
 }
 
 fn print_help() {
@@ -84,7 +85,7 @@ fn print_help() {
     println!("  --version, -V  Print version and exit");
     println!("  --help, -h, /? Print this help and exit");
     println!();
-    println!("Copyright (c) 2026 Petro (pete702). All Rights Reserved. Proprietary.");
+    println!("Copyright (c) 2026 Petro (pete702). Licensed under the MIT License.");
 }
 
 /// Force integrated GPU on NVIDIA Optimus laptops (0 = integrated, 1 = discrete).
@@ -104,7 +105,6 @@ fn main() -> eframe::Result<()> {
         if PANIC_IN_PROGRESS.swap(true, std::sync::atomic::Ordering::SeqCst) {
             return;
         }
-        crate::core::persist::flush_staged_state();
         let bt_str = if std::env::var_os("PULSE_DEBUG_BACKTRACE").is_some() {
             format!("{}", std::backtrace::Backtrace::force_capture())
         } else {
@@ -113,13 +113,23 @@ fn main() -> eframe::Result<()> {
         let msg = format!("PANIC: {}\nBacktrace: {}", info, bt_str);
         let safe_msg: String = msg.chars().take(65536).collect();
         eprintln!("{}", safe_msg);
-        let log_path = std::env::temp_dir().join(format!("pulse_panic_{}.log", std::process::id()));
-        let _ = std::fs::OpenOptions::new().write(true).create_new(true).open(&log_path).and_then(
-            |mut f| {
-                use std::io::Write;
-                f.write_all(safe_msg.as_bytes())
-            },
-        );
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir();
+        let symlink_parent =
+            std::fs::symlink_metadata(&dir).map(|m| m.file_type().is_symlink()).unwrap_or(false);
+        if !symlink_parent {
+            let log_path = dir.join(format!("pulse_panic_{}_{}.log", std::process::id(), ts));
+            let _ =
+                std::fs::OpenOptions::new().write(true).create_new(true).open(&log_path).and_then(
+                    |mut f| {
+                        use std::io::Write;
+                        f.write_all(safe_msg.as_bytes())
+                    },
+                );
+        }
     }));
 
     let args: Vec<String> =
@@ -166,7 +176,7 @@ fn main() -> eframe::Result<()> {
         args_skip.iter().find(|a| a.starts_with("--lang=")).and_then(|a| a.strip_prefix("--lang="));
 
     // Warm up elevation check once at startup (uses OnceLock internally)
-    let _ = crate::modules::memory::safe_handle::is_app_elevated();
+    let _ = crate::platform::handle::is_app_elevated();
 
     // Initialize language from OS detection (or CLI override)
     i18n::init_language(lang_override);
@@ -179,7 +189,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([saved.win_w, saved.win_h])
             .with_min_inner_size([app_persist::MIN_WINDOW_WIDTH, 560.0_f32])
-            .with_title("▲ PULSE")
+            .with_title("\u{25B2} PULSE")
             .with_icon(build_pulse_icon()),
         // 2D telemetry UI needs zero 3D depth/stencil/MSAA buffers.
         // Disable them to avoid ~30-50 MB driver Private Memory on fullscreen.

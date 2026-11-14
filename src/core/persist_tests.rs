@@ -1,6 +1,11 @@
 //! Persisted state tests.
 
 use super::*;
+use crate::app_tabs::ActiveTab;
+use crate::modules::cpu::table_state::CpuSortCol;
+use crate::modules::memory::model::ChartWindow;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 #[test]
 fn roundtrip_default() {
     let s = PersistedState::default();
@@ -39,11 +44,6 @@ fn roundtrip_new_fields() {
         ..PersistedState::default()
     };
     let r = parse(&serialize(&s));
-    assert_eq!(r.storage_window_secs, 900);
-    assert_eq!(r.network_window_secs, 60);
-    assert_eq!(r.network_chart_mode, 1);
-    assert!(!r.network_probe_enabled);
-    assert_eq!(r.process_quick_filter, 3);
     assert_eq!(r, s);
 }
 #[test]
@@ -73,16 +73,12 @@ fn tab_and_window_maps() {
 fn serialize_nan_inf_win_fallback() {
     let s = PersistedState { win_w: f32::NAN, win_h: f32::INFINITY, ..Default::default() };
     let out = serialize(&s);
-    assert!(out.contains("win_w=1180.0"), "got: {out}");
-    assert!(out.contains("win_h=760.0"), "got: {out}");
+    assert!(out.contains("win_w=1180.0") && out.contains("win_h=760.0"));
 }
 #[test]
 fn parse_nan_inf_win_fallback() {
     let s = parse("win_w=NaN\nwin_h=inf\nwin_w=-inf\n");
-    assert!(s.win_w.is_finite());
-    assert!(s.win_h.is_finite());
-    assert_eq!(s.win_w, 1180.0);
-    assert_eq!(s.win_h, 760.0);
+    assert_eq!((s.win_w, s.win_h), (1180.0, 760.0));
 }
 #[test]
 fn roundtrip_cpu_col_widths() {
@@ -90,6 +86,59 @@ fn roundtrip_cpu_col_widths() {
         cpu_col_widths: Some([56.0, 210.0, 64.0, 78.0, 140.0, 96.0, 88.0]),
         ..Default::default()
     };
-    let r = parse(&serialize(&s));
-    assert_eq!(r.cpu_col_widths, Some([56.0, 210.0, 64.0, 78.0, 140.0, 96.0, 88.0]));
+    assert_eq!(parse(&serialize(&s)).cpu_col_widths, s.cpu_col_widths);
+}
+#[test]
+fn version1_roundtrip_and_v0_compat() {
+    let s = PersistedState {
+        cpu_col_widths: Some([56.0, 210.0, 64.0, 78.0, 140.0, 96.0, 88.0]),
+        ..Default::default()
+    };
+    let text = serialize(&s);
+    assert!(text.starts_with("version=1\n"));
+    assert_eq!(parse(&text), s);
+    let old = text.replacen("version=1\n", "", 1);
+    assert_eq!(parse(&old), s);
+}
+#[test]
+fn parse_unknown_key_and_coercion_handling() {
+    let s = PersistedState::default();
+    let base = serialize(&s);
+    let bad = format!("version=9\n{base}unknown_key=1\nactive_tab=99\n");
+    let c = parse(&bad);
+    assert_eq!(c.active_tab, 5);
+    assert_eq!(c.cpu_col_widths, s.cpu_col_widths);
+}
+#[test]
+fn parse_col_widths_accepts_valid() {
+    let mut iss = 0u32;
+    assert_eq!(
+        parse_col_widths("56,210,64,78,140,96,88", &mut iss),
+        Some([56.0, 210.0, 64.0, 78.0, 140.0, 96.0, 88.0])
+    );
+    assert_eq!(iss, 0);
+}
+#[test]
+fn parse_col_widths_rejects_invalid() {
+    let mut iss = 0u32;
+    assert!(parse_col_widths("56,NaN,64,78,140,96,88", &mut iss).is_none());
+    assert!(parse_col_widths("56,inf,64,78,140,96,88", &mut iss).is_none());
+    assert!(parse_col_widths("56,1600.1,64,78,140,96,88", &mut iss).is_none());
+    assert!(parse_col_widths("1500,1500,1500,1500,10,10,10", &mut iss).is_none());
+    assert!(parse_col_widths("56,210,64,78,140,96", &mut iss).is_none());
+    assert!(parse_col_widths("23.9,210,64,78,140,96,88", &mut iss).is_none());
+    assert!(iss > 0);
+}
+#[test]
+fn write_config_file_rejects_tmp_collision() {
+    let uniq = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let dir = std::env::temp_dir().join(format!("pulse_persist_test_{uniq}"));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("state.cfg");
+    let tmp = dir.join("state.cfg.tmp");
+    std::fs::create_dir_all(&tmp).unwrap();
+    let res = write_config_file(&path, "version=1\nactive_tab=0\n");
+    assert!(res.is_err(), "expected fail-closed on tmp collision");
+    assert!(!path.exists(), "destination must not be written on collision");
+    let _ = std::fs::remove_dir_all(&dir);
 }

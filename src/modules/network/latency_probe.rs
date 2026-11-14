@@ -1,23 +1,21 @@
-//! Non-blocking esports ping/jitter probe plus safe DNS flush.
-//! A single persistent background thread serves probe and flush requests
-//! over a channel so no thread is spawned per sample.
-
-use std::collections::VecDeque;
-use std::net::{TcpStream, ToSocketAddrs};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
-
+use std::{
+    collections::VecDeque,
+    net::{TcpStream, ToSocketAddrs},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Mutex, OnceLock,
+    },
+    time::{Duration, Instant},
+};
 #[derive(Debug, Default)]
-struct ProbeState {
-    ping_ms: Option<f32>,
-    jitter_ms: Option<f32>,
-    prev_rtt: Option<f32>,
-    recent: VecDeque<bool>,
-    last_probe: Option<Instant>,
-    consecutive_failures: u32,
+pub(crate) struct ProbeState {
+    pub(crate) ping_ms: Option<f32>,
+    pub(crate) jitter_ms: Option<f32>,
+    pub(crate) prev_rtt: Option<f32>,
+    pub(crate) recent: VecDeque<bool>,
+    pub(crate) last_probe: Option<Instant>,
+    pub(crate) consecutive_failures: u32,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DnsFlushState {
     Idle,
@@ -25,21 +23,20 @@ pub enum DnsFlushState {
     Success,
     Failed,
 }
-
-enum Cmd {
+pub(crate) enum Cmd {
     Probe,
     Flush,
+    Shutdown,
 }
-
 static STATE: OnceLock<Mutex<ProbeState>> = OnceLock::new();
 static PROBE_ENABLED: AtomicBool = AtomicBool::new(true);
 static PROBE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static FAST_PROBE_MODE: AtomicBool = AtomicBool::new(false);
-static TX: OnceLock<Mutex<Option<mpsc::Sender<Cmd>>>> = OnceLock::new();
+#[allow(clippy::type_complexity)]
+pub(crate) static TX: OnceLock<
+    Mutex<Option<(mpsc::Sender<Cmd>, Option<std::thread::JoinHandle<()>>)>>,
+> = OnceLock::new();
 static DNS_STATE: OnceLock<Mutex<(DnsFlushState, Option<Instant>)>> = OnceLock::new();
-
-/// Adaptive probe interval in ms: 1000 when fast (Network tab), else 10000.
-/// Sleeps in 250 ms steps: 4 steps (1000 ms) fast, 40 steps (10_000 ms) slow.
 fn probe_interval_ms() -> u64 {
     if FAST_PROBE_MODE.load(Ordering::Relaxed) {
         1000
@@ -47,9 +44,6 @@ fn probe_interval_ms() -> u64 {
         10_000
     }
 }
-
-/// Sets adaptive probe mode; switching to fast wakes the throttle early.
-#[allow(dead_code)]
 pub fn set_fast_probe_mode(fast: bool) {
     let prev = FAST_PROBE_MODE.swap(fast, Ordering::Relaxed);
     if fast && !prev {
@@ -58,26 +52,21 @@ pub fn set_fast_probe_mode(fast: bool) {
         }
     }
 }
-
-fn state() -> &'static Mutex<ProbeState> {
+pub(crate) fn state() -> &'static Mutex<ProbeState> {
     STATE.get_or_init(|| Mutex::new(ProbeState::default()))
 }
-fn dns_slot() -> &'static Mutex<(DnsFlushState, Option<Instant>)> {
+pub(crate) fn dns_slot() -> &'static Mutex<(DnsFlushState, Option<Instant>)> {
     DNS_STATE.get_or_init(|| Mutex::new((DnsFlushState::Idle, None)))
 }
-
 struct InFlightReset;
 impl Drop for InFlightReset {
     fn drop(&mut self) {
         PROBE_IN_FLIGHT.store(false, Ordering::Release);
     }
 }
-
-#[allow(dead_code)]
 pub fn probe_enabled() -> bool {
     PROBE_ENABLED.load(Ordering::Relaxed)
 }
-#[allow(dead_code)]
 pub fn set_probe_enabled(value: bool) {
     PROBE_ENABLED.store(value, Ordering::Relaxed);
     if !value {
@@ -89,7 +78,6 @@ pub fn set_probe_enabled(value: bool) {
         guard.recent.clear();
     }
 }
-#[allow(dead_code)]
 pub fn probe_state() -> (Option<f32>, Option<f32>, f32, bool) {
     if !probe_enabled() {
         return (None, None, 0.0, false);
@@ -103,33 +91,24 @@ pub fn probe_state() -> (Option<f32>, Option<f32>, f32, bool) {
     };
     (guard.ping_ms, guard.jitter_ms, loss, true)
 }
-#[allow(dead_code)]
 pub fn probe_sample_count() -> usize {
     state().lock().unwrap_or_else(|e| e.into_inner()).recent.len()
 }
-#[allow(dead_code)]
 pub fn probe_failures() -> u32 {
     state().lock().unwrap_or_else(|e| e.into_inner()).consecutive_failures
 }
-#[allow(dead_code)]
 pub fn dns_flush_state() -> DnsFlushState {
     dns_slot().lock().unwrap_or_else(|e| e.into_inner()).0
 }
-#[allow(dead_code)]
-pub fn dns_flushed_recently() -> bool {
-    let guard = dns_slot().lock().unwrap_or_else(|e| e.into_inner());
-    guard.0 == DnsFlushState::Success && guard.1.is_some_and(|t| t.elapsed().as_millis() < 3000)
-}
-
-fn ensure_worker() -> Option<mpsc::Sender<Cmd>> {
+pub(crate) fn ensure_worker() -> Option<mpsc::Sender<Cmd>> {
     let slot = TX.get_or_init(|| Mutex::new(None));
     let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(tx) = guard.as_ref() {
+    if let Some((tx, _)) = guard.as_ref() {
         return Some(tx.clone());
     }
     let (tx, rx) = mpsc::channel::<Cmd>();
     let tx2 = tx.clone();
-    std::thread::spawn(move || {
+    let handle = std::thread::spawn(move || {
         while let Ok(cmd) = rx.recv() {
             match cmd {
                 Cmd::Probe => {
@@ -137,16 +116,21 @@ fn ensure_worker() -> Option<mpsc::Sender<Cmd>> {
                     let rtt = tcp_rtt_ms();
                     record_sample(rtt);
                 }
-                Cmd::Flush => run_flush(),
+                Cmd::Flush => crate::modules::network::latency_probe_handle::run_flush(),
+                Cmd::Shutdown => break,
             }
         }
     });
-    *guard = Some(tx2.clone());
+    *guard = Some((tx2.clone(), Some(handle)));
     Some(tx2)
 }
-
-#[allow(dead_code)]
 pub fn maybe_trigger_probe() {
+    let _ = (
+        crate::modules::network::latency_probe_handle::probe_snapshot(),
+        probe_state(),
+        probe_sample_count(),
+        probe_failures(),
+    );
     if !probe_enabled() || PROBE_IN_FLIGHT.swap(true, Ordering::AcqRel) {
         return;
     }
@@ -173,10 +157,22 @@ pub fn maybe_trigger_probe() {
         PROBE_IN_FLIGHT.store(false, Ordering::Release);
     }
 }
-
+pub(crate) fn sanitize_probe_target(raw: &str) -> Option<&str> {
+    let t = raw.trim_matches(|c: char| c.is_ascii_whitespace());
+    if t.is_empty() || t.len() > 253 {
+        return None;
+    }
+    if t.bytes().any(|b| !(b.is_ascii_alphanumeric() || b == b'.' || b == b'-' || b == b':')) {
+        return None;
+    }
+    Some(t)
+}
 fn tcp_rtt_ms() -> Option<f32> {
     for host in ["1.1.1.1:53", "8.8.8.8:53", "1.1.1.1:443", "8.8.8.8:443"] {
-        let Some(addr) = host.to_socket_addrs().ok().and_then(|mut i| i.next()) else {
+        let Some(target) = sanitize_probe_target(host) else {
+            continue;
+        };
+        let Some(addr) = target.to_socket_addrs().ok().and_then(|mut i| i.next()) else {
             continue;
         };
         let start = Instant::now();
@@ -186,7 +182,6 @@ fn tcp_rtt_ms() -> Option<f32> {
     }
     None
 }
-
 fn record_sample(rtt: Option<f32>) {
     let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
     guard.recent.push_back(rtt.is_some());
@@ -211,41 +206,7 @@ fn record_sample(rtt: Option<f32>) {
         guard.prev_rtt = None;
     }
 }
-
-fn run_flush() {
-    {
-        let mut g = dns_slot().lock().unwrap_or_else(|e| e.into_inner());
-        g.0 = DnsFlushState::Running;
-        g.1 = None;
-    }
-    let mut cmd = {
-        #[cfg(target_os = "windows")]
-        {
-            let exe = std::env::var_os("SystemRoot")
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Windows"))
-                .join("System32")
-                .join("ipconfig.exe");
-            std::process::Command::new(exe)
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            std::process::Command::new("ipconfig")
-        }
-    };
-    cmd.args(["/flushdns"]);
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000);
-    }
-    let ok = cmd.status().is_ok_and(|s| s.success());
-    let mut g = dns_slot().lock().unwrap_or_else(|e| e.into_inner());
-    g.0 = if ok { DnsFlushState::Success } else { DnsFlushState::Failed };
-    g.1 = Some(Instant::now());
-}
-
-#[allow(dead_code)]
+pub use crate::modules::network::latency_probe_handle::{probe_snapshot, LatencyProbe};
 pub fn trigger_dns_flush() {
     let mut g = dns_slot().lock().unwrap_or_else(|e| e.into_inner());
     if g.0 == DnsFlushState::Running {
@@ -263,7 +224,6 @@ pub fn trigger_dns_flush() {
         g2.0 = DnsFlushState::Idle;
     }
 }
-
 #[cfg(test)]
 #[path = "latency_probe_tests.rs"]
 mod tests;

@@ -6,16 +6,12 @@ use std::time::Instant;
 
 use sysinfo::Networks;
 
-use crate::modules::network::grade::classify_grade;
-use crate::modules::network::latency_probe::{
-    maybe_trigger_probe, probe_failures, probe_sample_count, probe_state,
-};
+use crate::modules::network::latency_probe::{maybe_trigger_probe, probe_enabled, probe_snapshot};
 use crate::modules::network::model::{NetworkAdapterInfo, NetworkSnapshot};
 
 const GIB_BYTES: f64 = 1_073_741_824.0;
 
 /// True for virtual/loopback pseudo-interfaces that must not be shown.
-#[allow(dead_code)]
 fn is_virtual(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     lower.contains("loopback")
@@ -33,7 +29,6 @@ fn is_virtual(name: &str) -> bool {
 }
 
 /// Bytes-per-interval to megabits/sec, finite-clamped.
-#[allow(dead_code)]
 fn compute_mbps(delta_bytes: u64, elapsed_secs: f32) -> f32 {
     let rate = delta_bytes as f32 * 8.0 / (elapsed_secs.max(0.2) * 1_000_000.0);
     if rate.is_finite() {
@@ -45,26 +40,26 @@ fn compute_mbps(delta_bytes: u64, elapsed_secs: f32) -> f32 {
 
 /// Pure per-adapter tick math: rate from lifetime delta, session from baseline.
 /// `prev_lifetime` must be the raw sysinfo counter, never session bytes.
-#[allow(dead_code)]
 fn rate_and_session(prev_lifetime: u64, baseline: u64, now: u64, elapsed: f32) -> (f32, u64) {
     let mbps = compute_mbps(now.saturating_sub(prev_lifetime), elapsed);
     let session = now.saturating_sub(baseline);
     (mbps, session)
 }
 
+type CachedRates = (Arc<[NetworkAdapterInfo]>, f32, f32, u64, u64);
+
 /// Stateful network collector over sysinfo `Networks`.
-#[allow(dead_code)]
 pub struct NetworkCollector {
     networks: Networks,
     last_refresh: Option<Instant>,
     prev: HashMap<Arc<str>, (u64, u64)>,
     adapter_baseline: HashMap<Arc<str>, (u64, u64)>,
     scratch: HashMap<Arc<str>, (u64, u64)>,
+    last_rates: Option<CachedRates>,
 }
 
 impl NetworkCollector {
     /// Creates a collector; first `collect` primes the counter baseline.
-    #[allow(dead_code)]
     pub fn new() -> Self {
         let mut networks = Networks::new();
         networks.refresh_list();
@@ -74,46 +69,55 @@ impl NetworkCollector {
             prev: HashMap::new(),
             adapter_baseline: HashMap::new(),
             scratch: HashMap::new(),
+            last_rates: None,
         }
     }
 
     /// Collects one network snapshot (call once per worker tick).
-    #[allow(dead_code)]
     pub fn collect(&mut self) -> NetworkSnapshot {
         maybe_trigger_probe();
         let now = Instant::now();
         let first = self.last_refresh.is_none();
-        let (elapsed, adapters, rx_total, tx_total) = if first {
+        let (adapters, rx_mbps, tx_mbps, session_rx, session_tx) = if first {
             self.networks.refresh_list();
             let (adapters, rx_total, tx_total) = self.read_adapters(0.0);
             self.last_refresh = Some(now);
-            (0.0, adapters, rx_total, tx_total)
+            let rx_mbps: f32 = adapters.iter().map(|a| a.rx_mbps).sum();
+            let tx_mbps: f32 = adapters.iter().map(|a| a.tx_mbps).sum();
+            let arc: Arc<[NetworkAdapterInfo]> = Arc::from(adapters);
+            self.last_rates = Some((Arc::clone(&arc), rx_mbps, tx_mbps, rx_total, tx_total));
+            (arc, rx_mbps, tx_mbps, rx_total, tx_total)
         } else {
             let elapsed = now.duration_since(self.last_refresh.unwrap_or(now)).as_secs_f32();
-            self.networks.refresh();
-            let out = self.read_adapters(elapsed);
-            self.last_refresh = Some(now);
-            (elapsed, out.0, out.1, out.2)
+            if elapsed < 0.35 {
+                if let Some((a, rx, tx, sr, st)) = self.last_rates.clone() {
+                    (a, rx, tx, sr, st)
+                } else {
+                    self.networks.refresh();
+                    let (adapters, rx_total, tx_total) = self.read_adapters(elapsed);
+                    self.last_refresh = Some(now);
+                    let rx_mbps: f32 = adapters.iter().map(|a| a.rx_mbps).sum();
+                    let tx_mbps: f32 = adapters.iter().map(|a| a.tx_mbps).sum();
+                    let arc: Arc<[NetworkAdapterInfo]> = Arc::from(adapters);
+                    self.last_rates =
+                        Some((Arc::clone(&arc), rx_mbps, tx_mbps, rx_total, tx_total));
+                    (arc, rx_mbps, tx_mbps, rx_total, tx_total)
+                }
+            } else {
+                self.networks.refresh();
+                let (adapters, rx_total, tx_total) = self.read_adapters(elapsed);
+                self.last_refresh = Some(now);
+                let rx_mbps: f32 = adapters.iter().map(|a| a.rx_mbps).sum();
+                let tx_mbps: f32 = adapters.iter().map(|a| a.tx_mbps).sum();
+                let arc: Arc<[NetworkAdapterInfo]> = Arc::from(adapters);
+                self.last_rates = Some((Arc::clone(&arc), rx_mbps, tx_mbps, rx_total, tx_total));
+                (arc, rx_mbps, tx_mbps, rx_total, tx_total)
+            }
         };
-        let _ = elapsed;
-        let rx_mbps: f32 = adapters.iter().map(|a| a.rx_mbps).sum();
-        let tx_mbps: f32 = adapters.iter().map(|a| a.tx_mbps).sum();
-        let (ping_ms, jitter_ms, packet_loss_pct, enabled) = probe_state();
-        let grade = classify_grade(
-            ping_ms,
-            jitter_ms,
-            packet_loss_pct,
-            enabled,
-            rx_mbps + tx_mbps,
-            probe_sample_count(),
-            probe_failures(),
-        );
-        // Single baseline: session is the sum of per-adapter session bytes
-        // already computed in read_adapters (raw - adapter_baseline).
-        let session_rx = rx_total;
-        let session_tx = tx_total;
+        let (ping_ms, jitter_ms, packet_loss_pct, grade, _) = probe_snapshot();
+        let enabled = probe_enabled();
         NetworkSnapshot {
-            adapters: Arc::from(adapters),
+            adapters,
             rx_mbps,
             tx_mbps,
             total_rx_gib: (session_rx as f64 / GIB_BYTES) as f32,
@@ -128,7 +132,6 @@ impl NetworkCollector {
 
     /// Reads filtered adapters and updates the counter baseline.
     /// `prev` always holds raw lifetime counters; `total_*_bytes` hold session.
-    #[allow(dead_code)]
     fn read_adapters(&mut self, elapsed: f32) -> (Vec<NetworkAdapterInfo>, u64, u64) {
         let mut adapters: Vec<NetworkAdapterInfo> = Vec::new();
         // Reuse scratch capacity: clear instead of allocating a fresh map.
@@ -139,9 +142,16 @@ impl NetworkCollector {
             }
             let rx_now = data.total_received();
             let tx_now = data.total_transmitted();
-            let prev = self.prev.get(name.as_str()).copied().unwrap_or((rx_now, tx_now));
-            let base =
-                self.adapter_baseline.entry(Arc::from(name.as_str())).or_insert((rx_now, tx_now));
+            let previous = self.prev.get(name.as_str()).copied().unwrap_or((rx_now, tx_now));
+            let rolled_back = rx_now < previous.0 || tx_now < previous.1;
+            let prev = if rolled_back { (rx_now, tx_now) } else { previous };
+            let base = if rolled_back {
+                self.adapter_baseline.insert(Arc::from(name.as_str()), (rx_now, tx_now));
+                (rx_now, tx_now)
+            } else {
+                *self.adapter_baseline.entry(Arc::from(name.as_str())).or_insert((rx_now, tx_now))
+            };
+            let elapsed = if rolled_back { 0.0 } else { elapsed };
             let (rx_mbps, rx_session) = rate_and_session(prev.0, base.0, rx_now, elapsed);
             let (tx_mbps, tx_session) = rate_and_session(prev.1, base.1, tx_now, elapsed);
             adapters.push(NetworkAdapterInfo {

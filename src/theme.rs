@@ -39,28 +39,16 @@ pub mod colors {
     pub const ACCENT_PURPLE: Color32 = Color32::from_rgb(0xBD, 0x00, 0xFF);
     /// Sidebar active background: #1A2234
     pub const SIDEBAR_ACTIVE_BG: Color32 = Color32::from_rgb(0x1A, 0x22, 0x34);
-    /// Sidebar active border: #00F0FF
-    #[allow(dead_code)]
-    pub const SIDEBAR_ACTIVE_BORDER: Color32 = Color32::from_rgb(0x00, 0xF0, 0xFF);
+
     /// Status bar background: #0A0B10
     pub const STATUS_BAR_BG: Color32 = Color32::from_rgb(0x0A, 0x0B, 0x10);
 }
 
 /// Three Walls badge and muted-text tokens (v0.1.0 aliases).
-#[allow(dead_code)]
-pub const CRITICAL_CORAL: egui::Color32 = colors::ACCENT_RED;
-#[allow(dead_code)]
-pub const WARNING_AMBER: egui::Color32 = colors::ACCENT_AMBER;
 pub const OPTIMAL_EMERALD: egui::Color32 = egui::Color32::from_rgb(0x00, 0xE0, 0x80);
-#[allow(dead_code)]
-pub const TACTICAL_RED: egui::Color32 = colors::ACCENT_RED;
-#[allow(dead_code)]
-pub const EMERALD_GREEN: egui::Color32 = OPTIMAL_EMERALD;
-pub const TEXT_MUTED: egui::Color32 = colors::TEXT_SECONDARY;
 
-/// Traffic-light load color — returns color based on load percentage.
-/// <60% — cyan (#00F0FF), 60-85% — amber (#FFB800), ≥85% — neon red (#FF2A54).
-#[allow(dead_code)]
+/// Traffic-light load color -- returns color based on load percentage.
+/// <60% -- cyan (#00F0FF), 60-85% -- amber (#FFB800), >=85% -- neon red (#FF2A54).
 #[inline]
 pub fn load_color(percent: f32) -> egui::Color32 {
     if !percent.is_finite() {
@@ -86,7 +74,7 @@ pub fn apply_obsidian_theme(ctx: &egui::Context) {
     style.visuals.window_stroke = egui::Stroke::new(colors::BORDER_WIDTH, colors::BORDER);
     style.visuals.window_rounding = egui::Rounding::same(colors::RADIUS);
 
-    // Widget colors — noninteractive
+    // Widget colors -- noninteractive
     style.visuals.widgets.noninteractive.bg_fill = colors::BG_CARD;
     style.visuals.widgets.noninteractive.bg_stroke =
         egui::Stroke::new(colors::BORDER_WIDTH, colors::BORDER);
@@ -94,21 +82,21 @@ pub fn apply_obsidian_theme(ctx: &egui::Context) {
     style.visuals.widgets.noninteractive.fg_stroke =
         egui::Stroke::new(1.0_f32, colors::TEXT_PRIMARY);
 
-    // Widget colors — inactive
+    // Widget colors -- inactive
     style.visuals.widgets.inactive.bg_fill = colors::BG_CARD;
     style.visuals.widgets.inactive.bg_stroke =
         egui::Stroke::new(colors::BORDER_WIDTH, colors::BORDER);
     style.visuals.widgets.inactive.rounding = egui::Rounding::same(colors::RADIUS);
     style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0_f32, colors::TEXT_PRIMARY);
 
-    // Widget colors — hovered
+    // Widget colors -- hovered
     style.visuals.widgets.hovered.bg_fill = colors::HOVER;
     style.visuals.widgets.hovered.bg_stroke =
         egui::Stroke::new(colors::BORDER_WIDTH, colors::ACCENT_CYAN);
     style.visuals.widgets.hovered.rounding = egui::Rounding::same(colors::RADIUS);
     style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0_f32, colors::TEXT_PRIMARY);
 
-    // Widget colors — active
+    // Widget colors -- active
     style.visuals.widgets.active.bg_fill = colors::ACTIVE;
     style.visuals.widgets.active.bg_stroke =
         egui::Stroke::new(colors::BORDER_WIDTH, colors::ACCENT_CYAN);
@@ -139,17 +127,6 @@ pub fn card_frame() -> egui::Frame {
         .stroke(egui::Stroke::new(colors::BORDER_WIDTH, colors::BORDER))
         .rounding(egui::Rounding::same(colors::RADIUS))
         .inner_margin(egui::Margin::same(12.0))
-}
-
-/// Returns an `egui::Frame` for sidebar active tab.
-/// Background: #1A2234, Border: 2px #00F0FF, Radius: 6.0, Inner margin: 8.0.
-#[allow(dead_code)]
-pub fn sidebar_active_frame() -> egui::Frame {
-    egui::Frame::none()
-        .fill(colors::SIDEBAR_ACTIVE_BG)
-        .stroke(egui::Stroke::new(2.0_f32, colors::SIDEBAR_ACTIVE_BORDER))
-        .rounding(egui::Rounding::same(colors::RADIUS))
-        .inner_margin(egui::Margin::same(8.0))
 }
 
 /// Returns an `egui::Frame` for status bar.

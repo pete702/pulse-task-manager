@@ -5,7 +5,8 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
-use crate::modules::memory::downsampling::lttb_downsample;
+use crate::core::downsampling::lttb_downsample;
+use crate::core::ring_history::{is_newer, window_bounds, HISTORY_CAPACITY};
 
 type Sample = (f64, f32, f32, Option<f32>, Option<f32>);
 type AdapterSample = (f64, f32, f32);
@@ -21,37 +22,33 @@ fn push_gap_anchored(pts: &mut Vec<[f64; 2]>, x: f64, y: f64) {
     pts.push([x, y]);
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
 pub struct NetworkHistory {
     samples: VecDeque<Sample>,
     per_adapter: HashMap<String, VecDeque<AdapterSample>>,
+    per_adapter_order: VecDeque<String>,
     revision: u64,
     cached_traffic: Option<SeriesCache>,
     cached_latency: Option<LatencyCache>,
 }
 
 impl NetworkHistory {
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
     }
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.samples.len()
     }
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.samples.is_empty()
     }
-    #[allow(dead_code)]
     pub fn push(&mut self, t: f64, rx: f32, tx: f32, ping: Option<f32>, jitter: Option<f32>) {
-        if let Some(last) = self.samples.back() {
-            if t <= last.0 {
-                return;
-            }
+        if !is_newer(self.samples.back().map(|s| s.0), t) {
+            return;
         }
-        if self.samples.len() == 900 {
+        if self.samples.len() == HISTORY_CAPACITY {
             self.samples.pop_front();
         }
         self.samples.push_back((t, rx, tx, ping, jitter));
@@ -59,30 +56,26 @@ impl NetworkHistory {
         self.cached_traffic = None;
         self.cached_latency = None;
     }
-    #[allow(dead_code)]
     pub fn push_adapter(&mut self, name: &str, t: f64, rx: f32, tx: f32) {
-        if self.per_adapter.len() >= 32 && !self.per_adapter.contains_key(name) {
-            self.per_adapter.clear();
+        if !self.per_adapter.contains_key(name) {
+            crate::util::insert_capped_fifo(
+                &mut self.per_adapter,
+                &mut self.per_adapter_order,
+                32,
+                name.to_owned(),
+                VecDeque::new(),
+            );
         }
-        let entry = self.per_adapter.entry(name.to_owned()).or_default();
-        if let Some(last) = entry.back() {
-            if t <= last.0 {
-                return;
-            }
+        let Some(entry) = self.per_adapter.get_mut(name) else { return };
+        if !is_newer(entry.back().map(|s| s.0), t) {
+            return;
         }
-        if entry.len() == 900 {
+        if entry.len() == HISTORY_CAPACITY {
             entry.pop_front();
         }
         entry.push_back((t, rx, tx));
         self.revision = self.revision.wrapping_add(1);
         self.cached_traffic = None;
-    }
-    #[allow(dead_code, clippy::type_complexity)]
-    pub fn traffic_series(
-        &mut self,
-        window_secs: usize,
-    ) -> (Arc<Vec<[f64; 2]>>, Arc<Vec<[f64; 2]>>) {
-        self.traffic_series_scoped(None, window_secs)
     }
     #[allow(clippy::type_complexity)]
     pub fn traffic_series_scoped(
@@ -128,13 +121,8 @@ impl NetworkHistory {
         let latest = self.samples.back().map(|s| s.0).unwrap_or(0.0);
         let win = window_secs as f64;
         let window_min = win / 60.0;
-        let mut start_idx = 0;
-        for (i, s) in self.samples.iter().enumerate() {
-            if latest - s.0 <= win {
-                start_idx = i;
-                break;
-            }
-        }
+        let timestamps: VecDeque<f64> = self.samples.iter().map(|s| s.0).collect();
+        let (start_idx, _) = window_bounds(self.samples.len(), latest, &timestamps, win);
         let mut first = Vec::new();
         let mut second = Vec::new();
         for s in self.samples.iter().skip(start_idx) {
@@ -162,13 +150,8 @@ impl NetworkHistory {
         let latest = series.back().map(|s| s.0).unwrap_or(0.0);
         let win = window_secs as f64;
         let window_min = win / 60.0;
-        let mut start_idx = 0;
-        for (i, s) in series.iter().enumerate() {
-            if latest - s.0 <= win {
-                start_idx = i;
-                break;
-            }
-        }
+        let timestamps: VecDeque<f64> = series.iter().map(|s| s.0).collect();
+        let (start_idx, _) = window_bounds(series.len(), latest, &timestamps, win);
         let mut first = Vec::new();
         let mut second = Vec::new();
         for s in series.iter().skip(start_idx) {
@@ -195,19 +178,12 @@ impl NetworkHistory {
         let latest = self.samples.back().map(|s| s.0).unwrap_or(0.0);
         let win = window_secs as f64;
         let window_min = win / 60.0;
-        let mut start_idx = 0;
-        for (i, s) in self.samples.iter().enumerate() {
-            if latest - s.0 <= win {
-                start_idx = i;
-                break;
-            }
-        }
+        let timestamps: VecDeque<f64> = self.samples.iter().map(|s| s.0).collect();
+        let (start_idx, _) = window_bounds(self.samples.len(), latest, &timestamps, win);
         let mut first = Vec::new();
         let mut second = Vec::new();
         for s in self.samples.iter().skip(start_idx) {
             let x = -(latest - s.0) / 60.0;
-            // Emit NAN for missing samples so egui_plot breaks the line
-            // across outages. Never fake 0.0.
             push_gap_anchored(&mut first, x, s.3.map(|v| v as f64).unwrap_or(f64::NAN));
             push_gap_anchored(&mut second, x, s.4.map(|v| v as f64).unwrap_or(f64::NAN));
         }
@@ -265,5 +241,12 @@ mod tests {
         let (all_rx, _) = h.traffic_series_scoped(None, 60);
         assert_eq!(all_rx.len(), 5);
         assert_eq!(all_rx[4][1], 10.0);
+    }
+    #[test]
+    fn per_adapter_cap_evicts_oldest_only() {
+        let mut h = NetworkHistory::new();
+        (0..33u32).for_each(|i| h.push_adapter(&format!("a{i}"), i as f64, 1.0, 1.0));
+        assert!(h.per_adapter.len() == 32 && !h.per_adapter.contains_key("a0"));
+        assert!(h.per_adapter.contains_key("a1") && h.per_adapter.contains_key("a32"));
     }
 }

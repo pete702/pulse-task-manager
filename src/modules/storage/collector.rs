@@ -9,9 +9,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use sysinfo::Disks;
-#[allow(dead_code)]
 pub const IO_SPIKE_THRESHOLD_MB_S: f32 = 80.0;
-#[allow(dead_code)]
 pub struct StorageCollector {
     disks: Disks,
     tick_counter: u32,
@@ -19,9 +17,9 @@ pub struct StorageCollector {
     last_io_spike: Option<IoSpikeEvent>,
     last_scan_id: u64,
     prev_per_disk: HashMap<u32, (i64, i64, Instant)>,
+    last_per_disk_rates: HashMap<u32, (f32, f32)>,
 }
 impl StorageCollector {
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             disks: Disks::new(),
@@ -30,9 +28,9 @@ impl StorageCollector {
             last_io_spike: None,
             last_scan_id: 0,
             prev_per_disk: HashMap::new(),
+            last_per_disk_rates: HashMap::new(),
         }
     }
-    #[allow(dead_code)]
     pub fn collect(&mut self, raw_processes: &[RawProcessCpuRow], scan_id: u64) -> StorageSnapshot {
         if self.prev_per_disk.len() > 32 {
             self.prev_per_disk.clear();
@@ -151,10 +149,18 @@ impl StorageCollector {
                 Some((old_r, old_w, at)) => {
                     let dt = now.duration_since(at).as_secs_f64();
                     if dt > 0.0 {
+                        if dt < 0.35 {
+                            if let Some(prev) = self.last_per_disk_rates.get(&disk).copied() {
+                                per_disk.insert(disk, prev);
+                                any_rate = true;
+                            }
+                            continue;
+                        }
                         if new_r >= old_r && new_w >= old_w {
                             let r = ((new_r - old_r) as f64 / dt / 1_048_576.0) as f32;
                             let w = ((new_w - old_w) as f64 / dt / 1_048_576.0) as f32;
                             per_disk.insert(disk, (r, w));
+                            self.last_per_disk_rates.insert(disk, (r, w));
                             any_rate = true;
                         }
                         self.prev_per_disk.insert(disk, (new_r, new_w, now));
@@ -216,21 +222,13 @@ fn top_rw(raw: &[RawProcessCpuRow], pid: u32) -> (f32, f32) {
         .map(|r| (r.disk_read_mb_s, r.disk_write_mb_s))
         .unwrap_or((0.0, 0.0))
 }
-#[allow(dead_code)]
-pub(crate) fn dedupe_disk_mounts<'a>(entries: &[(&'a str, Option<u32>)]) -> Vec<&'a str> {
-    let mut seen: Vec<u32> = Vec::new();
-    let mut out: Vec<&'a str> = Vec::new();
-    for (mount, disk) in entries {
-        if let Some(d) = disk {
-            if seen.contains(d) {
-                continue;
-            }
-            seen.push(*d);
-        }
-        out.push(mount);
+
+impl Drop for StorageCollector {
+    fn drop(&mut self) {
+        crate::modules::storage::physical_disk::clear_handle_cache();
     }
-    out
 }
+
 impl Default for StorageCollector {
     fn default() -> Self {
         Self::new()

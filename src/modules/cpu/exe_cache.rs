@@ -1,5 +1,5 @@
 //! Per-PID exe path cache queried only on hover.
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -13,19 +13,12 @@ struct ExeCacheEntry {
 const FALLBACK_TTL: Duration = Duration::from_secs(30);
 const MAX_IN_FLIGHT: usize = 4;
 
-static EXE_CACHE: OnceLock<Mutex<HashMap<(u32, u64), ExeCacheEntry>>> = OnceLock::new();
+type ExeCache = (HashMap<(u32, u64), ExeCacheEntry>, VecDeque<(u32, u64)>);
+static EXE_CACHE: OnceLock<Mutex<ExeCache>> = OnceLock::new();
 static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
 
-fn cache_slot() -> &'static Mutex<HashMap<(u32, u64), ExeCacheEntry>> {
-    EXE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn evict_one(g: &mut HashMap<(u32, u64), ExeCacheEntry>) {
-    if g.len() >= 512 {
-        if let Some(k) = g.keys().next().copied() {
-            g.remove(&k);
-        }
-    }
+fn cache_slot() -> &'static Mutex<ExeCache> {
+    EXE_CACHE.get_or_init(|| Mutex::new((HashMap::new(), VecDeque::new())))
 }
 
 struct InFlightGuard;
@@ -41,15 +34,21 @@ pub fn resolve_exe_cached(pid: u32, start_time: u64, known_path: Option<&str>) -
     if let Some(s) = known_path {
         if !s.is_empty() {
             let mut g = cache_slot().lock().unwrap_or_else(|e| e.into_inner());
-            evict_one(&mut g);
-            g.insert(key, ExeCacheEntry { text: s.to_owned(), retry_after: None });
+            let (map, order) = &mut *g;
+            crate::util::insert_capped_fifo(
+                map,
+                order,
+                512,
+                key,
+                ExeCacheEntry { text: s.to_owned(), retry_after: None },
+            );
             return s.to_owned();
         }
     }
     let now = Instant::now();
     {
         let g = cache_slot().lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(entry) = g.get(&key) {
+        if let Some(entry) = g.0.get(&key) {
             match entry.retry_after {
                 None => return entry.text.clone(),
                 Some(until) if now < until => return entry.text.clone(),
@@ -72,8 +71,11 @@ pub fn resolve_exe_cached(pid: u32, start_time: u64, known_path: Option<&str>) -
     }
     {
         let mut g = cache_slot().lock().unwrap_or_else(|e| e.into_inner());
-        evict_one(&mut g);
-        g.insert(
+        let (map, order) = &mut *g;
+        crate::util::insert_capped_fifo(
+            map,
+            order,
+            512,
             key,
             ExeCacheEntry { text: format!("PID {pid}"), retry_after: Some(now + FALLBACK_TTL) },
         );
@@ -82,25 +84,21 @@ pub fn resolve_exe_cached(pid: u32, start_time: u64, known_path: Option<&str>) -
         let _guard = InFlightGuard;
         let resolved = crate::modules::memory::query_process_exe_path(pid);
         let mut g = cache_slot().lock().unwrap_or_else(|e| e.into_inner());
-        match resolved {
-            Some(p) if !p.is_empty() => {
-                g.insert(key, ExeCacheEntry { text: p, retry_after: None });
-            }
-            _ => {
-                g.insert(
-                    key,
-                    ExeCacheEntry {
-                        text: format!("PID {pid}"),
-                        retry_after: Some(Instant::now() + FALLBACK_TTL),
-                    },
-                );
-            }
-        }
+        let val = match resolved {
+            Some(p) if !p.is_empty() => ExeCacheEntry { text: p, retry_after: None },
+            _ => ExeCacheEntry {
+                text: format!("PID {pid}"),
+                retry_after: Some(Instant::now() + FALLBACK_TTL),
+            },
+        };
+        let (map, order) = &mut *g;
+        crate::util::insert_capped_fifo(map, order, 512, key, val);
     });
     format!("PID {pid}")
 }
 
 /// Cached tooltip path for a PID; queries Win32 only on background thread.
+#[cfg(test)]
 pub fn cached_exe_path(pid: u32, start_time: u64) -> String {
     resolve_exe_cached(pid, start_time, None)
 }
@@ -120,13 +118,14 @@ mod tests {
         IN_FLIGHT.store(MAX_IN_FLIGHT, Ordering::SeqCst);
         {
             let mut g = cache_slot().lock().unwrap_or_else(|e| e.into_inner());
-            g.remove(&(777_777_777, 1));
+            let (map, order) = &mut *g;
+            crate::util::remove_capped_fifo(map, order, &(777_777_777, 1));
         }
         let v = resolve_exe_cached(777_777_777, 1, None);
         assert_eq!(v, "PID 777777777");
         {
             let g = cache_slot().lock().unwrap_or_else(|e| e.into_inner());
-            assert!(!g.contains_key(&(777_777_777, 1)));
+            assert!(!g.0.contains_key(&(777_777_777, 1)));
         }
         IN_FLIGHT.store(0, Ordering::SeqCst);
     }
@@ -135,14 +134,21 @@ mod tests {
         IN_FLIGHT.store(MAX_IN_FLIGHT, Ordering::SeqCst);
         {
             let mut g = cache_slot().lock().unwrap_or_else(|e| e.into_inner());
-            g.insert(
+            let (map, order) = &mut *g;
+            crate::util::insert_capped_fifo(
+                map,
+                order,
+                512,
                 (666_666_666, 1),
                 ExeCacheEntry {
                     text: "OLD-FALLBACK".to_owned(),
                     retry_after: Some(Instant::now()),
                 },
             );
-            g.insert(
+            crate::util::insert_capped_fifo(
+                map,
+                order,
+                512,
                 (666_666_667, 1),
                 ExeCacheEntry { text: "C:\\real.exe".to_owned(), retry_after: None },
             );
@@ -153,7 +159,7 @@ mod tests {
         assert_eq!(v2, "C:\\real.exe");
         {
             let g = cache_slot().lock().unwrap_or_else(|e| e.into_inner());
-            assert_eq!(g.get(&(666_666_667, 1)).map(|e| e.text.as_str()), Some("C:\\real.exe"));
+            assert_eq!(g.0.get(&(666_666_667, 1)).map(|e| e.text.as_str()), Some("C:\\real.exe"));
         }
         IN_FLIGHT.store(0, Ordering::SeqCst);
     }

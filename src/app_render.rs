@@ -1,4 +1,4 @@
-//! PULSE rendering helpers — split from app.rs for modularity and line limits.
+//! PULSE rendering helpers -- split from app.rs for modularity and line limits.
 
 use std::sync::Arc;
 
@@ -10,10 +10,8 @@ use crate::i18n::Key;
 use crate::modules::cpu::history::CpuHistory;
 use crate::modules::cpu::page::{self as cpu_page, CpuSubView};
 use crate::modules::cpu::table_state::CpuTableState;
-use crate::modules::memory::action_bar::MemoryActionBarState;
 use crate::modules::memory::history::MemoryHistory;
-use crate::modules::memory::page::{self as mem_page, MemorySubView};
-use crate::modules::memory::table_state::MemoryTableState;
+use crate::modules::memory::page::{self as mem_page};
 use crate::ui::{chrome, sidebar};
 
 fn s_cpu_scan_id(snap: &SystemSnapshot) -> u64 {
@@ -29,16 +27,15 @@ fn s_cpu_scan_id(snap: &SystemSnapshot) -> u64 {
 pub fn render_central_panel(
     ui: &mut egui::Ui,
     active_tab: &mut ActiveTab,
-    memory_sub_view: &mut MemorySubView,
     cpu_sub_view: &mut CpuSubView,
-    table_state: &mut MemoryTableState,
     cpu_table_state: &mut CpuTableState,
-    action_state: &mut MemoryActionBarState,
     memory_history: &mut MemoryHistory,
     cpu_history: &mut CpuHistory,
+    storage_state: &mut crate::modules::storage::view::StorageViewState,
+    network_state: &mut crate::modules::network::view::NetworkViewState,
     snapshot: &Option<Arc<SystemSnapshot>>,
     uptime_secs: u64,
-    telemetry_paused: &mut bool,
+    _telemetry_paused: &mut bool,
 ) {
     ui.add_space(16.0);
     match *active_tab {
@@ -61,11 +58,7 @@ pub fn render_central_panel(
                         ui,
                         mem,
                         memory_history,
-                        memory_sub_view,
-                        table_state,
-                        action_state,
                         uptime_secs,
-                        telemetry_paused,
                         active_tab,
                         cpu_table_state,
                     );
@@ -101,14 +94,19 @@ pub fn render_central_panel(
             if let Some(ref snap) = snapshot {
                 let raw: &[crate::modules::cpu::model::RawProcessCpuRow] =
                     snap.cpu.as_ref().map(|c| c.raw_processes.as_ref()).unwrap_or(&[]);
-                crate::modules::storage::view::render_storage_tab(ui, &snap.storage, raw);
+                crate::modules::storage::view::render_storage_tab(
+                    ui,
+                    &snap.storage,
+                    raw,
+                    storage_state,
+                );
             } else {
                 render_awaiting(ui);
             }
         }
         ActiveTab::Network => {
             if let Some(ref snap) = snapshot {
-                crate::modules::network::view::render_network_tab(ui, &snap.network);
+                crate::modules::network::view::render_network_tab(ui, &snap.network, network_state);
             } else {
                 render_awaiting(ui);
             }
@@ -156,13 +154,12 @@ pub fn render_sidebar(
 pub fn render_chrome(
     ctx: &egui::Context,
     active_tab: &mut ActiveTab,
-    memory_sub_view: &mut MemorySubView,
     cpu_sub_view: &mut CpuSubView,
-    table_state: &mut MemoryTableState,
     cpu_table_state: &mut CpuTableState,
-    action_state: &mut MemoryActionBarState,
     memory_history: &mut MemoryHistory,
     cpu_history: &mut CpuHistory,
+    storage_state: &mut crate::modules::storage::view::StorageViewState,
+    network_state: &mut crate::modules::network::view::NetworkViewState,
     snapshot: &Option<Arc<SystemSnapshot>>,
     uptime_secs: u64,
     telemetry_paused: &mut bool,
@@ -192,13 +189,12 @@ pub fn render_chrome(
             render_central_panel(
                 ui,
                 active_tab,
-                memory_sub_view,
                 cpu_sub_view,
-                table_state,
                 cpu_table_state,
-                action_state,
                 memory_history,
                 cpu_history,
+                storage_state,
+                network_state,
                 snapshot,
                 uptime_secs,
                 telemetry_paused,
