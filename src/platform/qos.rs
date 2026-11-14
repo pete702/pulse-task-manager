@@ -179,9 +179,9 @@ pub fn trim_process_working_set(
     trim_single_pid(&target).map(|_| ()).map_err(|r| match r {
         TrimSkipReason::Protected => "Protected process".to_string(),
         TrimSkipReason::AccessDenied => "Access denied".to_string(),
-        #[cfg(any(target_os = "windows", test))]
+        #[cfg(target_os = "windows")]
         TrimSkipReason::NotFoundOrMismatch => "Process identity mismatch or exited".to_string(),
-        #[cfg(any(target_os = "windows", test))]
+        #[cfg(target_os = "windows")]
         TrimSkipReason::Other => "Trim failed".to_string(),
     })
 }

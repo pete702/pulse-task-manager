@@ -129,7 +129,7 @@ pub(crate) fn normalize_path_for_match(raw: &str) -> String {
     trim_trailing_seps(&s).to_ascii_lowercase()
 }
 
-#[cfg(any(target_os = "windows", test))]
+#[cfg(target_os = "windows")]
 pub(crate) fn is_path_under_dir(path_norm: &str, root_norm: &str) -> bool {
     let root = trim_trailing_seps(root_norm);
     if path_norm == root {

@@ -34,9 +34,9 @@ impl TerminateReport {
         match reason {
             TrimSkipReason::Protected => self.skipped_protected += 1,
             TrimSkipReason::AccessDenied => self.skipped_access_denied += 1,
-            #[cfg(any(target_os = "windows", test))]
+            #[cfg(target_os = "windows")]
             TrimSkipReason::NotFoundOrMismatch => self.skipped_not_found_or_mismatch += 1,
-            #[cfg(any(target_os = "windows", test))]
+            #[cfg(target_os = "windows")]
             TrimSkipReason::Other => self.skipped_other += 1,
         }
     }

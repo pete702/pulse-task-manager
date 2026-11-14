@@ -48,9 +48,9 @@ impl ReclaimReport {
 pub enum TrimSkipReason {
     Protected,
     AccessDenied,
-    #[cfg(any(target_os = "windows", test))]
+    #[cfg(target_os = "windows")]
     NotFoundOrMismatch,
-    #[cfg(any(target_os = "windows", test))]
+    #[cfg(target_os = "windows")]
     Other,
 }
 
@@ -165,9 +165,9 @@ fn tally_skip(report: &mut ReclaimReport, reason: TrimSkipReason) {
     match reason {
         TrimSkipReason::Protected => report.skipped_protected += 1,
         TrimSkipReason::AccessDenied => report.skipped_access_denied += 1,
-        #[cfg(any(target_os = "windows", test))]
+        #[cfg(target_os = "windows")]
         TrimSkipReason::NotFoundOrMismatch => report.skipped_not_found_or_mismatch += 1,
-        #[cfg(any(target_os = "windows", test))]
+        #[cfg(target_os = "windows")]
         TrimSkipReason::Other => report.skipped_other += 1,
     }
 }
