@@ -2,12 +2,12 @@
 
 use std::path::Path;
 
-#[cfg(all(test, not(target_os = "windows")))]
+#[cfg(target_os = "windows")]
+#[allow(unused_imports)]
 use crate::platform::handle::verify_pid_safety_gate_ex;
 #[cfg(all(test, target_os = "windows"))]
 use crate::platform::handle::{
-    is_handle_critical, query_process_creation_time, query_process_image_path,
-    verify_pid_safety_gate_ex, SafeHandle,
+    is_handle_critical, query_process_creation_time, query_process_image_path, SafeHandle,
 };
 #[cfg(all(test, target_os = "windows"))]
 use crate::platform::protected::normalize_process_name;

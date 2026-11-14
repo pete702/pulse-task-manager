@@ -8,9 +8,9 @@ use windows_sys::Win32::System::Threading::{
 };
 
 use crate::platform::target::ProcessTarget;
-use crate::platform::trim::{
-    map_win32_error, open_raw_checked, pre_handle_check, verify_live_query_handle, TrimSkipReason,
-};
+#[cfg(target_os = "windows")]
+use crate::platform::trim::{map_win32_error, open_raw_checked, verify_live_query_handle};
+use crate::platform::trim::{pre_handle_check, TrimSkipReason};
 
 /// Structured batch termination result.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

@@ -55,9 +55,11 @@ fn pid_contains_edges() {
 }
 
 mod qos_action {
+    #[cfg(target_os = "windows")]
+    use crate::platform::qos::target_for;
     use crate::platform::qos::{
         build_throttling_masks, is_system_process, open_process_file_location,
-        resolve_restore_priority, target_for, ORIG_PRIORITY,
+        resolve_restore_priority, ORIG_PRIORITY,
     };
     use std::collections::{HashMap, VecDeque};
     use std::sync::Mutex;

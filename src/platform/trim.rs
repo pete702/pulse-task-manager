@@ -167,19 +167,6 @@ fn tally_skip(report: &mut ReclaimReport, reason: TrimSkipReason) {
     }
 }
 
-#[cfg(test)]
-fn primary_skip_reason(report: &ReclaimReport) -> &'static str {
-    if report.skipped_protected > 0 {
-        "protected"
-    } else if report.skipped_access_denied > 0 {
-        "access denied"
-    } else if report.skipped_not_found_or_mismatch > 0 {
-        "exited/identity mismatch"
-    } else {
-        "other"
-    }
-}
-
 /// Batch working-set trim with structured skip/failure counting.
 pub fn trim_processes_working_sets(targets: &[ProcessTarget]) -> ReclaimReport {
     let mut report = ReclaimReport::default();

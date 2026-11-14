@@ -197,12 +197,6 @@ pub struct CpuSnapshot {
 }
 
 impl CpuSnapshot {
-    #[cfg(test)]
-    #[inline]
-    pub fn empty() -> Self {
-        Self::default()
-    }
-
     /// Returns the raw process rows for table grouping/sorting.
     #[inline]
     pub fn processes_raw(&self) -> &[RawProcessCpuRow] {

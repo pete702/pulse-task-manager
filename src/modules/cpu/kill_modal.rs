@@ -1,29 +1,7 @@
 //! Kill confirmation modal helpers and protected PID guards.
 
-#[cfg(test)]
-#[derive(Debug, Clone, Default)]
-pub struct KillModalState {
-    pub open: bool,
-    pub pids: Vec<u32>,
-    pub label: String,
-}
-
 pub(crate) fn is_protected_pid(pid: u32) -> bool {
     pid == 0 || pid == 4 || pid == std::process::id()
-}
-
-#[cfg(test)]
-pub fn guarded_terminate_targets(pids: &[u32]) -> (Vec<u32>, usize) {
-    let mut allowed = Vec::new();
-    let mut skipped = 0usize;
-    for &pid in pids {
-        if is_protected_pid(pid) {
-            skipped += 1;
-        } else {
-            allowed.push(pid);
-        }
-    }
-    (allowed, skipped)
 }
 
 pub fn termination_status(

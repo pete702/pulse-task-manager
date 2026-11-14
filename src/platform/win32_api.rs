@@ -58,7 +58,6 @@ pub fn collect_windows_kernel_metrics() -> KernelMetrics {
 
 /// Non-Windows fallback for kernel metrics.
 #[cfg(not(target_os = "windows"))]
-#[cfg_attr(not(target_os = "windows"), allow())]
 #[derive(Default, Debug, Clone, Copy)]
 pub struct KernelMetrics {
     pub commit_total_bytes: u64,

@@ -43,27 +43,6 @@ impl MemorySnapshot {
         Self::bytes_to_gib(self.ram_cached_bytes())
     }
 
-    /// Returns Swap total in GiB.
-    #[cfg(test)]
-    #[inline]
-    pub fn swap_total_gib(&self) -> f64 {
-        Self::bytes_to_gib(self.swap_total_bytes)
-    }
-
-    /// Returns Swap used in GiB.
-    #[cfg(test)]
-    #[inline]
-    pub fn swap_used_gib(&self) -> f64 {
-        Self::bytes_to_gib(self.swap_used_bytes)
-    }
-
-    /// Returns Swap free in GiB.
-    #[cfg(test)]
-    #[inline]
-    pub fn swap_free_gib(&self) -> f64 {
-        Self::bytes_to_gib(self.swap_free_bytes)
-    }
-
     /// Returns Commit total in GiB.
     #[inline]
     pub fn commit_total_gib(&self) -> f64 {

@@ -27,17 +27,6 @@ impl CpuCollector {
         }
     }
     #[cfg(test)]
-    pub fn set_eco_cached(&mut self, pid: u32, start_time: u64, on: bool) {
-        if self.eco_cache.len() > 512 {
-            self.eco_cache.clear();
-        }
-        self.eco_cache.insert((pid, start_time), (on, Instant::now()));
-    }
-    #[cfg(test)]
-    pub fn invalidate_eco(&mut self, pid: u32, start_time: u64) {
-        self.eco_cache.remove(&(pid, start_time));
-    }
-    #[cfg(test)]
     pub fn is_new(&self, pid: u32, start_time: u64) -> bool {
         !self.seen_pids.contains(&(pid, start_time))
     }

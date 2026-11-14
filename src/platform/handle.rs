@@ -1,6 +1,8 @@
 //! Win32 RAII SafeHandle, process identity queries, and PID safety gate for PULSE.
+#[cfg(target_os = "windows")]
+use super::protected::full_paths_match;
 use super::protected::{
-    full_paths_match, is_any_protected_name, is_kernel_pseudo, is_security_defender_anticheat,
+    is_any_protected_name, is_kernel_pseudo, is_security_defender_anticheat,
     is_under_security_trusted_root, is_under_system_root, is_windows_os_binary,
     normalize_process_name, protection_reason,
 };

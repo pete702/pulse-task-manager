@@ -40,10 +40,7 @@ impl NetworkHistory {
     pub fn len(&self) -> usize {
         self.samples.len()
     }
-    #[cfg(test)]
-    pub fn is_empty(&self) -> bool {
-        self.samples.is_empty()
-    }
+
     pub fn push(&mut self, t: f64, rx: f32, tx: f32, ping: Option<f32>, jitter: Option<f32>) {
         if !is_newer(self.samples.back().map(|s| s.0), t) {
             return;

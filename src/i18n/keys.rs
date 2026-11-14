@@ -32,8 +32,6 @@ pub enum Key {
     PhysicalRamTitle,
     #[cfg(test)]
     SwapCommitTitle,
-    #[cfg(test)]
-    MemoryCompositionTitle,
 
     // Memory module - Grid labels (Card 1: RAM)
     #[cfg(test)]

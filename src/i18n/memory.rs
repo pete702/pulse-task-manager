@@ -13,8 +13,6 @@ impl Lang {
             (Lang::En, Key::PhysicalRamTitle) => Some("* PHYSICAL MEMORY (RAM)"),
             #[cfg(test)]
             (Lang::En, Key::SwapCommitTitle) => Some("* SWAP FILE & COMMIT"),
-            #[cfg(test)]
-            (Lang::En, Key::MemoryCompositionTitle) => Some("* MEMORY COMPOSITION"),
 
             // Memory module - Grid labels (Card 1: RAM)
             #[cfg(test)]
