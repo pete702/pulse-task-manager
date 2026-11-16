@@ -1,5 +1,7 @@
 # Changelog
 All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
+## [0.4.140] - 2026-04-12
+- **app tests**: fixed stale self-trim assertion for 5s startup delay.
 ## [0.4.139] - 2026-04-12
 - **app trim**: manual Trim Memory invokes self-trim directly; removed early frame-count shortcut so startup trim waits 5s.
 ## [0.4.138] - 2026-04-12
@@ -109,5 +111,3 @@ All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGEL
 - **Physical disk**: require >= 48 bytes from DISK_PERFORMANCE.
 ## [0.4.106] - 2026-04-12
 - **Platform move**: real code moved into `src/platform/` (actions, location, qos, win32_api, win32_cpu) with zero re-export shims.
-## [0.4.105] - 2026-04-12
-- **Platform move**: real code moved into `src/platform/` (handle, protected, target) with zero re-export shims.

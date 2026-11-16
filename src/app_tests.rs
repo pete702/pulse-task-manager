@@ -125,7 +125,7 @@ fn test_should_trigger_self_trim_policy() {
     use crate::app_trim::should_trigger_self_trim;
     use std::time::Duration;
 
-    assert!(should_trigger_self_trim(Duration::from_secs(1), 60, false));
+    assert!(!should_trigger_self_trim(Duration::from_secs(1), 60, false));
     assert!(!should_trigger_self_trim(Duration::from_secs(3), 0, true));
     assert!(should_trigger_self_trim(Duration::from_secs(10), 0, true));
     assert!(should_trigger_self_trim(Duration::from_secs(60), 0, false));
