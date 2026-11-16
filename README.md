@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Platform: Windows 10/11 x64](https://img.shields.io/badge/Platform-Windows%2010%2F11%20x64-0078D4.svg)](https://github.com/pete702/pulse-task-manager/releases)
 
-A native Windows 10/11 task manager in Rust + egui that stays responsive even when the built-in Task Manager lags. Single portable executable, about 3.7 MB.
+A native Windows 10/11 task manager in Rust + egui that stays responsive even when the built-in Task Manager lags. Single portable executable, about < 5 MB.
 
 [Download Latest Portable .exe (Windows 10/11 x64)](https://github.com/pete702/pulse-task-manager/releases/latest)
 
@@ -24,7 +24,7 @@ A native Windows 10/11 task manager in Rust + egui that stays responsive even wh
 
 | Feature | PULSE | Windows 11 Task Manager | System Informer |
 | :--- | :--- | :--- | :--- |
-| Portable single exe (~3.7 MB) | Yes | No | No |
+| Portable single exe (< 5 MB) | Yes | No | No |
 | Clone grouping with fleet actions | Yes | No | Partial |
 | RAM composition + kernel pools | Yes | Partial | Yes |
 | Network ping/jitter grade | Yes | No | No |

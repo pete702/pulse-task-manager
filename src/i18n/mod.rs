@@ -45,19 +45,48 @@ pub fn set_lang(lang: Lang) {
     TEST_LANG.with(|cell| cell.set(lang));
 }
 
+impl std::str::FromStr for Lang {
+    type Err = String;
+    /// Accepts `"en"` (case-insensitive). Rejects `"uk"`, `"zz"`, `""`, and all others.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.eq_ignore_ascii_case("en") {
+            Ok(Lang::En)
+        } else {
+            Err(format!("unknown language code: {s}"))
+        }
+    }
+}
+
 /// Initializes language from OS detection.
-/// Called once at startup. Can be overridden by `--lang=en` CLI arg for testing.
+/// Called once at startup. Can be overridden by `--lang=en` CLI arg.
+/// Unknown values warn and fall back to `detect_os_language()`.
 /// Note: UI is always English; locale display uses GetUserDefaultLocaleName.
 pub fn init_language(cli_lang_override: Option<&str>) {
-    let lang = if let Some(override_str) = cli_lang_override {
-        match override_str {
-            "en" => Lang::En,
-            _ => detect_os_language().0,
+    let lang = if let Some(s) = cli_lang_override {
+        match s.parse::<Lang>() {
+            Ok(l) => l,
+            Err(msg) => {
+                eprintln!("Warning: {msg}; falling back to auto-detect.");
+                detect_os_language().0
+            }
         }
     } else {
         detect_os_language().0
     };
     set_lang(lang);
+}
+
+#[cfg(test)]
+mod tests_parse_lang {
+    use super::*;
+    #[test]
+    fn unknown_lang_returns_err() {
+        assert!("zz".parse::<Lang>().is_err());
+        assert!("".parse::<Lang>().is_err());
+        assert!("uk".parse::<Lang>().is_err());
+        assert!("en".parse::<Lang>().is_ok());
+        assert!("EN".parse::<Lang>().is_ok());
+    }
 }
 
 /// UI language is always En; locale name is resolved in frame via GetUserDefaultLocaleName.

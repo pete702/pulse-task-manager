@@ -4,7 +4,7 @@ use crate::modules::cpu::table_cols::{col_widths, compute_col_x, draw_separators
 use crate::modules::cpu::table_menu::{render_sort_button, show_row_menu};
 use crate::modules::cpu::table_state::{CpuSortCol, CpuTableState};
 use crate::theme::colors;
-use crate::ui::primitives::draw_cell_heat_bar;
+use crate::ui::table_kit;
 use eframe::egui;
 
 const DELTA_ALERT_BYTES: i64 = 50 * 1024 * 1024;
@@ -77,30 +77,7 @@ pub fn render_virtualized_table(
                 let selected = state.selected_pid == Some(item.pid);
                 let (rr, resp) =
                     ui.allocate_exact_size(egui::vec2(fitted_w, row_h), egui::Sense::click());
-                if selected {
-                    ui.painter().rect_filled(
-                        rr,
-                        egui::Rounding::same(2.0),
-                        egui::Color32::from_rgba_unmultiplied(24, 92, 118, 120),
-                    );
-                    ui.painter().rect_stroke(
-                        rr,
-                        egui::Rounding::same(2.0),
-                        egui::Stroke::new(1.0_f32, colors::ACCENT_CYAN),
-                    );
-                } else if resp.hovered() {
-                    ui.painter().rect_filled(
-                        rr,
-                        egui::Rounding::same(2.0),
-                        egui::Color32::from_rgba_unmultiplied(38, 52, 68, 95),
-                    );
-                } else if idx % 2 == 1 {
-                    ui.painter().rect_filled(
-                        rr,
-                        egui::Rounding::same(2.0),
-                        egui::Color32::from_rgba_unmultiplied(18, 24, 32, 70),
-                    );
-                }
+                table_kit::paint_row_highlight(ui, rr, selected, resp.hovered(), idx % 2 == 1);
                 if resp.clicked() || resp.secondary_clicked() {
                     state.selected_pid = Some(item.pid);
                     state.selected_start_time = Some(item.start_time);
@@ -134,13 +111,7 @@ pub fn render_virtualized_table(
                 txt(ui, c2, &item.clone_text, ccc);
                 let c3 = cell_r(&col_x, &widths, 3, top, bot);
                 if item.cpu_pct >= 0.5 {
-                    draw_cell_heat_bar(
-                        ui,
-                        c3,
-                        item.cpu_pct / 100.0,
-                        colors::ACCENT_CYAN,
-                        item.is_cpu_hog,
-                    );
+                    table_kit::draw_cell_usage_bar(ui, c3, item.cpu_pct / 100.0, item.is_cpu_hog);
                 }
                 let cpu_c = if item.cpu_pct >= 35.0 {
                     colors::ACCENT_AMBER
@@ -159,7 +130,7 @@ pub fn render_virtualized_table(
                 );
                 let ratio = (item.ram_bytes as f32 / max_ram).clamp(0.0, 1.0);
                 if ratio * 100.0 >= 0.5 {
-                    draw_cell_heat_bar(ui, ram_bar, ratio, colors::ACCENT_CYAN, false);
+                    table_kit::draw_cell_usage_bar(ui, ram_bar, ratio, false);
                 }
                 let c4 = cell_r(&col_x, &widths, 4, top, bot);
                 txt(ui, c4, &item.ram_text, colors::TEXT_PRIMARY);
@@ -209,8 +180,7 @@ pub fn render_virtualized_table(
             state.selected_pid == Some(r.pid) && state.selected_start_time == Some(r.start_time)
         }) {
             let mem_mb = item.ram_bytes as f64 / 1_048_576.0;
-            let summary =
-                format!("{}\t{}\t{:.1}\t{:.1}", item.name, item.pid, item.cpu_pct, mem_mb);
+            let summary = table_kit::format_copy_row(&item.name, item.pid, item.cpu_pct, mem_mb);
             ui.ctx().copy_text(summary);
         }
     }

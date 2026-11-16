@@ -51,9 +51,4 @@ fn test_key_translation_en() {
     // Chart
     assert_eq!(Key::MemoryHistoryTitle.t(), "* MEMORY UTILIZATION HISTORY");
     assert_eq!(Key::RamPercent.t(), "RAM %");
-    assert_eq!(Key::SwapPercent.t(), "Swap %");
-
-    // Memory process table
-    assert_eq!(Key::MemoryNoProcesses.t(), "No processes available");
-    assert_eq!(Key::MemoryNoMatchingProcesses.t(), "No processes match current search");
 }

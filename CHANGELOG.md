@@ -1,20 +1,35 @@
 # Changelog
 All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
+## [0.4.139] - 2026-04-12
+- **app trim**: manual Trim Memory invokes self-trim directly; removed early frame-count shortcut so startup trim waits 5s.
+## [0.4.138] - 2026-04-12
+- **app_cmd**: real command dispatch; UI emit for tab/pause/trim.
+## [0.4.137] - 2026-04-12
+- **cpu actions/cols**: kill post-verify; condensed cols; changelog fix.
+## [0.4.136] - 2026-04-12
+- **table cols/menu**: post-action verify; condensed cols.
+## [0.4.135] - 2026-04-12
+- **app_cmd**: AppCommand enum; ARCHITECTURE 5-crate core.
+## [0.4.134] - 2026-04-12
+- **group actions**: leader-only identity verify; track all members.
+## [0.4.133] - 2026-04-12
+- **table cols**: residual correction, narrow separators, conditional store.
+## [0.4.132] - 2026-04-12
+- **table_kit + deps**: shared table helpers; removed unused egui_extras.
+## [0.4.131] - 2026-04-12
+- **i18n**: FromStr for Lang; removed obsolete memory-table keys (B19).
+## [0.4.130] - 2026-04-12
+- **Status bar**: documented cache quantization and CPU alert tier (B19-B-01, B19-B-03).
 ## [0.4.129] - 2026-04-12
-- **CPU table columns**: residual width correction and truncation guard (B22).
-- **CPU table actions**: consistent identity verification across group targets (B23).
-- **Docs/README**: version string updated to v0.4.129.
-
+- **CPU**: table columns residual correction (B22), table actions identity (B23), README v0.4.129.
 ## [0.4.128] - 2026-04-12
 - **Storage model**: explicit per-volume read/write summation (B14-B-05).
 - **Storage inspector**: HashSet drive filter in group() (B15-B-04).
-
 ## [0.4.127] - 2026-04-12
 - **UI primitives**: tactical ticks always render (B18-B-02).
 - **Sidebar**: Enter activates, request_focus on nav; scope-keyed alert latch (B18-B-03, B18-B-04).
 - **Three Walls**: test for both cpu and memory None (B18-B-08).
 - **Util/theme fonts**: UTC doc note, MAX_FONT_BYTES constant (B20-B-03, B20-B-04).
-
 ## [0.4.126] - 2026-04-12
 - **Network chart tests**: restored traffic-window axis test (B16 WHEEL 5).
 - **Latency probe tests**: stabilized jitter assertion (B16 WHEEL 6).
@@ -96,18 +111,3 @@ All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGEL
 - **Platform move**: real code moved into `src/platform/` (actions, location, qos, win32_api, win32_cpu) with zero re-export shims.
 ## [0.4.105] - 2026-04-12
 - **Platform move**: real code moved into `src/platform/` (handle, protected, target) with zero re-export shims.
-## [0.4.104] - 2026-04-12
-- **Platform**: added `src/platform/` layer with DWM dark title bar on startup.
-- **Spike tie-break**: process_spike now picks largest absolute growth.
-## [0.4.103] - 2026-04-12
-- **Platform layer**: added `src/platform/` (handle, protected, location, actions, qos, sys_metrics) with DWM dark title bar on startup.
-- **License/Docs**: MIT license, rewritten README/ARCHITECTURE, CI linux-clippy job, issue templates.
-## [0.4.102] - 2026-04-12
-- **License**: switched repository from proprietary to MIT; added MIT LICENSE file.
-- **Docs**: rewrote README.md and ARCHITECTURE.md for human users, 100% docs_guard compliant.
-- **CI/Templates**: added linux-clippy job and bug/feature issue templates.
-## [0.4.100] - 2026-04-12
-- **B06 N-1**: restored triangle symbol in window title via pure-ASCII Rust escape.
-- **Startup Self-Trim**: one safe K32EmptyWorkingSet self-trim ~5s after startup.
-- **B05 N-1/N-2**: removed dead `paused_at_uptime_secs`; resume-apply now handles snapshots with `memory == None`.
-- **B06 N-2**: surfaced `write_config_file` failures via explicit error flag; split persist helpers into `persist_codec.rs`.

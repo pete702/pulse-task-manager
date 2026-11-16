@@ -21,12 +21,9 @@ static STARTUP_INSTANT: OnceLock<Instant> = OnceLock::new();
 
 pub fn should_trigger_self_trim(
     elapsed_since_last: Duration,
-    startup_frames: u32,
+    _startup_frames: u32,
     just_minimized: bool,
 ) -> bool {
-    if startup_frames == 60 {
-        return true;
-    }
     if just_minimized && elapsed_since_last >= Duration::from_secs(SELF_TRIM_COOLDOWN_SECS) {
         return true;
     }
@@ -64,5 +61,39 @@ pub fn maybe_self_trim(
         *last = next_last_after_attempt(Instant::now(), ok);
     } else {
         *last = Instant::now();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn frame_count_shortcut_does_not_trigger_early() {
+        // The early ~1s frame-count shortcut must not fire before the 5s wall-clock timer.
+        assert!(!should_trigger_self_trim(Duration::from_secs(1), 60, false));
+        assert!(!should_trigger_self_trim(Duration::from_secs(4), 60, false));
+        assert!(!should_trigger_self_trim(Duration::from_secs(1), 120, false));
+    }
+
+    #[test]
+    fn startup_self_trim_delay_is_five_seconds() {
+        assert_eq!(STARTUP_SELF_TRIM_DELAY_SECS, 5);
+    }
+
+    #[test]
+    fn manual_trim_result_updates_last_via_backoff_helper() {
+        use std::time::Instant;
+        let now = Instant::now();
+        assert_eq!(next_last_after_attempt(now, true), now);
+        let failed = next_last_after_attempt(now, false);
+        assert!(now.duration_since(failed) > Duration::from_secs(0));
+    }
+
+    #[test]
+    fn minimized_trim_still_respects_cooldown() {
+        assert!(!should_trigger_self_trim(Duration::from_secs(3), 0, true));
+        assert!(should_trigger_self_trim(Duration::from_secs(10), 0, true));
     }
 }

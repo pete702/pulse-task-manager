@@ -43,14 +43,6 @@ impl Lang {
             // Chart
             (Lang::En, Key::MemoryHistoryTitle) => Some("* MEMORY UTILIZATION HISTORY"),
             (Lang::En, Key::RamPercent) => Some("RAM %"),
-            #[cfg(test)]
-            (Lang::En, Key::SwapPercent) => Some("Swap %"),
-
-            // Memory process table
-            #[cfg(test)]
-            (Lang::En, Key::MemoryNoProcesses) => Some("No processes available"),
-            #[cfg(test)]
-            (Lang::En, Key::MemoryNoMatchingProcesses) => Some("No processes match current search"),
 
             _ => None,
         }

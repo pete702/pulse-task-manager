@@ -5,6 +5,7 @@ use crate::modules::cpu::table_menu_actions::{spawn_eco, spawn_open, spawn_trim}
 use crate::modules::cpu::table_state::CpuTableState;
 use crate::platform::qos::is_system_process;
 use crate::theme::colors;
+use crate::ui::table_kit;
 use eframe::egui;
 use std::time::Instant;
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -151,8 +152,7 @@ pub fn render_sort_button(
     is_active: bool,
     sort_asc: bool,
 ) -> egui::Response {
-    let arrow = if sort_asc { "\u{25B2}" } else { "\u{25BC}" };
-    let text = if is_active { format!("{label} {arrow}") } else { label.to_owned() };
+    let text = table_kit::sort_header_text(label, is_active, sort_asc);
     let color = if is_active { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
     let fill = if is_active { colors::ACCENT_CYAN.gamma_multiply(0.1) } else { colors::BG_CARD };
     let b = egui::Button::new(egui::RichText::new(text).monospace().size(11.0).color(color));

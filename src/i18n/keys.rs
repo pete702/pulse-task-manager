@@ -62,12 +62,4 @@ pub enum Key {
     // Chart
     MemoryHistoryTitle,
     RamPercent,
-    #[cfg(test)]
-    SwapPercent,
-
-    // Memory process table
-    #[cfg(test)]
-    MemoryNoProcesses,
-    #[cfg(test)]
-    MemoryNoMatchingProcesses,
 }

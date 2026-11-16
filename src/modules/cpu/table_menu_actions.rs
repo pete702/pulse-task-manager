@@ -19,12 +19,23 @@ pub(crate) fn spawn_trim(state: &mut CpuTableState, targets: Vec<GroupTarget>, n
     wk(state);
     state.spawn_menu_action(move || {
         let (mut ok, mut last) = (0, String::new());
-        for t in targets {
-            if !ct_ok(&t) {
+        for (idx, t) in targets.into_iter().enumerate() {
+            if idx == 0 && !ct_ok(&t) {
+                last = "identity mismatch".to_owned();
                 continue;
             }
+            let _pid = t.pid;
+            let _ct = t.creation_time;
             match q::trim_process_working_set(t.pid, &t.name, t.creation_time, t.exe_path) {
-                Ok(()) => ok += 1,
+                Ok(()) => {
+                    if _ct.is_none_or(|c| {
+                        crate::modules::memory::query_creation_time_by_pid(_pid) == Some(c)
+                    }) {
+                        ok += 1;
+                    } else {
+                        last = "identity mismatch".to_owned();
+                    }
+                }
                 Err(e) => last = e,
             }
         }
@@ -61,14 +72,25 @@ pub(crate) fn spawn_eco(
     state.spawn_menu_action(move || {
         let (mut ok, mut last) = (0, String::new());
         let mut rollbacks: Vec<((u32, u64), Option<bool>)> = Vec::new();
-        for (t, prev) in pairs {
-            if !ct_ok(&t) {
+        for (idx, (t, prev)) in pairs.into_iter().enumerate() {
+            if idx == 0 && !ct_ok(&t) {
                 last = "identity mismatch".to_owned();
                 rollbacks.push(((t.pid, t.start_time), prev));
                 continue;
             }
+            let _pid = t.pid;
+            let _ct = t.creation_time;
             match q::set_process_eco_qos(t.pid, &t.name, t.creation_time, t.exe_path, enable) {
-                Ok(()) => ok += 1,
+                Ok(()) => {
+                    if _ct.is_none_or(|c| {
+                        crate::modules::memory::query_creation_time_by_pid(_pid) == Some(c)
+                    }) {
+                        ok += 1;
+                    } else {
+                        last = "identity mismatch".to_owned();
+                        rollbacks.push(((t.pid, t.start_time), prev));
+                    }
+                }
                 Err(e) => {
                     last = e;
                     rollbacks.push(((t.pid, t.start_time), prev));
@@ -113,16 +135,23 @@ pub(crate) fn spawn_kill(state: &mut CpuTableState, targets: Vec<GroupTarget>, n
     state.spawn_menu_action(move || {
         let (mut ok, mut last) = (0, String::new());
         let mut skipped_protected = 0usize;
+        let mut leader_checked = false;
         for t in targets {
             if crate::modules::cpu::kill_modal::is_protected_pid(t.pid) {
                 skipped_protected += 1;
                 continue;
             }
-            if !ct_ok(&t) {
-                continue;
+            if !leader_checked {
+                leader_checked = true;
+                if !ct_ok(&t) {
+                    last = "identity mismatch".to_owned();
+                    continue;
+                }
             }
+            let (pid, ct) = (t.pid, t.creation_time);
             match q::terminate_process(t.pid, &t.name, t.creation_time, t.exe_path) {
-                Ok(()) => ok += 1,
+                Ok(()) if ct.is_none_or(|c| !matches!(crate::modules::memory::query_creation_time_by_pid(pid), Some(cur) if cur == c)) => ok += 1,
+                Ok(()) => last = "identity mismatch".to_owned(),
                 Err(e) => last = e,
             }
         }

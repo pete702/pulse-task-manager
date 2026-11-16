@@ -11,7 +11,6 @@ pub fn set_persisted_col_widths(w: Option<[f32; 7]>) {
     *PERSISTED_WIDTHS.get_or_init(|| Mutex::new(None)).lock().unwrap_or_else(|e| e.into_inner()) =
         w;
 }
-
 pub const MIN_COL_W: [f32; 7] = [52.0, 125.0, 60.0, 66.0, 126.0, 90.0, 82.0];
 const MIN_SUM: f32 = 601.0;
 pub fn default_widths(avail_w: f32) -> [f32; 7] {
@@ -21,33 +20,30 @@ pub fn default_widths(avail_w: f32) -> [f32; 7] {
     w
 }
 fn clamp_min(w: &mut [f32; 7]) {
-    w.iter_mut().zip(MIN_COL_W.iter()).for_each(|(a, b)| {
+    for (a, b) in w.iter_mut().zip(MIN_COL_W.iter()) {
         if !a.is_finite() || *a < *b {
             *a = *b;
         }
-    });
+    }
 }
 pub fn fit_column_widths(widths: &mut [f32; 7], avail_w: f32) {
     clamp_min(widths);
     let target = avail_w.max(MIN_SUM);
     let diff = target - widths.iter().sum::<f32>();
     let slack_sum: f32 = widths.iter().zip(MIN_COL_W.iter()).map(|(w, m)| (w - m).max(0.0)).sum();
-    if slack_sum <= 0.0 {
-        if diff > 0.0 {
-            widths[1] += diff;
+    if slack_sum > 0.0 {
+        for i in 0..7 {
+            widths[i] += diff * (widths[i] - MIN_COL_W[i]).max(0.0) / slack_sum;
         }
-        return;
+    } else if diff > 0.0 {
+        widths[1] += diff;
     }
-    for i in 0..7 {
-        let s = (widths[i] - MIN_COL_W[i]).max(0.0);
-        widths[i] += diff * s / slack_sum;
-    }
-    let cur2: f32 = widths.iter().sum();
-    widths[1] += target - cur2;
     clamp_min(widths);
-    // Re-apply residual correction so total matches target after clamping.
-    let sum = widths.iter().sum::<f32>();
-    widths[1] = (widths[1] + (target - sum)).max(MIN_COL_W[1]);
+    widths[1] += target - widths.iter().sum::<f32>();
+    if widths[1] < MIN_COL_W[1] {
+        widths[1] = MIN_COL_W[1];
+    }
+    widths[1] += target - widths.iter().sum::<f32>();
     clamp_min(widths);
 }
 pub fn compute_col_x(left: f32, widths: &[f32; 7]) -> [f32; 7] {
@@ -58,7 +54,6 @@ pub fn compute_col_x(left: f32, widths: &[f32; 7]) -> [f32; 7] {
     }
     x
 }
-#[allow(clippy::needless_range_loop)]
 pub fn apply_drag(widths: &mut [f32; 7], i: usize, dx: f32) {
     if i >= 6 || !dx.is_finite() || dx == 0.0 {
         return;
@@ -69,8 +64,7 @@ pub fn apply_drag(widths: &mut [f32; 7], i: usize, dx: f32) {
             if need <= 0.0 {
                 break;
             }
-            let s = (widths[k] - MIN_COL_W[k]).max(0.0);
-            let t = s.min(need);
+            let t = (widths[k] - MIN_COL_W[k]).max(0.0).min(need);
             widths[k] -= t;
             need -= t;
         }
@@ -82,8 +76,7 @@ pub fn apply_drag(widths: &mut [f32; 7], i: usize, dx: f32) {
             if need <= 0.0 {
                 break;
             }
-            let s = (widths[k] - MIN_COL_W[k]).max(0.0);
-            let t = s.min(need);
+            let t = (widths[k] - MIN_COL_W[k]).max(0.0).min(need);
             widths[k] -= t;
             freed += t;
             need -= t;
@@ -92,9 +85,6 @@ pub fn apply_drag(widths: &mut [f32; 7], i: usize, dx: f32) {
     }
     clamp_min(widths);
 }
-/// Autofits column `i`. The `i == 1` (name) branch handles the longest-name fit;
-/// other columns shrink to their minimum and donate freed space to the name column.
-/// Proportional redistribution is applied via clamp_min at the end.
 pub fn autofit_widths(widths: &mut [f32; 7], i: usize, rows: &[ProcessCpuItem]) {
     if i >= 6 {
         return;
@@ -114,8 +104,7 @@ pub fn autofit_widths(widths: &mut [f32; 7], i: usize, rows: &[ProcessCpuItem]) 
                 if need <= 0.0 {
                     break;
                 }
-                let s = (widths[k] - MIN_COL_W[k]).max(0.0);
-                let t = s.min(need);
+                let t = (widths[k] - MIN_COL_W[k]).max(0.0).min(need);
                 widths[k] -= t;
                 need -= t;
             }
@@ -162,7 +151,6 @@ pub fn col_widths(ui: &mut egui::Ui, avail_w: f32) -> [f32; 7] {
     });
     w
 }
-#[allow(clippy::needless_range_loop)]
 pub fn draw_separators(
     ui: &mut egui::Ui,
     rect: egui::Rect,
@@ -172,12 +160,11 @@ pub fn draw_separators(
     let col_x = compute_col_x(rect.left(), widths);
     for i in 0..6 {
         let bx = col_x[i + 1];
-        let sep = egui::Rect::from_min_max(
-            egui::pos2(bx - 3.0, rect.top()),
-            egui::pos2(bx + 3.0, rect.bottom()),
-        );
         let resp = ui.interact(
-            sep,
+            egui::Rect::from_min_max(
+                egui::pos2(bx - 2.0, rect.top()),
+                egui::pos2(bx + 2.0, rect.bottom()),
+            ),
             egui::Id::new("pulse_cpu_col_div").with(i),
             egui::Sense::click_and_drag(),
         );
@@ -186,26 +173,30 @@ pub fn draw_separators(
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
         let dx = resp.drag_delta().x;
+        let mut changed = false;
         if dx != 0.0 && resp.dragged() {
             apply_drag(widths, i, dx);
-            set_persisted_col_widths(Some(*widths));
-            ui.ctx().request_repaint();
+            changed = true;
         }
         if resp.double_clicked() {
             autofit_widths(widths, i, rows);
+            changed = true;
+        }
+        if changed {
             set_persisted_col_widths(Some(*widths));
             ui.ctx().request_repaint();
         }
-        let col =
-            if hot { crate::theme::colors::ACCENT_CYAN } else { crate::theme::colors::BORDER };
-        let sw = if hot { 1.75_f32 } else { 1.0_f32 };
+        let (col, sw) = if hot {
+            (crate::theme::colors::ACCENT_CYAN, 1.75_f32)
+        } else {
+            (crate::theme::colors::BORDER, 1.0_f32)
+        };
         ui.painter().line_segment(
             [egui::pos2(bx, rect.top()), egui::pos2(bx, rect.bottom())],
             egui::Stroke::new(sw, col),
         );
     }
-    let id = egui::Id::new("pulse_cpu_table_col_widths");
-    ui.ctx().data_mut(|d| d.insert_temp(id, *widths));
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("pulse_cpu_table_col_widths"), *widths));
 }
 #[cfg(test)]
 mod tests {
@@ -215,6 +206,29 @@ mod tests {
             assert!(w[i] >= MIN_COL_W[i] - 0.001, "col {i} below min");
         }
         assert!((w.iter().sum::<f32>() - avail.max(MIN_SUM)).abs() < 0.05);
+    }
+    fn assert_drag_sep1_left() {
+        let mut w = default_widths(1000.0);
+        fit_column_widths(&mut w, 1000.0);
+        let before = w;
+        apply_drag(&mut w, 1, -40.0);
+        let freed = (before[0] - w[0]) + (before[1] - w[1]);
+        assert!((w[2] - before[2] - freed).abs() < 0.01);
+        assert_eq!([w[3], w[4], w[5], w[6]], [before[3], before[4], before[5], before[6]]);
+    }
+    fn assert_width_clamp_and_narrow_truncate() {
+        for avail in [601.0_f32, 860.0, 1200.0, 1920.0] {
+            let mut w = default_widths(avail);
+            fit_column_widths(&mut w, avail);
+            let sum: f32 = w.iter().sum();
+            assert!((sum - avail.max(MIN_SUM)).abs() < 0.1);
+            for i in 0..7 {
+                assert!(w[i] >= MIN_COL_W[i] - 0.001);
+            }
+        }
+        assert_eq!(truncate_name("hello", 10.0).as_ref(), "...");
+        assert_eq!(truncate_name("hello", 0.0).as_ref(), "...");
+        assert_eq!(truncate_name("hello", 13.9).as_ref(), "...");
     }
     #[test]
     fn engine_invariants() {
@@ -237,27 +251,20 @@ mod tests {
         for i in 0..6 {
             assert!((x[i + 1] - (x[i] + w[i])).abs() < 0.001);
         }
-        let before0 = w[0];
-        let before1 = w[1];
-        let before2 = w[2];
+        let (before0, before1, before2) = (w[0], w[1], w[2]);
         let before_rest = [w[3], w[4], w[5], w[6]];
         apply_drag(&mut w, 1, -40.0);
         let freed = (before0 - w[0]) + (before1 - w[1]);
         assert_eq!([w[3], w[4], w[5], w[6]], before_rest);
         assert!((w[2] - before2 - freed).abs() < 0.01);
-        assert_eq!(
-            truncate_name("PULSE_v0.4.46_windows_x64.exe", 260.0).as_ref(),
-            "PULSE_v0.4.46_windows_x64.exe"
-        );
+        assert_eq!(truncate_name("abc", 260.0).as_ref(), "abc");
     }
     #[test]
     fn drag_separator_1_left_gives_to_immediate_neighbor() {
-        let mut w = default_widths(1000.0);
-        fit_column_widths(&mut w, 1000.0);
-        let before = w;
-        apply_drag(&mut w, 1, -40.0);
-        let freed = (before[0] - w[0]) + (before[1] - w[1]);
-        assert!((w[2] - before[2] - freed).abs() < 0.01);
-        assert_eq!([w[3], w[4], w[5], w[6]], [before[3], before[4], before[5], before[6]]);
+        assert_drag_sep1_left();
+    }
+    #[test]
+    fn width_clamp_and_narrow_truncate() {
+        assert_width_clamp_and_narrow_truncate();
     }
 }

@@ -11,6 +11,7 @@ use std::sync::Arc;
 use eframe::egui;
 
 mod app;
+mod app_cmd;
 mod app_ingest;
 mod app_persist;
 mod app_render;

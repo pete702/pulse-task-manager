@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use eframe::egui;
 
+use crate::app_cmd::AppCommand;
 use crate::app_tabs::ActiveTab;
 use crate::core::SystemSnapshot;
 use crate::i18n::Key;
@@ -22,7 +23,6 @@ fn s_cpu_scan_id(snap: &SystemSnapshot) -> u64 {
         .unwrap_or(0)
 }
 
-/// Renders the central panel content based on the active tab.
 #[allow(clippy::too_many_arguments)]
 pub fn render_central_panel(
     ui: &mut egui::Ui,
@@ -36,8 +36,17 @@ pub fn render_central_panel(
     snapshot: &Option<Arc<SystemSnapshot>>,
     uptime_secs: u64,
     _telemetry_paused: &mut bool,
+    cmds: &mut Vec<AppCommand>,
 ) {
     ui.add_space(16.0);
+    if *active_tab == ActiveTab::Memory {
+        ui.horizontal(|ui| {
+            if ui.button("Trim Memory").clicked() {
+                cmds.push(AppCommand::RequestMemoryTrim);
+            }
+        });
+        ui.add_space(4.0);
+    }
     match *active_tab {
         ActiveTab::Processes => {
             if let Some(ref snap) = snapshot {
@@ -115,41 +124,44 @@ pub fn render_central_panel(
     }
 }
 
-/// Renders the awaiting memory model message.
 fn render_awaiting(ui: &mut egui::Ui) {
-    let text = egui::RichText::new(Key::AwaitingMemoryModel.t()).size(14.0);
-    ui.label(text.color(crate::theme::colors::TEXT_SECONDARY));
+    ui.label(
+        egui::RichText::new(Key::AwaitingMemoryModel.t())
+            .size(14.0)
+            .color(crate::theme::colors::TEXT_SECONDARY),
+    );
 }
 
-/// Renders the top header panel.
 pub fn render_top_panel(
     ui: &mut egui::Ui,
     snapshot: &Option<Arc<SystemSnapshot>>,
     last_ui_ms: f32,
+    telemetry_paused: bool,
+    cmds: &mut Vec<AppCommand>,
 ) {
-    chrome::render_top_panel(ui, snapshot, last_ui_ms);
+    ui.horizontal(|ui| {
+        let label = if telemetry_paused { "Resume" } else { "Pause" };
+        if ui.button(label).clicked() {
+            cmds.push(AppCommand::TogglePause);
+        }
+        ui.separator();
+        chrome::render_top_panel(ui, snapshot, last_ui_ms);
+    });
 }
 
-/// Renders the bottom status bar.
-pub fn render_status_bar(
-    ui: &mut egui::Ui,
-    active_processes: u32,
-    snapshot: &Option<Arc<SystemSnapshot>>,
-    last_ui_ms: f32,
-) {
-    chrome::render_status_bar(ui, active_processes, snapshot, last_ui_ms);
-}
-
-/// Renders the left sidebar.
 pub fn render_sidebar(
     ui: &mut egui::Ui,
     active_tab: &mut ActiveTab,
     snapshot: &Option<Arc<SystemSnapshot>>,
+    cmds: &mut Vec<AppCommand>,
 ) {
+    let old = *active_tab;
     sidebar::render_sidebar(ui, active_tab, snapshot);
+    if *active_tab != old {
+        cmds.push(AppCommand::SetTab(*active_tab));
+    }
 }
 
-/// Renders all frame chrome (top, bottom, sidebar, central) in one call.
 #[allow(clippy::too_many_arguments)]
 pub fn render_chrome(
     ctx: &egui::Context,
@@ -165,18 +177,19 @@ pub fn render_chrome(
     telemetry_paused: &mut bool,
     last_ui_ms: f32,
     active_processes: u32,
+    cmds: &mut Vec<AppCommand>,
 ) {
     egui::TopBottomPanel::top("top_header")
         .exact_height(36.0)
-        .show(ctx, |ui| render_top_panel(ui, snapshot, last_ui_ms));
+        .show(ctx, |ui| render_top_panel(ui, snapshot, last_ui_ms, *telemetry_paused, cmds));
     egui::TopBottomPanel::bottom("bottom_status_bar")
         .exact_height(26.0)
         .frame(crate::theme::status_bar_frame())
-        .show(ctx, |ui| render_status_bar(ui, active_processes, snapshot, last_ui_ms));
+        .show(ctx, |ui| chrome::render_status_bar(ui, active_processes, snapshot, last_ui_ms));
     egui::SidePanel::left("left_sidebar")
         .resizable(false)
         .exact_width(210.0)
-        .show(ctx, |ui| render_sidebar(ui, active_tab, snapshot));
+        .show(ctx, |ui| render_sidebar(ui, active_tab, snapshot, cmds));
     egui::CentralPanel::default()
         .frame(egui::Frame::none().inner_margin(egui::Margin {
             left: 12.0,
@@ -198,6 +211,7 @@ pub fn render_chrome(
                 snapshot,
                 uptime_secs,
                 telemetry_paused,
+                cmds,
             );
         });
 }

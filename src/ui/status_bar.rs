@@ -7,6 +7,9 @@ use crate::theme::colors;
 use eframe::egui;
 use std::sync::{Arc, Mutex, OnceLock};
 
+/// Medium CPU alert tier threshold: total CPU >= 85% or single-thread bottleneck.
+const CPU_ALERT_TIER_PCT: f32 = 85.0;
+
 /// Cached status line keyed by process count: zero format! on idle frames.
 fn cached_status(active_processes: u32) -> Arc<str> {
     static CACHE: OnceLock<Mutex<(u32, Arc<str>)>> = OnceLock::new();
@@ -43,13 +46,14 @@ fn cached_status_compact(active_processes: u32) -> Arc<str> {
     Arc::clone(&cache.1)
 }
 
-/// Cached diagnostics keyed by (RAM tenths, UI-hundredths): idle frames reuse the Arc.
+/// Cached diagnostics keyed by (RAM tenths, UI frame-time).
+/// Quantization: RAM step 0.1 MB, frame-time step 10 ms (idle frames reuse the Arc).
 fn cached_diag(pulse_ram_mb: f32, last_ui_ms: f32) -> Arc<str> {
     let ram = if pulse_ram_mb.is_finite() { pulse_ram_mb.max(0.0) } else { 0.0 };
     let ui_ms = if last_ui_ms.is_finite() { last_ui_ms.max(0.0) } else { 0.0 };
     type Key2 = (u32, u32);
     static CACHE: OnceLock<Mutex<(Key2, Arc<str>)>> = OnceLock::new();
-    let key: Key2 = ((ram * 10.0).round().max(0.0) as u32, (ui_ms * 100.0).round().max(0.0) as u32);
+    let key: Key2 = ((ram * 10.0).round().max(0.0) as u32, (ui_ms / 10.0).round().max(0.0) as u32);
     let mut cache = CACHE
         .get_or_init(|| Mutex::new(((u32::MAX, u32::MAX), Arc::from(""))))
         .lock()
@@ -147,6 +151,18 @@ pub fn render_status_bar(
                 ("[ * MODE: DESKTOP IDLE ]", colors::ACCENT_CYAN)
             };
             ui.label(egui::RichText::new(mode_badge).monospace().size(11.0).color(mode_color));
+
+            if let Some(ref cpu) = snap.cpu {
+                if cpu.total_pct >= CPU_ALERT_TIER_PCT || cpu.single_thread_bottleneck() {
+                    ui.separator();
+                    ui.label(
+                        egui::RichText::new("[ CPU ALERT ]")
+                            .monospace()
+                            .size(11.0)
+                            .color(colors::ACCENT_RED),
+                    );
+                }
+            }
 
             if snap.os_scheduler_jitter_ms > 0 && wide {
                 ui.separator();
