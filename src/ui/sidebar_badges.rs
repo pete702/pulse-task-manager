@@ -1,6 +1,5 @@
 //! Cached badge text helpers and tab badge painting for the sidebar.
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 const BADGE_CACHE_CAP: usize = 256;
@@ -75,11 +74,16 @@ pub fn badge_active(total: f32, state: &mut bool) -> bool {
     *state
 }
 
-pub(super) fn hysteresis_active(slot: &AtomicBool, total: f32) -> bool {
+pub(super) fn hysteresis_active(slot: &Mutex<(u64, bool)>, scope: u64, total: f32) -> bool {
     let total = if total.is_finite() { total.max(0.0) } else { 0.0 };
-    let mut cur = slot.load(Ordering::Relaxed);
+    let mut guard = slot.lock().unwrap_or_else(|e| e.into_inner());
+    if guard.0 != scope {
+        guard.0 = scope;
+        guard.1 = false;
+    }
+    let mut cur = guard.1;
     let next = badge_active(total, &mut cur);
-    slot.store(next, Ordering::Relaxed);
+    guard.1 = next;
     next
 }
 
@@ -105,8 +109,8 @@ pub(super) fn draw_tab_badge(
     rect: eframe::egui::Rect,
     tab: crate::app_tabs::ActiveTab,
     snap: &crate::core::SystemSnapshot,
-    storage_active: &AtomicBool,
-    network_active: &AtomicBool,
+    storage_latch: &Mutex<(u64, bool)>,
+    network_latch: &Mutex<(u64, bool)>,
 ) {
     if rect.width() < 140.0 {
         return;
@@ -142,7 +146,12 @@ pub(super) fn draw_tab_badge(
         T::Storage => {
             let t = snap.storage.read_mb_s + snap.storage.write_mb_s;
             let t = if t.is_finite() { t.max(0.0) } else { 0.0 };
-            let col = if hysteresis_active(storage_active, t) {
+            let scope = snap
+                .storage
+                .volumes
+                .iter()
+                .fold(0u64, |a, v| a.wrapping_mul(31).wrapping_add(v.mount_point.len() as u64));
+            let col = if hysteresis_active(storage_latch, scope, t) {
                 crate::theme::colors::ACCENT_CYAN
             } else {
                 crate::theme::colors::TEXT_SECONDARY
@@ -152,7 +161,12 @@ pub(super) fn draw_tab_badge(
         T::Network => {
             let t = snap.network.rx_mbps + snap.network.tx_mbps;
             let t = if t.is_finite() { t.max(0.0) } else { 0.0 };
-            let col = if hysteresis_active(network_active, t) {
+            let scope = snap
+                .network
+                .adapters
+                .iter()
+                .fold(0u64, |a, v| a.wrapping_mul(31).wrapping_add(v.name.len() as u64));
+            let col = if hysteresis_active(network_latch, scope, t) {
                 crate::theme::colors::ACCENT_CYAN
             } else {
                 crate::theme::colors::TEXT_SECONDARY

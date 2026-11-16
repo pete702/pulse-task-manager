@@ -1,5 +1,55 @@
 # Changelog
 All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
+## [0.4.129] - 2026-04-12
+- **CPU table columns**: residual width correction and truncation guard (B22).
+- **CPU table actions**: consistent identity verification across group targets (B23).
+- **Docs/README**: version string updated to v0.4.129.
+
+## [0.4.128] - 2026-04-12
+- **Storage model**: explicit per-volume read/write summation (B14-B-05).
+- **Storage inspector**: HashSet drive filter in group() (B15-B-04).
+
+## [0.4.127] - 2026-04-12
+- **UI primitives**: tactical ticks always render (B18-B-02).
+- **Sidebar**: Enter activates, request_focus on nav; scope-keyed alert latch (B18-B-03, B18-B-04).
+- **Three Walls**: test for both cpu and memory None (B18-B-08).
+- **Util/theme fonts**: UTC doc note, MAX_FONT_BYTES constant (B20-B-03, B20-B-04).
+
+## [0.4.126] - 2026-04-12
+- **Network chart tests**: restored traffic-window axis test (B16 WHEEL 5).
+- **Latency probe tests**: stabilized jitter assertion (B16 WHEEL 6).
+- **Network cards**: pinned bandwidth tier and cached KPI strings (B17-B-03).
+
+## [0.4.125] - 2026-04-12
+- **Memory blackbox**: badge now reads "ARMED (85% trigger)" (B12-B-01).
+- **Storage physical disk**: test-only helper moved into test module (B14-B-09).
+- **Storage KPI**: cached formatted strings to avoid per-frame re-allocation (B15-B-12).
+
+## [0.4.124] - 2026-04-12
+- **Storage collector**: per-disk counter rollback guard emits zero and re-seeds (B14-B-03).
+- **Storage I/O**: documented top-I/O tie-break rule (B14-B-06).
+- **Storage inspector**: drive-filter badge shows "N of M procs" (B15-B-05).
+- **Storage view**: HashSet for seen volume tracking (B15-B-12).
+
+## [0.4.123] - 2026-04-12
+- **Memory history**: removed unused cache key; unified startup single-point guard (B12-B-03, B12-B-09).
+- **Memory chart**: removed unused chart_height parameter (B12-B-10).
+- **Memory chart HUD**: proportional X-axis tick positions (B12-B-04).
+- **Memory top cards**: width breakpoint from MIN_WINDOW_WIDTH (B13-B-05).
+
+## [0.4.122] - 2026-04-12
+- **Worker policy**: fast cadence for Cpu and Processes tabs (B05 N-4).
+- **Memory delta**: probe-failure cooldown and clamped delta rates (B10-B-03, B10-B-08).
+- **Memory collector**: explicit refresh precondition and display-ceiling clamp (B10-B-04, B10-B-05).
+- **Downsampling**: bounded threshold<=2 path (B10-B-07).
+
+## [0.4.121] - 2026-04-12
+- **Worker policy**: fast process cadence only for Cpu tab (B05 N-4).
+- **Self-trim**: documented two-tier working-set trim policy (B06 N-3).
+- **Storage layout**: named width thresholds (B03 B-15).
+- **Storage view**: removed test-only selected_mount helper (B15-B-08).
+- **Docs guard**: case-insensitive dir skip, shared is_cyrillic, zero dead-code attributes check (B20-B-02).
+
 ## [0.4.120] - 2026-04-12
 - **Network probe**: non-blocking DNS flush via spawned thread; atomic `probe_snapshot()`.
 - **Network collector**: rollback guard for counter resets.

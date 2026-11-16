@@ -62,6 +62,11 @@ pub(crate) fn spawn_eco(
         let (mut ok, mut last) = (0, String::new());
         let mut rollbacks: Vec<((u32, u64), Option<bool>)> = Vec::new();
         for (t, prev) in pairs {
+            if !ct_ok(&t) {
+                last = "identity mismatch".to_owned();
+                rollbacks.push(((t.pid, t.start_time), prev));
+                continue;
+            }
             match q::set_process_eco_qos(t.pid, &t.name, t.creation_time, t.exe_path, enable) {
                 Ok(()) => ok += 1,
                 Err(e) => {
@@ -83,6 +88,9 @@ pub(crate) fn spawn_open(state: &mut CpuTableState, targets: Vec<GroupTarget>) {
     let t = targets.into_iter().next().unwrap();
     wk(state);
     state.spawn_menu_action(move || {
+        if !ct_ok(&t) {
+            return ("Open blocked: identity mismatch".to_owned(), None, Vec::new());
+        }
         let m = match q::open_process_file_location(
             t.pid,
             &t.name,

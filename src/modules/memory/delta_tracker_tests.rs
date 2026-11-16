@@ -46,7 +46,7 @@ mod tests {
         tracker.track_at(&[row(100, "chrome.exe", 1_000_000_000)], t0);
         let out = tracker
             .track_at(&[row(100, "chrome.exe", 1_050_000_000)], t0 + Duration::from_millis(1));
-        assert_eq!(out[0].delta_bytes_per_sec, 500_000_000);
+        assert_eq!(out[0].delta_bytes_per_sec, 0);
     }
 
     #[test]

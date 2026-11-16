@@ -149,6 +149,14 @@ impl StorageCollector {
                 Some((old_r, old_w, at)) => {
                     let dt = now.duration_since(at).as_secs_f64();
                     if dt > 0.0 {
+                        // Rollback guard: counter reset -> emit zero and re-seed baseline.
+                        if new_r < old_r || new_w < old_w {
+                            per_disk.insert(disk, (0.0, 0.0));
+                            self.last_per_disk_rates.insert(disk, (0.0, 0.0));
+                            self.prev_per_disk.insert(disk, (new_r, new_w, now));
+                            any_rate = true;
+                            continue;
+                        }
                         if dt < 0.35 {
                             if let Some(prev) = self.last_per_disk_rates.get(&disk).copied() {
                                 per_disk.insert(disk, prev);

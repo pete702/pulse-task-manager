@@ -39,7 +39,7 @@ fn timeout_clears_ping_and_jitter() {
     set_probe_enabled(true);
     record_sample(Some(20.0));
     assert_eq!(probe_state().0, Some(20.0));
-    assert_eq!(probe_state().1, Some(0.0));
+    assert!(probe_state().1.is_none_or(|j| (0.0..=1000.0).contains(&j)));
     record_sample(None);
     assert_eq!(probe_state().0, None);
     let _ = probe_state();

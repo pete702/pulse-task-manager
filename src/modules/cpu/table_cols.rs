@@ -45,6 +45,10 @@ pub fn fit_column_widths(widths: &mut [f32; 7], avail_w: f32) {
     let cur2: f32 = widths.iter().sum();
     widths[1] += target - cur2;
     clamp_min(widths);
+    // Re-apply residual correction so total matches target after clamping.
+    let sum = widths.iter().sum::<f32>();
+    widths[1] = (widths[1] + (target - sum)).max(MIN_COL_W[1]);
+    clamp_min(widths);
 }
 pub fn compute_col_x(left: f32, widths: &[f32; 7]) -> [f32; 7] {
     let mut x = [0.0_f32; 7];
@@ -88,6 +92,9 @@ pub fn apply_drag(widths: &mut [f32; 7], i: usize, dx: f32) {
     }
     clamp_min(widths);
 }
+/// Autofits column `i`. The `i == 1` (name) branch handles the longest-name fit;
+/// other columns shrink to their minimum and donate freed space to the name column.
+/// Proportional redistribution is applied via clamp_min at the end.
 pub fn autofit_widths(widths: &mut [f32; 7], i: usize, rows: &[ProcessCpuItem]) {
     if i >= 6 {
         return;
@@ -128,6 +135,9 @@ pub fn autofit_widths(widths: &mut [f32; 7], i: usize, rows: &[ProcessCpuItem]) 
     clamp_min(widths);
 }
 pub fn truncate_name(name: &str, w: f32) -> std::borrow::Cow<'_, str> {
+    if w < 14.0 {
+        return std::borrow::Cow::Borrowed("...");
+    }
     let m = (((w - 14.0) / 7.1).floor() as usize).max(12);
     if name.chars().count() <= m {
         return std::borrow::Cow::Borrowed(name);
@@ -144,7 +154,12 @@ pub fn col_widths(ui: &mut egui::Ui, avail_w: f32) -> [f32; 7] {
         })
     });
     fit_column_widths(&mut w, avail_w);
-    ui.ctx().data_mut(|d| d.insert_temp(id, w));
+    ui.ctx().data_mut(|d| {
+        let prev: Option<[f32; 7]> = d.get_temp(id);
+        if prev != Some(w) {
+            d.insert_temp(id, w);
+        }
+    });
     w
 }
 #[allow(clippy::needless_range_loop)]

@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::modules::memory::model::{ProcessSample, RawProcessRow};
 
@@ -12,6 +12,8 @@ use crate::platform::handle::query_creation_time_by_pid;
 
 /// Minimum elapsed seconds used when normalising deltas (divide-by-zero guard).
 const MIN_DT_SECS: f64 = 0.1;
+/// Bound for a single-pass memory delta rate to avoid unrealistic spikes.
+const MAX_DELTA_PER_SEC: i64 = 1_000_000_000_000;
 
 /// Per-process delta tracking state.
 struct DeltaState {
@@ -22,6 +24,10 @@ struct DeltaState {
     /// Populated once on first sighting of the process (Vacant entry).
     creation_time: Option<u64>,
     last_gen: u32,
+    /// Number of failed creation-time resolve attempts (probe failure cooldown).
+    fail_attempts: u8,
+    /// Timestamp of the last resolve attempt (cooldown tracking).
+    last_attempt: Option<Instant>,
 }
 
 /// Internal state for tracking process memory deltas across ticks.
@@ -60,11 +66,13 @@ impl ProcessDeltaTracker {
     where
         F: Fn(u32) -> Option<u64>,
     {
-        let dt = self
+        let dt_raw = self
             .last_sample
             .map(|prev| now.saturating_duration_since(prev).as_secs_f64())
-            .unwrap_or(0.0)
-            .max(MIN_DT_SECS);
+            .unwrap_or(0.0);
+        // A very short (or first-pass) interval must not produce an unrealistic spike rate.
+        let short_interval = dt_raw > 0.0 && dt_raw < 1.0;
+        let dt = dt_raw.max(MIN_DT_SECS);
         self.current_gen = self.current_gen.wrapping_add(1);
         let mut result = Vec::with_capacity(processes.len());
         // Syscall budget shared by new PIDs and deferred retries.
@@ -81,11 +89,28 @@ impl ProcessDeltaTracker {
                 exe_path: exe_path.clone(),
                 creation_time: None,
                 last_gen: 0,
+                fail_attempts: 0,
+                last_attempt: None,
             });
-            if state.creation_time.is_none() && budget > 0 {
+            // Probe-failure cooldown: unreadable/protected PIDs must not burn the
+            // per-tick Win32 query budget on every single scan.
+            let cooldown = match state.fail_attempts {
+                0 | 1 => Duration::ZERO,
+                2 => Duration::from_secs(2),
+                3 => Duration::from_secs(4),
+                _ => Duration::from_secs(8),
+            };
+            let attempt_allowed = state.creation_time.is_none()
+                && budget > 0
+                && state.last_attempt.is_none_or(|t| t.elapsed() >= cooldown);
+            if attempt_allowed {
                 budget -= 1;
+                state.last_attempt = Some(now);
                 if let Some(queried) = resolve(seen_pid) {
                     state.creation_time = Some(queried);
+                    state.fail_attempts = 0;
+                } else {
+                    state.fail_attempts = state.fail_attempts.saturating_add(1);
                 }
             }
 
@@ -93,10 +118,12 @@ impl ProcessDeltaTracker {
             // No fallback to Unix start_time -- they are incompatible time bases.
             let identity = state.creation_time;
 
-            let is_new = state.last_gen == 0 || dt > 15.0;
+            // Treat very short / first-pass intervals like the stale-window rule: no delta.
+            let is_new = state.last_gen == 0 || dt > 15.0 || short_interval;
             let prev = if is_new { *ram } else { state.prev_ram };
             let delta_bytes = *ram as i64 - prev as i64;
             let delta_per_sec = (delta_bytes as f64 / dt).round() as i64;
+            let delta_per_sec = delta_per_sec.clamp(-MAX_DELTA_PER_SEC, MAX_DELTA_PER_SEC);
 
             state.prev_ram = *ram;
             state.last_gen = self.current_gen;

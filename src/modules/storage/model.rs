@@ -73,12 +73,8 @@ pub fn group_physical_disks(volumes: &[DiskVolumeInfo]) -> Vec<PhysicalDiskGroup
         if let Some(first) = group.volumes.first().cloned() {
             group.kind = first.kind;
         }
-        let (read, write) = group
-            .volumes
-            .iter()
-            .fold((0.0f32, 0.0f32), |(r, w), v| (r + v.read_mb_s, w + v.write_mb_s));
-        group.read_mb_s = read;
-        group.write_mb_s = write;
+        group.read_mb_s = group.volumes.iter().map(|v| v.read_mb_s).sum();
+        group.write_mb_s = group.volumes.iter().map(|v| v.write_mb_s).sum();
     }
     groups
 }

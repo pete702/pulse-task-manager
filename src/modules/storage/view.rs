@@ -10,6 +10,9 @@ use crate::modules::storage::volume_cards::{render_all_selector, render_volume_c
 use eframe::egui;
 use std::sync::Arc;
 
+/// Minimum width (px) at which the storage tab switches to the side-by-side cockpit layout.
+const STORAGE_SPLIT_MIN_WIDTH: f32 = 680.0;
+
 #[derive(Default)]
 pub struct StorageViewState {
     pub history: StorageHistory,
@@ -40,10 +43,6 @@ impl StorageViewState {
         self.selected_mount = None;
     }
     #[cfg(test)]
-    pub fn selected_mount(&self) -> Option<Arc<str>> {
-        self.selected_mount.clone()
-    }
-    #[cfg(test)]
     pub fn set_selected_for_test(&mut self, value: Option<Arc<str>>) {
         self.selected_mount = value;
     }
@@ -60,13 +59,12 @@ pub fn ingest_storage_snapshot(
         return;
     }
     guard.history.push(elapsed, snap.storage.read_mb_s, snap.storage.write_mb_s);
-    let mut seen: Vec<u32> = Vec::new();
+    let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
     for vol in snap.storage.volumes.iter() {
         if let Some(d) = history_key_for_volume(vol) {
-            if seen.contains(&d) {
+            if !seen.insert(d) {
                 continue;
             }
-            seen.push(d);
             guard.history.push_disk(d, elapsed, vol.read_mb_s, vol.write_mb_s);
         }
     }
@@ -133,7 +131,7 @@ pub fn render_storage_tab(
         let (r, w) = state.history.series_points_scoped(scope_disk, win);
         (r, w, win, state.show_read, state.show_write)
     };
-    if ui.available_width() >= 680.0 {
+    if ui.available_width() >= STORAGE_SPLIT_MIN_WIDTH {
         let full_h = ui.available_height().max(320.0);
         let full_w = ui.available_width();
         ui.horizontal_top(|ui| {
@@ -215,7 +213,7 @@ mod tests {
         let mut s = StorageViewState::new();
         s.set_selected_for_test(Some(Arc::from("C:\\")));
         s.clear_selected();
-        assert_eq!(s.selected_mount(), None);
+        assert_eq!(s.selected_mount, None);
         s.set_selected_for_test(None);
     }
 }

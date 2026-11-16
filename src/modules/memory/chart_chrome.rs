@@ -77,7 +77,7 @@ pub(crate) fn render_header(
             } else {
                 ui.add(
                     egui::Label::new(
-                        egui::RichText::new("[ BLACKBOX: ARMED ]")
+                        egui::RichText::new("[ BLACKBOX: ARMED (85% trigger) ]")
                             .monospace()
                             .size(10.5)
                             .color(egui::Color32::from_rgb(0x00, 0xE0, 0x80)),

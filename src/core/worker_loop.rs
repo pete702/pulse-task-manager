@@ -145,6 +145,7 @@ pub fn spawn_worker(
                             memory.ram_usage_percent(),
                             &mut delta_tracker,
                             true,
+                            true,
                         );
                         let shared = Arc::new(result.processes);
                         last_processes = Arc::clone(&shared);

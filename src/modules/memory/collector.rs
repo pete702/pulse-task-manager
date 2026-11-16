@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use sysinfo::{ProcessRefreshKind, System};
 
-use crate::modules::memory::constants::MAX_SANE_VIRTUAL_BYTES;
+use crate::modules::memory::constants::{MAX_DISPLAY_RAM_BYTES, MAX_SANE_VIRTUAL_BYTES};
 use crate::modules::memory::delta_tracker::ProcessDeltaTracker;
 use crate::modules::memory::model::{MemorySnapshot, ProcessSample, RawProcessRow};
 use crate::modules::memory::process_spike::MemorySpikeEvent;
@@ -72,6 +72,7 @@ pub fn collect_process_memory(
     current_ram_pct: f32,
     delta_tracker: &mut ProcessDeltaTracker,
     refresh_processes: bool,
+    assume_refreshed: bool,
 ) -> ProcessMemoryResult {
     if !refresh_processes {
         return ProcessMemoryResult {
@@ -81,11 +82,9 @@ pub fn collect_process_memory(
         };
     }
 
-    // Skip second sysinfo scan when worker_loop already refreshed with
-    // .with_memory().with_cpu().without_exe() on the same tick.
-    if sys.processes().is_empty() {
-        // Use without_exe() to avoid querying executable paths for all 200+ processes
-        // (exe paths are queried on-demand via query_process_exe_path when "Open Location" is clicked)
+    // Explicit refresh precondition: only refresh when the caller did not already
+    // refresh sysinfo on this tick (no content-guessing via is_empty()).
+    if !assume_refreshed {
         sys.refresh_processes_specifics(ProcessRefreshKind::new().with_memory().without_exe());
     }
 
@@ -93,10 +92,12 @@ pub fn collect_process_memory(
         .processes()
         .iter()
         .map(|(pid, process)| {
-            let ram = process.memory();
+            let ram = process.memory().min(MAX_DISPLAY_RAM_BYTES);
             let mut virt = process.virtual_memory();
             if virt >= MAX_SANE_VIRTUAL_BYTES {
-                virt = ram;
+                virt = MAX_SANE_VIRTUAL_BYTES;
+            } else {
+                virt = virt.min(MAX_DISPLAY_RAM_BYTES);
             }
             // exe_path will be None since we use without_exe()
             // It will be resolved on-demand via query_process_exe_path when needed

@@ -3,10 +3,9 @@ use crate::core::SystemSnapshot;
 use crate::theme::colors;
 use crate::ui::sidebar_badges::draw_tab_badge;
 use eframe::egui;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
-static STORAGE_ACTIVE: AtomicBool = AtomicBool::new(false);
-static NETWORK_ACTIVE: AtomicBool = AtomicBool::new(false);
+use std::sync::{Arc, Mutex};
+static STORAGE_LATCH: Mutex<(u64, bool)> = Mutex::new((0, false));
+static NETWORK_LATCH: Mutex<(u64, bool)> = Mutex::new((0, false));
 fn next_tab(tab: crate::app_tabs::ActiveTab) -> crate::app_tabs::ActiveTab {
     use crate::app_tabs::ActiveTab as T;
     match tab {
@@ -40,12 +39,16 @@ pub fn render_sidebar(
             (
                 i.key_pressed(egui::Key::ArrowUp),
                 i.key_pressed(egui::Key::ArrowDown),
-                i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space),
+                i.key_pressed(egui::Key::Enter),
             )
         });
-        let tabs = std::iter::once(crate::app_tabs::ActiveTab::Processes)
-            .chain(crate::app_tabs::ActiveTab::all().iter().copied());
-        for tab in tabs {
+        let tabs: Vec<crate::app_tabs::ActiveTab> =
+            std::iter::once(crate::app_tabs::ActiveTab::Processes)
+                .chain(crate::app_tabs::ActiveTab::all().iter().copied())
+                .collect();
+        let mut row_ids: Vec<(crate::app_tabs::ActiveTab, egui::Id)> = Vec::new();
+        let mut pending_focus: Option<crate::app_tabs::ActiveTab> = None;
+        for tab in tabs.iter().copied() {
             let is_active = *active_tab == tab;
             let title = tab.label();
             let (bg, border, accent, text_col) = if is_active {
@@ -94,9 +97,10 @@ pub fn render_sidebar(
             );
             if rect.width() >= 140.0 {
                 if let Some(ref snap) = latest_snapshot {
-                    draw_tab_badge(ui, rect, tab, snap, &STORAGE_ACTIVE, &NETWORK_ACTIVE);
+                    draw_tab_badge(ui, rect, tab, snap, &STORAGE_LATCH, &NETWORK_LATCH);
                 }
             }
+            row_ids.push((tab, response.id));
             if response.clicked() {
                 *active_tab = tab;
             }
@@ -104,12 +108,24 @@ pub fn render_sidebar(
                 if confirm {
                     *active_tab = tab;
                 } else if down {
-                    *active_tab = next_tab(tab);
+                    let nt = next_tab(tab);
+                    *active_tab = nt;
+                    pending_focus = Some(nt);
                 } else if up {
-                    *active_tab = prev_tab(tab);
+                    let pt = prev_tab(tab);
+                    *active_tab = pt;
+                    pending_focus = Some(pt);
                 }
             }
+            if pending_focus == Some(tab) {
+                response.request_focus();
+            }
             ui.add_space(6.0);
+        }
+        if let Some(target) = pending_focus {
+            if let Some((_, id)) = row_ids.iter().find(|(t, _)| *t == target) {
+                ui.memory_mut(|m| m.request_focus(*id));
+            }
         }
     });
 }

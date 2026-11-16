@@ -20,3 +20,17 @@ fn fallback_handling_empty() {
     assert_eq!(perf_counters_for_mount("invalid"), None);
     assert_eq!(sum_perf_counters(&[]), None);
 }
+
+fn sum_perf_counters(mounts: &[&str]) -> Option<(i64, i64)> {
+    let mut read: i64 = 0;
+    let mut written: i64 = 0;
+    let mut any = false;
+    for mount in mounts {
+        if let Some((r, w)) = super::perf_counters_for_mount(mount) {
+            read = read.saturating_add(r);
+            written = written.saturating_add(w);
+            any = true;
+        }
+    }
+    any.then_some((read, written))
+}

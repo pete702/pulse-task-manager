@@ -1,5 +1,11 @@
-//! Self-trim policy: one-shot startup trim (~5s after launch), minimize cooldown trim,
-//! periodic timer, and failed-trim backoff. Resize must never trigger a trim.
+//! Self-trim policy for PULSE working set.
+//!
+//! Two-tier working-set trim policy:
+//! 1. One-shot startup self-trim ~5 seconds after launch (`STARTUP_TRIM_DONE`), performed
+//!    even while the window is visible, to shed startup init pages.
+//! 2. Edge-triggered minimize trim when the window is minimized (guarded by cooldown).
+//!
+//! Also includes periodic timer and failed-trim backoff. Resize must never trigger a trim.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;

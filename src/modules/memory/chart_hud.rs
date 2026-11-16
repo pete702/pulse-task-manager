@@ -1,5 +1,6 @@
 //! In-canvas HUD drawing for the memory chart: axis labels and interactive legend.
 
+use crate::modules::memory::chart_axis::window_minutes;
 use crate::modules::memory::model::ChartWindow;
 use crate::theme::colors;
 use crate::ui::chart_scale::{format_tick_label, x_axis_ticks};
@@ -58,13 +59,11 @@ pub fn draw_x_axis_hud_labels(ui: &egui::Ui, plot_rect: egui::Rect, window: Char
     let secs = window.seconds() as usize;
     let ticks = x_axis_ticks(secs);
     let y = plot_rect.bottom() - 5.0;
+    let window_mins = window_minutes(window);
     let count = ticks.len();
     for (idx, tick) in ticks.iter().enumerate() {
-        let x = if count > 1 {
-            plot_rect.left() + (idx as f32 / (count - 1) as f32) * plot_rect.width()
-        } else {
-            plot_rect.left()
-        };
+        let tick_min = *tick;
+        let x = plot_rect.right() - (tick_min as f32 / window_mins as f32) * plot_rect.width();
         let label = format_tick_label(secs, *tick);
         let (align, x_adj) = if idx == 0 {
             (egui::Align2::LEFT_BOTTOM, plot_rect.left() + 8.0)

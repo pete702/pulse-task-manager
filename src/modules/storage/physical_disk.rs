@@ -197,34 +197,12 @@ pub fn perf_counters_for_mount(mount: &str) -> Option<(i64, i64)> {
     Some((read, written))
 }
 
-/// Sums hardware counters across mounts using IOCTL_DISK_PERFORMANCE.
-#[cfg(test)]
-#[cfg(target_os = "windows")]
-pub fn sum_perf_counters(mounts: &[&str]) -> Option<(i64, i64)> {
-    let mut read: i64 = 0;
-    let mut written: i64 = 0;
-    let mut any = false;
-    for mount in mounts {
-        if let Some((r, w)) = perf_counters_for_mount(mount) {
-            read = read.saturating_add(r);
-            written = written.saturating_add(w);
-            any = true;
-        }
-    }
-    any.then_some((read, written))
-}
-
 #[cfg(not(target_os = "windows"))]
 pub fn physical_disk_for_mount(_mount: &str) -> Option<(u32, u32)> {
     None
 }
 #[cfg(not(target_os = "windows"))]
 pub fn perf_counters_for_mount(_mount: &str) -> Option<(i64, i64)> {
-    None
-}
-#[cfg(test)]
-#[cfg(not(target_os = "windows"))]
-pub fn sum_perf_counters(_mounts: &[&str]) -> Option<(i64, i64)> {
     None
 }
 

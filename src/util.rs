@@ -141,6 +141,7 @@ pub fn format_timestamp_now() -> String {
 }
 
 /// Formats current system time as HH:MM:SS using std::time (no chrono dependency).
+/// On non-Windows (Linux) targets the timestamp is formatted in UTC.
 #[cfg(not(target_os = "windows"))]
 pub fn format_timestamp_now() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};

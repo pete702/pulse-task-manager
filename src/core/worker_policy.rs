@@ -16,8 +16,8 @@ pub fn worker_tick_interval(minimized: bool) -> Duration {
     }
 }
 
-/// Full process scans run every 3rd visible tick (3 seconds when Processes sub-tab is open).
-/// Storage tab also uses this fast cadence so the 1s chart stays live.
+/// Full process scans run every 3rd visible tick (3 seconds when the Cpu tab is open).
+/// Only the Cpu and Processes tabs use this fast process cadence.
 pub const SCAN_TICKS_VISIBLE: u64 = 3;
 
 /// Full process scans run every 5th tick when Overview tab is open (5 seconds).

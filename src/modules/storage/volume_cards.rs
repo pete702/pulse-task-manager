@@ -6,6 +6,10 @@ use eframe::egui;
 use std::sync::Arc;
 const LC: egui::Align2 = egui::Align2::LEFT_CENTER;
 const RC: egui::Align2 = egui::Align2::RIGHT_CENTER;
+/// Minimum width (px) to render volume cards in a two-column layout.
+const VOLUME_CARD_PAIR_MIN_WIDTH: f32 = 440.0;
+/// Width (px) below which a partition row uses the compact caption.
+const VOLUME_CARD_NARROW_WIDTH: f32 = 220.0;
 fn pt(
     p: &egui::Painter,
     pos: egui::Pos2,
@@ -98,7 +102,7 @@ pub fn render_volume_cards(
         return;
     }
     let groups = group_physical_disks(volumes);
-    if ui.available_width() >= 440.0 {
+    if ui.available_width() >= VOLUME_CARD_PAIR_MIN_WIDTH {
         for pair in groups.chunks(2) {
             ui.columns(2, |cols| {
                 render_disk_card(&mut cols[0], &pair[0], selected_mount);
@@ -170,7 +174,7 @@ fn render_partition(
     let used_gib =
         vol.total_bytes.saturating_sub(vol.available_bytes) as f64 / (1024.0 * 1024.0 * 1024.0);
     let total_gib = vol.total_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
-    let narrow = ui.available_width() < 220.0;
+    let narrow = ui.available_width() < VOLUME_CARD_NARROW_WIDTH;
     let pct_s = format!("{:.0}%", vol.used_pct);
     let cap_s = if narrow {
         format!("{used_gib:.1}/{total_gib:.1}G - ")

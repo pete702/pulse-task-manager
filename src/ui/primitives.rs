@@ -76,11 +76,11 @@ pub fn draw_segmented_led_bar(
         let fr = egui::Rect::from_min_max(rect.min, egui::pos2(rect.min.x + w, rect.max.y));
         let fc = egui::Color32::from_rgba_unmultiplied(tc.r(), tc.g(), tc.b(), 215);
         ui.painter().rect_filled(fr, egui::Rounding::same(3.0), fc);
-        draw_tactical_ticks(ui, rect);
         let cw = 2.0_f32.min(w);
         let cr = egui::Rect::from_min_max(egui::pos2(fr.max.x - cw, fr.min.y), fr.max);
         ui.painter().rect_filled(cr, egui::Rounding::ZERO, egui::Color32::from_rgb(240, 253, 250));
     }
+    draw_tactical_ticks(ui, rect);
 }
 pub fn draw_tactical_ticks(ui: &egui::Ui, rect: egui::Rect) {
     if !rect.width().is_finite()

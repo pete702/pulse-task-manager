@@ -67,3 +67,10 @@ pub fn render_network_split(
     });
     draw_cyber_corner_brackets(ui, resp.response.rect, cyber_accent(100.0));
 }
+
+#[cfg(test)]
+pub(crate) use crate::ui::chart_scale::clean_4_axis_max;
+
+#[cfg(test)]
+#[path = "chart_view_tests.rs"]
+mod tests;

@@ -57,8 +57,25 @@ fn render_activity_card(
             );
             if selected.is_some() && !letters.is_empty() {
                 let scope: Vec<String> = letters.iter().map(|c| format!("{c}:")).collect();
+                let filter = *filter_on().lock().unwrap_or_else(|e| e.into_inner());
+                let matched = if filter {
+                    raw.iter()
+                        .filter(|r| {
+                            r.drive_letter.map(|b| letters.contains(&(b as char))).unwrap_or(false)
+                        })
+                        .count()
+                } else {
+                    raw.len()
+                };
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let filter = *filter_on().lock().unwrap_or_else(|e| e.into_inner());
+                    if filter {
+                        ui.label(
+                            egui::RichText::new(format!("{matched} of {} procs", raw.len()))
+                                .monospace()
+                                .size(10.0)
+                                .color(colors::ACCENT_CYAN),
+                        );
+                    }
                     let on_label = format!("On {}", scope.join(","));
                     let on_color =
                         if filter { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };

@@ -35,6 +35,7 @@ pub fn window_bounds(
 }
 
 /// Revision-based series cache key.
+#[cfg(test)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct SeriesCacheKey {
     pub scope_hash: u64,
@@ -44,6 +45,7 @@ pub struct SeriesCacheKey {
     pub revision: u64,
 }
 
+#[cfg(test)]
 impl SeriesCacheKey {
     pub fn new(
         scope_hash: u64,

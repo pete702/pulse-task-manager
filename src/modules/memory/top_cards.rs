@@ -1,5 +1,6 @@
 //! Memory top cards: Physical RAM + Commit Charge / Kernel Pools.
 
+use crate::app_persist::MIN_WINDOW_WIDTH;
 use crate::modules::memory::formatters::format_bytes;
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::model::MemorySnapshot;
@@ -9,9 +10,11 @@ use crate::ui::primitives::{
 };
 use eframe::egui;
 
+const TOP_CARDS_SIDEBAR_OFFSET: f32 = 40.0;
+
 pub fn render_memory_top_cards(ui: &mut egui::Ui, m: &MemorySnapshot, h: &MemoryHistory) {
     let avail = ui.available_width();
-    if avail < 880.0 {
+    if avail < MIN_WINDOW_WIDTH - TOP_CARDS_SIDEBAR_OFFSET {
         ui.vertical(|ui| {
             render_ram_top_card(ui, m, h);
             ui.add_space(10.0);

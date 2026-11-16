@@ -31,14 +31,8 @@ pub fn set_window(ctx: &egui::Context, window: ChartWindow) {
     ctx.data_mut(|d| d.insert_temp(window_id(), window));
 }
 
-pub fn render_memory_chart(
-    ui: &mut egui::Ui,
-    h: &mut MemoryHistory,
-    s: &MemorySnapshot,
-    chart_height: f32,
-) {
+pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemorySnapshot) {
     let mut selected = selected_window(ui.ctx());
-    let _ = chart_height; // Keep signature; we compute actual height after header
     let ram_pct = h.current_ram_percent();
     let resp = crate::ui::chart_kit::chart_frame().show(ui, |ui| {
         ui.vertical(|ui| {
@@ -73,8 +67,7 @@ pub fn render_memory_chart(
             let purple_raw = anchored(convert_to_minutes_ago(&purple_series, now));
 
             // Handle empty series (startup)
-            // Auto-trim status badge: "ARMED (85% trigger)" while waiting for threshold.
-            let ram_points = if ram_raw.is_empty() {
+            let ram_points = if ram_raw.len() <= 1 {
                 let mut pts = Vec::with_capacity(2);
                 pts.extend([[-ONE_SEC_MIN, ram as f64], [0.0, ram as f64]]);
                 PlotPoints::new(pts)
@@ -83,7 +76,7 @@ pub fn render_memory_chart(
                 pts.extend(ram_raw.clone());
                 PlotPoints::new(pts)
             };
-            let purple_points = if purple_raw.is_empty() {
+            let purple_points = if purple_raw.len() <= 1 {
                 let flat = if has_commit { commit as f64 } else { swap as f64 };
                 let mut pts = Vec::with_capacity(2);
                 pts.extend([[-ONE_SEC_MIN, flat], [0.0, flat]]);

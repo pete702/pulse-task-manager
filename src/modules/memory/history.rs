@@ -19,7 +19,6 @@ pub struct MemoryHistory {
     pub chart_window: ChartWindow,
     pub revision: u64,
     pub timestamps: VecDeque<f64>,
-    _cache_key: Option<crate::core::ring_history::SeriesCacheKey>,
     cached_ram_1m: Option<Arc<Vec<[f64; 2]>>>,
     cached_ram_5m: Option<Arc<Vec<[f64; 2]>>>,
     cached_ram_15m: Option<Arc<Vec<[f64; 2]>>>,
@@ -44,7 +43,6 @@ impl MemoryHistory {
             chart_window: ChartWindow::default(),
             revision: 0,
             timestamps: VecDeque::with_capacity(ring_history::HISTORY_CAPACITY),
-            _cache_key: None,
             cached_ram_1m: None,
             cached_ram_5m: None,
             cached_ram_15m: None,
@@ -140,15 +138,6 @@ impl MemoryHistory {
         }
         let points = self.build_windowed_series(&self.ram_points, window);
         let arc = Arc::new(lttb_downsample(&points, 920));
-        let first_ts = points.first().map(|p| p[0]).unwrap_or(0.0);
-        let last_ts = points.last().map(|p| p[0]).unwrap_or(0.0);
-        self._cache_key = Some(crate::core::ring_history::SeriesCacheKey::new(
-            1,
-            window.seconds() as u64,
-            first_ts,
-            last_ts,
-            self.revision,
-        ));
         match window {
             ChartWindow::OneMin => self.cached_ram_1m = Some(arc.clone()),
             ChartWindow::FiveMin => self.cached_ram_5m = Some(arc.clone()),
@@ -213,6 +202,10 @@ impl MemoryHistory {
         let cutoff = now - window_secs;
         if start_idx > 0 && out.len() > 1 && out[0][0] > cutoff {
             out.insert(0, [cutoff, points[start_idx - 1] as f64]);
+        }
+        // Startup single-point guard: treat <= 1 point as warm-up (no series).
+        if out.len() <= 1 {
+            return Vec::new();
         }
         out
     }

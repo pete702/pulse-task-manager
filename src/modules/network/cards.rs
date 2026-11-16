@@ -1,12 +1,30 @@
 //! Compact 2-column adapter cards for `[04] Network`.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use eframe::egui;
 
 use crate::modules::network::model::NetworkSnapshot;
 use crate::modules::network::view::session_gib;
 use crate::theme::{card_frame, colors};
+
+#[derive(Clone, Default)]
+struct AdapterCardCache {
+    max_total_mbps: f32,
+    rx_str: String,
+    tx_str: String,
+    rx_val: f32,
+    tx_val: f32,
+    session_str: String,
+    session_rx: u64,
+    session_tx: u64,
+}
+
+fn adapter_card_cache() -> &'static Mutex<HashMap<Arc<str>, AdapterCardCache>> {
+    static CACHE: OnceLock<Mutex<HashMap<Arc<str>, AdapterCardCache>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 /// Renders adapter cards: single adapter spans 100% width, otherwise
 /// a 2-column grid on wide layouts (1 column when narrow).
@@ -53,6 +71,34 @@ fn render_adapter_card(
     selected: &mut Option<Arc<str>>,
 ) {
     let is_selected = selected.as_ref() == Some(&adapter.name);
+    let total = adapter.rx_mbps + adapter.tx_mbps;
+    let (tier, rx_txt, tx_txt, session_txt) = {
+        let mut cache = adapter_card_cache().lock().unwrap_or_else(|e| e.into_inner());
+        let entry = cache.entry(Arc::clone(&adapter.name)).or_default();
+        if total > entry.max_total_mbps {
+            entry.max_total_mbps = total;
+        }
+        let tier = link_tier(entry.max_total_mbps.max(total));
+        if (adapter.rx_mbps - entry.rx_val).abs() > f32::EPSILON {
+            entry.rx_val = adapter.rx_mbps;
+            entry.rx_str = format_speed(adapter.rx_mbps);
+        }
+        if (adapter.tx_mbps - entry.tx_val).abs() > f32::EPSILON {
+            entry.tx_val = adapter.tx_mbps;
+            entry.tx_str = format_speed(adapter.tx_mbps);
+        }
+        if adapter.total_rx_bytes != entry.session_rx || adapter.total_tx_bytes != entry.session_tx
+        {
+            entry.session_rx = adapter.total_rx_bytes;
+            entry.session_tx = adapter.total_tx_bytes;
+            entry.session_str = format!(
+                "Session RX {:.2} GiB / TX {:.2} GiB",
+                session_gib(adapter.total_rx_bytes),
+                session_gib(adapter.total_tx_bytes)
+            );
+        }
+        (tier, entry.rx_str.clone(), entry.tx_str.clone(), entry.session_str.clone())
+    };
     let stroke = if is_selected {
         egui::Stroke::new(2.0_f32, colors::ACCENT_CYAN)
     } else {
@@ -75,27 +121,21 @@ fn render_adapter_card(
                 );
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let txt = format!(
-                    "RX {} / TX {}",
-                    format_speed(adapter.rx_mbps),
-                    format_speed(adapter.tx_mbps)
-                );
+                let txt = format!("RX {} / TX {}", rx_txt, tx_txt);
                 ui.label(
                     egui::RichText::new(txt).monospace().size(11.0).color(colors::TEXT_SECONDARY),
                 );
             });
         });
         ui.add_space(4.0);
-        render_activity_bar(ui, adapter);
+        render_activity_bar(ui, adapter, tier);
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            let line = format!(
-                "Session RX {:.2} GiB / TX {:.2} GiB",
-                session_gib(adapter.total_rx_bytes),
-                session_gib(adapter.total_tx_bytes)
-            );
             ui.label(
-                egui::RichText::new(line).monospace().size(10.0).color(colors::TEXT_SECONDARY),
+                egui::RichText::new(session_txt.clone())
+                    .monospace()
+                    .size(10.0)
+                    .color(colors::TEXT_SECONDARY),
             );
         });
     });
@@ -134,9 +174,10 @@ pub(crate) fn link_tier(total_mbps: f32) -> f32 {
 fn render_activity_bar(
     ui: &mut egui::Ui,
     adapter: &crate::modules::network::model::NetworkAdapterInfo,
+    tier: f32,
 ) {
     let total = adapter.rx_mbps + adapter.tx_mbps;
-    let pct = (total / link_tier(total)).clamp(0.0, 1.0);
+    let pct = (total / tier).clamp(0.0, 1.0);
     let bar_w = ui.available_width().max(100.0);
     let (rect, _) =
         ui.allocate_exact_size(egui::vec2(bar_w, 6.0), egui::Sense::focusable_noninteractive());

@@ -3,6 +3,16 @@ use crate::modules::storage::model::{DiskVolumeInfo, StorageSnapshot};
 use crate::theme::{card_frame, colors};
 use eframe::egui;
 
+#[derive(Clone, Default)]
+struct KpiCache {
+    read_bits: u32,
+    write_bits: u32,
+    top_key: u64,
+    read_s: String,
+    write_s: String,
+    top: String,
+}
+
 pub(super) fn truncate(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         return text.to_owned();
@@ -49,13 +59,30 @@ pub(crate) fn render_status_and_kpis(
     } else {
         ("ARMED", crate::theme::OPTIMAL_EMERALD, None)
     };
-    let read_s = format!("{kpi_read:.1}");
-    let write_s = format!("{kpi_write:.1}");
-    let top = snap
-        .top_io_process
-        .as_ref()
-        .map(|t| truncate(&format!("{} {:.1} MB/s", t.1, t.2), 28))
-        .unwrap_or_else(|| "-".to_owned());
+    let cache_id = egui::Id::new("storage_kpi_cache");
+    let (read_s, write_s, top) = ui.ctx().data_mut(|d| {
+        let c = d.get_temp_mut_or_insert_with(cache_id, KpiCache::default);
+        let read_bits = kpi_read.to_bits();
+        let write_bits = kpi_write.to_bits();
+        let top_key = snap
+            .top_io_process
+            .as_ref()
+            .map(|t| (t.0 as u64) ^ (t.2.to_bits() as u64))
+            .unwrap_or(0);
+        if c.read_bits != read_bits || c.write_bits != write_bits || c.top_key != top_key {
+            c.read_bits = read_bits;
+            c.write_bits = write_bits;
+            c.top_key = top_key;
+            c.read_s = format!("{kpi_read:.1}");
+            c.write_s = format!("{kpi_write:.1}");
+            c.top = snap
+                .top_io_process
+                .as_ref()
+                .map(|t| truncate(&format!("{} {:.1} MB/s", t.1, t.2), 28))
+                .unwrap_or_else(|| "-".to_owned());
+        }
+        (c.read_s.clone(), c.write_s.clone(), c.top.clone())
+    });
     card_frame().inner_margin(egui::Margin::symmetric(10.0, 5.0)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         let full_w = ui.available_width().max(280.0);

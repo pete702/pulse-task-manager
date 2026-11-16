@@ -9,7 +9,6 @@ pub fn render_memory_cards(ui: &mut egui::Ui, mem: &MemorySnapshot, history: &mu
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         render_memory_top_cards(ui, mem, history);
         ui.add_space(10.0);
-        let chart_height = ui.available_height().max(220.0);
-        chart_view::render_memory_chart(ui, history, mem, chart_height);
+        chart_view::render_memory_chart(ui, history, mem);
     });
 }

@@ -4,6 +4,7 @@
 /// Reduces a series of [timestamp, value] points to at most `threshold` points
 /// while preserving visual shape. Endpoints are always preserved.
 /// Returns a new vector with downsampled points (<= threshold).
+/// Guarantee: the returned length is always <= `threshold` (and <= `points.len()`).
 #[allow(clippy::needless_range_loop)]
 pub fn lttb_downsample(points: &[[f64; 2]], threshold: usize) -> Vec<[f64; 2]> {
     let n = points.len();
@@ -13,11 +14,9 @@ pub fn lttb_downsample(points: &[[f64; 2]], threshold: usize) -> Vec<[f64; 2]> {
     if n <= threshold {
         return points.to_vec();
     }
-    if threshold == 1 {
-        return vec![points[0]];
-    }
-    if threshold == 2 {
-        return vec![points[0], points[n - 1]];
+    // For threshold <= 2, return the first `threshold` points (exact <= threshold guarantee).
+    if threshold <= 2 {
+        return points[..threshold.min(n)].to_vec();
     }
 
     // Number of buckets (excluding first and last point which are always kept)

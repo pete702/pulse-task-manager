@@ -95,6 +95,14 @@ mod tests {
     }
 
     #[test]
+    fn test_both_cpu_and_memory_none() {
+        let snap = SystemSnapshot::new(1, 10.0, None);
+        assert!(snap.cpu.is_none());
+        assert!(snap.memory.is_none());
+        assert_eq!(evaluate(&snap), WallState::Unconfirmed);
+    }
+
+    #[test]
     fn test_unconfirmed_until_telemetry_is_valid() {
         let mut mem = MemorySnapshot {
             ram_total_bytes: 100,

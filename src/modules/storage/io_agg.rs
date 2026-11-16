@@ -63,6 +63,9 @@ pub fn clamp_rate(v: f32) -> f32 {
     }
 }
 
+/// Aggregates per-process disk I/O. Top process tie-break: higher total wins;
+/// on a tie, the lexicographically smaller (case-insensitive) name wins, then
+/// the smaller PID. Returns `None` top when all processes are idle (neutral).
 #[allow(clippy::type_complexity)]
 pub fn aggregate_io(raw: &[RawProcessCpuRow]) -> (f32, f32, Option<(u32, Arc<str>, f32)>) {
     let mut read_total = 0.0f32;

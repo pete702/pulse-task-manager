@@ -84,6 +84,8 @@ pub fn cached_consumers(
 }
 
 fn group(raw: &[RawProcessCpuRow], filter: Option<&[char]>) -> Vec<Grouped> {
+    use std::collections::HashSet;
+    let filter_set: Option<HashSet<char>> = filter.map(|letters| letters.iter().copied().collect());
     let mut map: HashMap<String, Grouped> = HashMap::new();
     for row in raw {
         let drive = if row.disk_read_mb_s + row.disk_write_mb_s >= 0.05 {
@@ -91,7 +93,7 @@ fn group(raw: &[RawProcessCpuRow], filter: Option<&[char]>) -> Vec<Grouped> {
         } else {
             None
         };
-        if let Some(letters) = filter {
+        if let Some(ref letters) = filter_set {
             let matches = drive.is_some_and(|d| letters.contains(&d));
             if !matches {
                 continue;

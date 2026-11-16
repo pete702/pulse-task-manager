@@ -40,7 +40,14 @@ fn is_text_file(path: &Path) -> bool {
 }
 
 fn should_skip_dir(path: &Path) -> bool {
-    path.file_name().and_then(|n| n.to_str()).map(|name| SKIP_DIRS.contains(&name)).unwrap_or(false)
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .map(|name| SKIP_DIRS.iter().any(|skip| name.eq_ignore_ascii_case(skip)))
+        .unwrap_or(false)
+}
+
+fn is_cyrillic(ch: char) -> bool {
+    ('\u{0400}'..='\u{052F}').contains(&ch)
 }
 
 fn walk_text_files(root: &Path, files: &mut Vec<std::path::PathBuf>) {
@@ -66,11 +73,7 @@ fn check_text_file(path: &Path, rel: &str) {
     let content = fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
     assert!(!content.contains('\0'), "{} contains NUL byte(s)", rel);
-    assert!(
-        !content.chars().any(|c| ('\u{0400}'..='\u{052F}').contains(&c)),
-        "{} contains Cyrillic characters",
-        rel
-    );
+    assert!(!content.chars().any(is_cyrillic), "{} contains Cyrillic characters", rel);
 }
 
 #[test]
@@ -160,6 +163,21 @@ fn all_rs_files_under_src_and_tests_respect_line_limit() {
                 line_count,
                 MAX_RS_LINES
             );
+        }
+    }
+}
+
+#[test]
+fn no_allow_dead_code_in_src() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    walk_text_files(&root.join("src"), &mut files);
+    for path in &files {
+        if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            let content = fs::read_to_string(path)
+                .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
+            let rel = path.strip_prefix(root).unwrap_or(path).display().to_string();
+            assert!(!content.contains("allow(dead_code)"), "{} contains allow(dead_code)", rel);
         }
     }
 }

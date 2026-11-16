@@ -5,6 +5,9 @@ use eframe::egui;
 /// Loads system fonts: Segoe UI (proportional) and Consolas (monospace) from Windows Fonts.
 /// Falls back to egui default fonts if files are not found.
 /// Uses only geometric Unicode symbols -- no emoji fonts needed.
+/// Maximum bytes allowed for a single font file (16 MB).
+pub const MAX_FONT_BYTES: u64 = 16_000_000;
+
 pub fn setup_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
 
@@ -14,7 +17,7 @@ pub fn setup_fonts(ctx: &egui::Context) {
     let consola_path = r"C:\Windows\Fonts\consola.ttf";
 
     if let Ok(data) = std::fs::read(segoe_path) {
-        if data.len() <= 16_000_000 {
+        if data.len() as u64 <= MAX_FONT_BYTES {
             fonts.font_data.insert("segoe_ui".to_owned(), egui::FontData::from_owned(data));
             fonts
                 .families
@@ -25,7 +28,7 @@ pub fn setup_fonts(ctx: &egui::Context) {
     }
 
     if let Ok(data) = std::fs::read(consola_path) {
-        if data.len() <= 16_000_000 {
+        if data.len() as u64 <= MAX_FONT_BYTES {
             fonts.font_data.insert("consolas".to_owned(), egui::FontData::from_owned(data));
             fonts
                 .families
