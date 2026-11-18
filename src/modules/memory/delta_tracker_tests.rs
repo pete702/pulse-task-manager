@@ -98,4 +98,31 @@ mod tests {
         );
         assert_eq!(out[0].delta_bytes_per_sec, 0, "PID reuse must not inherit stale deltas");
     }
+
+    #[test]
+    fn creation_probe_budget_cold_and_warm() {
+        use crate::modules::memory::delta_tracker::creation_probe_budget;
+        assert_eq!(creation_probe_budget(0), 256);
+        assert_eq!(creation_probe_budget(31), 256);
+        assert_eq!(creation_probe_budget(32), 128);
+    }
+
+    #[test]
+    fn short_interval_projects_non_zero_delta() {
+        let t0 = Instant::now();
+        let mut tracker = ProcessDeltaTracker::new();
+        tracker.track_at(&[row(100, "chrome.exe", 1_000_000_000)], t0);
+        let out = tracker
+            .track_at(&[row(100, "chrome.exe", 1_050_000_000)], t0 + Duration::from_millis(500));
+        assert_ne!(out[0].delta_bytes_per_sec, 0);
+    }
+
+    #[test]
+    fn cached_memory_tooltip_text() {
+        use crate::modules::memory::top_cards::cached_memory_tooltip;
+        assert_eq!(
+            cached_memory_tooltip(),
+            "OS file cache (SystemCache) -- may differ from Task Manager"
+        );
+    }
 }

@@ -6,7 +6,8 @@ use crate::i18n::{set_lang, Key, Lang};
 fn test_key_translation_en() {
     set_lang(Lang::En);
     // Top bar / window chrome
-    assert_eq!(Key::AppTitle.t(), "^ PULSE // TELEMETRY");
+    assert_eq!(Key::AppTitle.t(), "PULSE // TELEMETRY");
+    assert!(!Key::AppTitle.t().contains("\\u{"));
     assert_eq!(Key::VersionPrefix.t(), "v");
     assert_eq!(Key::UptimeLabel.t(), "Uptime");
 

@@ -1,6 +1,18 @@
 //! System metrics helpers + DWM dark title bar.
 
 #[cfg(target_os = "windows")]
+use std::sync::atomic::{AtomicBool, Ordering};
+
+#[cfg(target_os = "windows")]
+static DARK_TITLEBAR_APPLIED: AtomicBool = AtomicBool::new(false);
+
+/// Pure helper: a non-negative HRESULT means success (S_OK).
+#[inline]
+pub fn hr_succeeded(hr: i32) -> bool {
+    hr >= 0
+}
+
+#[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 pub fn get_hwnd(_ctx: &eframe::egui::Context) -> isize {
     use std::sync::atomic::{AtomicIsize, Ordering};
@@ -23,8 +35,8 @@ pub fn get_hwnd(_ctx: &eframe::egui::Context) -> isize {
             return 1;
         }
         let mut pid: u32 = 0;
-        GetWindowThreadProcessId(hwnd, &mut pid);
-        if pid == GetCurrentProcessId() {
+        let tid = GetWindowThreadProcessId(hwnd, &mut pid);
+        if tid != 0 && pid == GetCurrentProcessId() {
             FOUND.store(hwnd, Ordering::Relaxed);
             return 0;
         }
@@ -40,6 +52,7 @@ pub fn get_hwnd(_ctx: &eframe::egui::Context) -> isize {
 #[allow(unsafe_code)]
 pub fn set_dark_title_bar(hwnd: isize) -> bool {
     const DWMWA_USE_IMMERSIVE_DARK_MODE: i32 = 20;
+    const DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1: i32 = 19;
     const DWMWA_CAPTION_COLOR: i32 = 35;
     #[link(name = "dwmapi")]
     extern "system" {
@@ -53,10 +66,33 @@ pub fn set_dark_title_bar(hwnd: isize) -> bool {
     if hwnd == 0 {
         return false;
     }
+    if DARK_TITLEBAR_APPLIED.load(Ordering::Relaxed) {
+        return true;
+    }
     let dark: i32 = 1;
     let color: i32 = 0x00100C0B_i32;
     unsafe {
-        let _ = DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, 4);
-        DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, &color, 4) == 0
+        let hr = DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, 4);
+        if !hr_succeeded(hr) {
+            let _hr_fallback =
+                DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1, &dark, 4);
+        }
+        // DWMWA_CAPTION_COLOR (35) is supported on Windows 11 (build 22000+);
+        // Windows 10 with OS accent colors ignores it (best-effort).
+        let _hr_caption = DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, &color, 4);
+    }
+    DARK_TITLEBAR_APPLIED.store(true, Ordering::Relaxed);
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hr_succeeded;
+
+    #[test]
+    fn hr_succeeded_checks_non_negative() {
+        assert!(hr_succeeded(0));
+        assert!(hr_succeeded(1));
+        assert!(!hr_succeeded(-1));
     }
 }

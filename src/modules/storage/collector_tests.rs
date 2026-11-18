@@ -20,26 +20,26 @@ fn raw(pid: u32, name: &str, read: f32, write: f32) -> RawProcessCpuRow {
 #[test]
 fn captures_io_spike_at_threshold() {
     let mut c = StorageCollector::new();
-    let rows = [raw(7, "writer.exe", 60.0, 30.0), raw(8, "idle.exe", 0.0, 0.0)];
+    let rows = [raw(7, "writer.exe", 200.0, 200.0), raw(8, "idle.exe", 0.0, 0.0)];
     let snap = c.collect(&rows, 1);
-    assert!(snap.read_mb_s + snap.write_mb_s >= IO_SPIKE_THRESHOLD_MB_S);
+    assert!(snap.read_mb_s + snap.write_mb_s >= IO_SPIKE_THRESHOLD_MB_S as f32);
     let spike = snap.last_io_spike.clone().unwrap_or_default();
     assert_eq!(spike.pid, 7);
-    assert!((spike.peak_mb_s - 90.0).abs() < 0.5);
+    assert!((spike.peak_mb_s - 400.0).abs() < 0.5);
 }
 #[test]
 fn spike_stores_rw_breakdown() {
     let mut c = StorageCollector::new();
-    let rows = [raw(7, "writer.exe", 60.0, 30.0)];
+    let rows = [raw(7, "writer.exe", 200.0, 200.0)];
     let snap = c.collect(&rows, 1);
     let spike = snap.last_io_spike.unwrap_or_default();
-    assert!((spike.read_mb_s - 60.0).abs() < 0.5);
-    assert!((spike.write_mb_s - 30.0).abs() < 0.5);
+    assert!((spike.read_mb_s - 200.0).abs() < 0.5);
+    assert!((spike.write_mb_s - 200.0).abs() < 0.5);
 }
 #[test]
 fn spike_ages_without_new_spike() {
     let mut c = StorageCollector::new();
-    let hot = [raw(7, "writer.exe", 90.0, 0.0)];
+    let hot = [raw(7, "writer.exe", 400.0, 0.0)];
     let _ = c.collect(&hot, 1);
     let calm = [raw(7, "writer.exe", 0.1, 0.0)];
     let snap = c.collect(&calm, 1);
@@ -57,7 +57,7 @@ fn top_io_ignores_quiet_processes() {
 #[test]
 fn spike_expires_after_120_ticks() {
     let mut c = StorageCollector::new();
-    let hot = [raw(7, "writer.exe", 90.0, 0.0)];
+    let hot = [raw(7, "writer.exe", 400.0, 0.0)];
     let _ = c.collect(&hot, 1);
     let calm = [raw(7, "writer.exe", 0.1, 0.0)];
     let mut snap = c.collect(&calm, 1);

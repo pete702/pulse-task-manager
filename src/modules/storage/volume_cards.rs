@@ -46,7 +46,7 @@ fn disk_title(group: &PhysicalDiskGroup) -> String {
         }
         None => {
             let m = group.volumes.first().map(|v| v.mount_point.as_ref()).unwrap_or("?");
-            format!("DISK [{}] ({gib}G)", m.trim_end_matches('\\'))
+            format!("VOLUME [{}] ({gib}G)", m.trim_end_matches('\\'))
         }
     }
 }

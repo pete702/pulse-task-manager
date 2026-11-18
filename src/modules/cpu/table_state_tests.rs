@@ -141,17 +141,29 @@ fn resolve_group_targets_collects_all_clones() {
     item.clone_count = 3;
     let mut r10 = raw_st(10, "chrome.exe", 1.0, 100, 1);
     r10.creation_time = Some(100);
+    r10.exe_path = Some(Arc::from("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"));
     let mut r11 = raw_st(11, "Chrome.exe", 1.0, 100, 2);
     r11.creation_time = Some(200);
     r11.exe_path = Some(Arc::from("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"));
     let mut r12 = raw_st(12, "chrome.exe", 1.0, 100, 3);
     r12.creation_time = Some(300);
+    r12.exe_path = Some(Arc::from("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"));
     let rows = vec![r10, r11, r12, raw_st(13, "other.exe", 1.0, 100, 4)];
     let grouped = resolve_group_targets(&item, true, &rows);
     let mut pids: Vec<_> = grouped.iter().map(|t| t.pid).collect();
     pids.sort_unstable();
     assert_eq!(pids, vec![10, 11, 12]);
     assert_eq!(resolve_group_targets(&item, false, &rows).len(), 1);
+
+    // Leader with no resolved exe_path collects only itself.
+    let mut none_item = ProcessCpuItem::new(20, Arc::from("noexe.exe"), 1.0, 100, None);
+    none_item.start_time = 1;
+    none_item.clone_count = 3;
+    let rows_none =
+        vec![raw_st(20, "noexe.exe", 1.0, 100, 1), raw_st(21, "noexe.exe", 1.0, 100, 2)];
+    let none_grouped = resolve_group_targets(&none_item, true, &rows_none);
+    assert_eq!(none_grouped.len(), 1);
+    assert_eq!(none_grouped[0].pid, 20);
 }
 #[test]
 fn resolve_excludes_same_name_different_exe() {

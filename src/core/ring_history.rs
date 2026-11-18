@@ -9,7 +9,6 @@ pub fn is_newer(last: Option<f64>, ts: f64) -> bool {
 }
 
 /// Window slice indices (start, end) for a given window in seconds.
-#[allow(clippy::needless_range_loop)]
 pub fn window_bounds(
     len: usize,
     now: f64,
@@ -19,14 +18,11 @@ pub fn window_bounds(
     if len == 0 {
         return (0, 0);
     }
-    let _ = now - window_secs;
-    let mut start = 0usize;
-    for i in 0..len {
-        if now - timestamps[i] <= window_secs {
-            start = i;
-            break;
-        }
-        start = i + 1;
+    let cutoff = now - window_secs;
+    let (front, back) = timestamps.as_slices();
+    let mut start = front.partition_point(|&t| t < cutoff);
+    if start == front.len() {
+        start = front.len() + back.partition_point(|&t| t < cutoff);
     }
     if start >= len {
         start = len.saturating_sub(1);
@@ -86,5 +82,25 @@ mod tests {
         assert_eq!(k1, k2);
         let k3 = SeriesCacheKey::new(1, 60, 0.0, 10.0, 6);
         assert_ne!(k1, k3);
+    }
+    #[test]
+    fn test_window_bounds_cutoff_before_all() {
+        let ts: VecDeque<f64> = [1.0, 2.0, 3.0].into_iter().collect();
+        assert_eq!(window_bounds(3, 1.0, &ts, 10.0), (0, 3));
+    }
+    #[test]
+    fn test_window_bounds_cutoff_middle() {
+        let ts: VecDeque<f64> = [1.0, 2.0, 3.0, 4.0, 5.0].into_iter().collect();
+        assert_eq!(window_bounds(5, 4.0, &ts, 2.0), (1, 5));
+    }
+    #[test]
+    fn test_window_bounds_now_before_latest() {
+        let ts: VecDeque<f64> = [10.0, 20.0, 30.0].into_iter().collect();
+        assert_eq!(window_bounds(3, 5.0, &ts, 100.0), (0, 3));
+    }
+    #[test]
+    fn test_window_bounds_duplicate_timestamps() {
+        let ts: VecDeque<f64> = [1.0, 2.0, 2.0, 3.0].into_iter().collect();
+        assert_eq!(window_bounds(4, 3.0, &ts, 1.0), (1, 4));
     }
 }

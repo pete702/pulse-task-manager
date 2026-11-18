@@ -91,11 +91,27 @@ fn render_ram_top_card(ui: &mut egui::Ui, m: &MemorySnapshot, h: &MemoryHistory)
                     load_color(ip),
                     &format!("In Use: {} ({:.0}%)", format_bytes(m.ram_used_bytes), ip),
                 );
-                legend_chip(
-                    ui,
-                    egui::Color32::from_rgb(0x00, 0x88, 0xAA),
-                    &format!("Cached (OS): {} ({:.0}%)", format_bytes(m.ram_cached_bytes()), cp),
+                ui.label(
+                    egui::RichText::new("\u{25A0}")
+                        .monospace()
+                        .size(12.0)
+                        .color(egui::Color32::from_rgb(0x00, 0x88, 0xAA)),
                 );
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(format!(
+                            "Cached (OS): {} ({:.0}%)",
+                            format_bytes(m.ram_cached_bytes()),
+                            cp
+                        ))
+                        .monospace()
+                        .size(10.0)
+                        .color(colors::TEXT_PRIMARY),
+                    )
+                    .wrap(false),
+                )
+                .on_hover_text(cached_memory_tooltip());
+                ui.add_space(14.0);
                 legend_chip(
                     ui,
                     colors::TEXT_SECONDARY,
@@ -222,6 +238,10 @@ fn fill_seg(ui: &egui::Ui, r: egui::Rect, x0: f32, x1: f32, c: egui::Color32) {
     );
 }
 
+pub(crate) fn cached_memory_tooltip() -> &'static str {
+    "OS file cache (SystemCache) -- may differ from Task Manager"
+}
+
 fn segment_widths(px: f32, iu: f64, ca: f64, fr: f64, t: f64) -> (f32, f32, f32) {
     let p = px.max(0.0);
     let tt = t.max(1.0);
@@ -232,4 +252,17 @@ fn segment_widths(px: f32, iu: f64, ca: f64, fr: f64, t: f64) -> (f32, f32, f32)
     let c_ = (p as f64 * cfr).clamp(0.0, (p - i).max(0.0) as f64) as f32;
     let f = (p as f64 * ffr).clamp(0.0, (p - i - c_).max(0.0) as f64) as f32;
     (i, c_, f)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cached_memory_tooltip;
+
+    #[test]
+    fn cached_memory_tooltip_text() {
+        assert_eq!(
+            cached_memory_tooltip(),
+            "OS file cache (SystemCache) -- may differ from Task Manager"
+        );
+    }
 }

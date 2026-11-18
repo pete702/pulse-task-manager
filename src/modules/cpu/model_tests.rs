@@ -83,3 +83,24 @@ fn item_clamps_nonfinite_cpu() {
     assert_eq!(item2.cpu_pct, 100.0);
     assert_eq!(item2.cpu_text.as_ref(), "100.0%");
 }
+
+#[test]
+fn test_is_process_cpu_hog() {
+    assert!(is_process_cpu_hog(20.0, 10.0));
+    assert!(is_process_cpu_hog(3.6, 90.0));
+    assert!(!is_process_cpu_hog(3.6, 80.0));
+    assert!(!is_process_cpu_hog(10.0, 10.0));
+}
+
+#[test]
+fn test_update_formatted_ignores_small_jitter() {
+    let mut item = ProcessCpuItem::new(1, Arc::from("a.exe"), 10.0, 1024, None);
+    item.update_formatted();
+    let before = Arc::clone(&item.cpu_text);
+    item.cpu_pct = 10.04;
+    item.update_formatted();
+    assert_eq!(item.cpu_text, before);
+    item.cpu_pct = 10.10;
+    item.update_formatted();
+    assert_ne!(item.cpu_text.as_ref(), before.as_ref());
+}

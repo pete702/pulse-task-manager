@@ -55,6 +55,9 @@ pub(crate) fn resolve_group_targets(
         .find(|r| r.pid == item.pid && r.start_time == item.start_time)
         .and_then(|r| r.exe_path.as_deref().map(str::to_owned))
         .or_else(|| exe_opt(item));
+    if le.is_none() {
+        return vec![leader(item, raw)];
+    }
     let v: Vec<GroupTarget> = raw
         .iter()
         .filter(|r| r.pid != 0 && r.pid != 4 && r.name.eq_ignore_ascii_case(&item.name))

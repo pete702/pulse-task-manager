@@ -9,7 +9,8 @@ mod tests {
     };
     use crate::platform::target::ProcessTarget;
     use crate::platform::trim::{
-        map_win32_error, trim_process_group, trim_processes_working_sets, TrimSkipReason,
+        map_win32_error, trim_process_group, trim_processes_working_sets, trim_working_set_outcome,
+        TrimSkipReason,
     };
     #[cfg(target_os = "windows")]
     use windows_sys::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION;
@@ -74,12 +75,15 @@ mod tests {
         assert_eq!(a, is_app_elevated());
     }
 
+    #[cfg(target_os = "windows")]
     #[test]
     fn test_win32_error_mapping() {
-        assert_eq!(map_win32_error(87), TrimSkipReason::AccessDenied);
-        assert_ne!(map_win32_error(87), TrimSkipReason::Protected);
         assert_eq!(map_win32_error(5), TrimSkipReason::AccessDenied);
         assert_ne!(map_win32_error(5), TrimSkipReason::Protected);
+        assert_eq!(map_win32_error(6), TrimSkipReason::NotFoundOrMismatch);
+        assert_eq!(map_win32_error(87), TrimSkipReason::NotFoundOrMismatch);
+        assert_eq!(map_win32_error(123), TrimSkipReason::Other);
+        assert_eq!(map_win32_error(0xFFFF), TrimSkipReason::Other);
     }
 
     #[cfg(target_os = "windows")]
@@ -206,12 +210,17 @@ mod tests {
         assert!(sanitize_explorer_location_path("relative\\path.exe").is_err());
     }
 
+    #[cfg(target_os = "windows")]
     #[test]
     fn test_win32_error_mapping_never_protected() {
         for code in [0u32, 2, 5, 6, 87, 123, 0xFFFF] {
             assert_ne!(map_win32_error(code), TrimSkipReason::Protected, "code {code}");
-            assert_eq!(map_win32_error(code), TrimSkipReason::AccessDenied, "code {code}");
         }
+        assert_eq!(map_win32_error(5), TrimSkipReason::AccessDenied);
+        assert_eq!(map_win32_error(6), TrimSkipReason::NotFoundOrMismatch);
+        assert_eq!(map_win32_error(87), TrimSkipReason::NotFoundOrMismatch);
+        assert_eq!(map_win32_error(123), TrimSkipReason::Other);
+        assert_eq!(map_win32_error(0xFFFF), TrimSkipReason::Other);
     }
 
     #[test]
@@ -244,5 +253,12 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(ok.format_status(), "Terminated 2/2");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_trim_post_sample_missing_classifies_not_found() {
+        let res = trim_working_set_outcome(Some(4096), true, 0, None);
+        assert_eq!(res, Err(TrimSkipReason::NotFoundOrMismatch));
     }
 }

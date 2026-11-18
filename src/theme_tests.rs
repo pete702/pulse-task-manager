@@ -1,6 +1,8 @@
 //! Unit tests for the Obsidian HUD theme.
 
 use crate::theme::{self, colors};
+use crate::theme_fonts::read_font_bounded;
+use std::io::Write;
 
 #[test]
 fn test_load_color_cyan_under_60() {
@@ -62,4 +64,39 @@ fn test_status_bar_frame() {
     assert_eq!(frame.inner_margin.right, 12.0);
     assert_eq!(frame.inner_margin.top, 8.0);
     assert_eq!(frame.inner_margin.bottom, 8.0);
+}
+
+#[test]
+fn test_configure_theme_disables_selectable_labels() {
+    let ctx = egui::Context::default();
+    theme::apply_obsidian_theme(&ctx);
+    assert!(!ctx.style().interaction.selectable_labels);
+}
+
+#[test]
+fn test_read_font_bounded_rejects_missing_empty_oversized() {
+    let dir = std::env::temp_dir();
+    let missing = dir.join("pulse_missing_font.ttf");
+    let _ = std::fs::remove_file(&missing);
+    assert!(read_font_bounded(&missing).is_none());
+
+    let empty = dir.join("pulse_empty_font.ttf");
+    let _ = std::fs::write(&empty, b"");
+    assert!(read_font_bounded(&empty).is_none());
+    let _ = std::fs::remove_file(&empty);
+
+    // valid small file succeeds
+    let valid = dir.join("pulse_valid_font.ttf");
+    let mut f = std::fs::File::create(&valid).expect("create");
+    f.write_all(b"fontdata").expect("write");
+    assert!(read_font_bounded(&valid).is_some());
+    let _ = std::fs::remove_file(&valid);
+
+    // oversized rejected via metadata length
+    let oversized = dir.join("pulse_oversized_font.ttf");
+    let f = std::fs::File::create(&oversized).expect("create");
+    f.set_len(crate::theme_fonts::MAX_FONT_BYTES + 1).expect("set_len");
+    drop(f);
+    assert!(read_font_bounded(&oversized).is_none());
+    let _ = std::fs::remove_file(&oversized);
 }

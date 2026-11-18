@@ -57,9 +57,14 @@ impl Drop for VolumeHandle {
     }
 }
 
+pub fn is_handle_expired(age: std::time::Duration) -> bool {
+    age >= std::time::Duration::from_secs(300)
+}
+
 #[cfg(target_os = "windows")]
-fn handle_cache() -> &'static Mutex<HashMap<char, VolumeHandle>> {
-    static CACHE: OnceLock<Mutex<HashMap<char, VolumeHandle>>> = OnceLock::new();
+fn handle_cache() -> &'static Mutex<HashMap<char, (VolumeHandle, std::time::Instant)>> {
+    static CACHE: OnceLock<Mutex<HashMap<char, (VolumeHandle, std::time::Instant)>>> =
+        OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -67,18 +72,22 @@ fn handle_cache() -> &'static Mutex<HashMap<char, VolumeHandle>> {
 #[allow(unsafe_code)]
 fn cached_volume(letter: char) -> Option<isize> {
     {
-        let cache = handle_cache().lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(h) = cache.get(&letter) {
-            return Some(h.0);
+        let mut cache = handle_cache().lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((h, last)) = cache.get(&letter) {
+            if !is_handle_expired(last.elapsed()) {
+                return Some(h.0);
+            }
+            let _ = cache.remove(&letter);
         }
     }
     let volume = open_volume(letter)?;
     let raw = volume.0;
     let mut cache = handle_cache().lock().unwrap_or_else(|e| e.into_inner());
+    cache.retain(|_, (_, last)| !is_handle_expired(last.elapsed()));
     if cache.len() >= 32 && !cache.contains_key(&letter) {
         cache.clear();
     }
-    let _ = cache.insert(letter, volume);
+    let _ = cache.insert(letter, (volume, std::time::Instant::now()));
     Some(raw)
 }
 

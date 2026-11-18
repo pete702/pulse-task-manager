@@ -20,7 +20,7 @@ fn cached_status(active_processes: u32) -> Arc<str> {
     if cache.0 != active_processes {
         cache.0 = active_processes;
         cache.1 = Arc::from(format!(
-            "PULSE v{}  |  Windows Kernel Monitor  |  Active Processes: {}",
+            "PULSE v{}  |  User-Mode Telemetry  |  Active Processes: {}",
             env!("CARGO_PKG_VERSION"),
             active_processes
         ));
@@ -28,7 +28,7 @@ fn cached_status(active_processes: u32) -> Arc<str> {
     Arc::clone(&cache.1)
 }
 
-/// Compact status for narrow width: drops "Windows Kernel Monitor".
+/// Compact status for narrow width: drops "User-Mode Telemetry".
 fn cached_status_compact(active_processes: u32) -> Arc<str> {
     static CACHE: OnceLock<Mutex<(u32, Arc<str>)>> = OnceLock::new();
     let mut cache = CACHE

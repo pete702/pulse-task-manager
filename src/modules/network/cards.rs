@@ -79,11 +79,11 @@ fn render_adapter_card(
             entry.max_total_mbps = total;
         }
         let tier = link_tier(entry.max_total_mbps.max(total));
-        if (adapter.rx_mbps - entry.rx_val).abs() > f32::EPSILON {
+        if (adapter.rx_mbps - entry.rx_val).abs() > 0.05 {
             entry.rx_val = adapter.rx_mbps;
             entry.rx_str = format_speed(adapter.rx_mbps);
         }
-        if (adapter.tx_mbps - entry.tx_val).abs() > f32::EPSILON {
+        if (adapter.tx_mbps - entry.tx_val).abs() > 0.05 {
             entry.tx_val = adapter.tx_mbps;
             entry.tx_str = format_speed(adapter.tx_mbps);
         }

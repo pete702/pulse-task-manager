@@ -9,7 +9,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use sysinfo::Disks;
-pub const IO_SPIKE_THRESHOLD_MB_S: f32 = 80.0;
+pub const IO_SPIKE_THRESHOLD_MB_S: f64 = 350.0;
+pub const DISK_LIST_REFRESH_TICKS: u64 = 5;
+pub fn should_refresh_disk_list(tick_count: u64, is_empty: bool) -> bool {
+    is_empty || tick_count.is_multiple_of(DISK_LIST_REFRESH_TICKS)
+}
 pub struct StorageCollector {
     disks: Disks,
     tick_counter: u32,
@@ -35,7 +39,7 @@ impl StorageCollector {
         if self.prev_per_disk.len() > 32 {
             self.prev_per_disk.clear();
         }
-        if self.tick_counter.is_multiple_of(10) {
+        if should_refresh_disk_list(self.tick_counter as u64, self.cached_volumes.is_empty()) {
             self.disks.refresh_list();
             self.cached_volumes = Arc::from(volumes_from_disks(&self.disks));
         }
@@ -80,7 +84,8 @@ impl StorageCollector {
         self.last_scan_id = scan_id;
         let total = read_total + write_total;
         let top_sum = top.as_ref().map(|t| t.2).unwrap_or(0.0);
-        let spike_now = total >= IO_SPIKE_THRESHOLD_MB_S || top_sum >= IO_SPIKE_THRESHOLD_MB_S;
+        let spike_now = (total as f64) >= IO_SPIKE_THRESHOLD_MB_S
+            || (top_sum as f64) >= IO_SPIKE_THRESHOLD_MB_S;
         if is_fresh_scan && spike_now {
             if let Some((pid, name, peak)) = top.clone() {
                 let (r, w) = top_rw(raw_processes, pid);
@@ -242,6 +247,19 @@ impl Default for StorageCollector {
         Self::new()
     }
 }
+#[cfg(test)]
+mod refresh_tests {
+    use super::should_refresh_disk_list;
+    #[test]
+    fn refresh_at_five_ticks_and_empty() {
+        assert!(should_refresh_disk_list(0, true));
+        assert!(should_refresh_disk_list(5, false));
+        assert!(should_refresh_disk_list(10, false));
+        assert!(!should_refresh_disk_list(1, false));
+        assert!(!should_refresh_disk_list(2, false));
+    }
+}
+
 #[cfg(test)]
 #[path = "collector_tests.rs"]
 mod tests;

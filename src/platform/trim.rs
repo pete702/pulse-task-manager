@@ -57,8 +57,19 @@ pub enum TrimSkipReason {
 /// Maps a Win32 error code for handle-open/operation failures.
 #[cfg(any(target_os = "windows", test))]
 pub fn map_win32_error(code: u32) -> TrimSkipReason {
-    let _ = code;
-    TrimSkipReason::AccessDenied
+    #[cfg(target_os = "windows")]
+    {
+        match code {
+            5 => TrimSkipReason::AccessDenied,
+            6 | 87 => TrimSkipReason::NotFoundOrMismatch,
+            _ => TrimSkipReason::Other,
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = code;
+        TrimSkipReason::AccessDenied
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -135,6 +146,22 @@ pub(crate) fn verify_live_query_handle(
     Ok(())
 }
 
+/// Classifies a trim attempt from pre/post working-set samples.
+#[cfg(target_os = "windows")]
+pub fn trim_working_set_outcome(
+    ws_before: Option<u64>,
+    empty_ok: bool,
+    empty_err: u32,
+    ws_after: Option<u64>,
+) -> Result<u64, TrimSkipReason> {
+    let before = ws_before.ok_or(TrimSkipReason::Other)?;
+    if !empty_ok {
+        return Err(map_win32_error(empty_err));
+    }
+    let after = ws_after.ok_or(TrimSkipReason::NotFoundOrMismatch)?;
+    Ok(before.saturating_sub(after))
+}
+
 /// Per-process verified working set trim with query-first handle verification.
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
@@ -144,15 +171,11 @@ pub fn trim_single_pid(target: &ProcessTarget) -> Result<u64, TrimSkipReason> {
     verify_live_query_handle(&query, target)?;
     let mut_handle = open_raw_checked(PROCESS_SET_QUOTA, target.pid)?;
     let _keep_query_alive = &query;
-    let ws_before =
-        unsafe { query_working_set(mut_handle.as_raw()) }.ok_or(TrimSkipReason::Other)?;
-    if unsafe { K32EmptyWorkingSet(mut_handle.as_raw()) } == 0 {
-        let err = unsafe { GetLastError() };
-        return Err(map_win32_error(err));
-    }
-    let ws_after =
-        unsafe { query_working_set(mut_handle.as_raw()) }.ok_or(TrimSkipReason::Other)?;
-    Ok(ws_before.saturating_sub(ws_after))
+    let ws_before = unsafe { query_working_set(mut_handle.as_raw()) };
+    let empty_ok = unsafe { K32EmptyWorkingSet(mut_handle.as_raw()) } != 0;
+    let empty_err = if empty_ok { 0 } else { unsafe { GetLastError() } };
+    let ws_after = unsafe { query_working_set(mut_handle.as_raw()) };
+    trim_working_set_outcome(ws_before, empty_ok, empty_err, ws_after)
 }
 
 #[cfg(not(target_os = "windows"))]

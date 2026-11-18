@@ -56,8 +56,12 @@ pub fn render_virtualized_table(
     for (i, (label, sc)) in HDR.iter().enumerate() {
         let hr = cell_r(&col_x, &widths, i, header_rect.top(), header_rect.bottom());
         let mut hui = ui.child_ui(hr, egui::Layout::left_to_right(egui::Align::Center));
-        if render_sort_button(&mut hui, label, state.sort_col == *sc, state.sort_asc).clicked() {
+        let resp = render_sort_button(&mut hui, label, state.sort_col == *sc, state.sort_asc);
+        if resp.clicked() {
             state.set_sort(*sc);
+        }
+        if *sc == CpuSortCol::Delta {
+            resp.on_hover_text(delta_tooltip_text());
         }
     }
     let tbl_r = egui::Rect::from_min_max(
@@ -108,7 +112,18 @@ pub fn render_virtualized_table(
                 let c2 = cell_r(&col_x, &widths, 2, top, bot);
                 let ccc =
                     if item.clone_count > 1 { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
-                txt(ui, c2, &item.clone_text, ccc);
+                let clone_label = if item.clone_count > 1 {
+                    format!(
+                        "{} {}",
+                        item.clone_text,
+                        crate::modules::cpu::table_groups::group_member_count_label(
+                            item.clone_count
+                        )
+                    )
+                } else {
+                    item.clone_text.to_string()
+                };
+                txt(ui, c2, &clone_label, ccc);
                 let c3 = cell_r(&col_x, &widths, 3, top, bot);
                 if item.cpu_pct >= 0.5 {
                     table_kit::draw_cell_usage_bar(ui, c3, item.cpu_pct / 100.0, item.is_cpu_hog);
@@ -186,4 +201,19 @@ pub fn render_virtualized_table(
     }
     draw_separators(ui, tbl_r, &mut widths, rows);
     ui.style_mut().interaction.selectable_labels = prev_selectable;
+}
+
+/// Concise tooltip/label for the 10-second RAM delta column.
+pub fn delta_tooltip_text() -> &'static str {
+    "10s RAM delta -- projected (est.)"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::delta_tooltip_text;
+
+    #[test]
+    fn delta_tooltip_text_is_stable() {
+        assert_eq!(delta_tooltip_text(), "10s RAM delta -- projected (est.)");
+    }
 }

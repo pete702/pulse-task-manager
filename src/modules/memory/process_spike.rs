@@ -26,8 +26,7 @@ pub fn detect_memory_spike(
     let culprit = processes
         .iter()
         .filter(|r| r.delta_bytes_per_sec != 0)
-        .max_by_key(|r| r.delta_bytes_per_sec.unsigned_abs())
-        .or_else(|| processes.iter().max_by_key(|r| r.ram_bytes));
+        .max_by_key(|r| r.delta_bytes_per_sec.unsigned_abs());
     culprit.map(|row| MemorySpikeEvent {
         timestamp: Arc::from(format_timestamp_now()),
         peak_ram_pct: current_ram_pct,
@@ -75,6 +74,25 @@ mod tests {
         let event = detect_memory_spike(&rows, 16 * 1024 * 1024 * 1024, 90.0);
         let event = event.unwrap_or_default();
         assert_eq!(event.culprit_pid, 200);
+    }
+
+    #[test]
+    fn all_negative_selects_largest_abs_delta() {
+        let rows = [
+            row(100, "large_static.exe", 2 * 1024 * 1024 * 1024, -1),
+            row(200, "small_shrinking.exe", 500 * 1024 * 1024, -100 * 1024 * 1024),
+        ];
+        let event = detect_memory_spike(&rows, 16 * 1024 * 1024 * 1024, 90.0);
+        let event = event.unwrap_or_default();
+        assert_eq!(event.culprit_pid, 200);
+        assert_eq!(event.culprit_name.as_ref(), "small_shrinking.exe");
+    }
+
+    #[test]
+    fn all_zero_deltas_returns_none() {
+        let rows = [row(100, "large_static.exe", 2 * 1024 * 1024 * 1024, 0)];
+        let event = detect_memory_spike(&rows, 16 * 1024 * 1024 * 1024, 90.0);
+        assert!(event.is_none());
     }
 
     #[test]

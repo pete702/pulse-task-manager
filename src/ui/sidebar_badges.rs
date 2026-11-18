@@ -1,29 +1,30 @@
 //! Cached badge text helpers and tab badge painting for the sidebar.
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
 
 const BADGE_CACHE_CAP: usize = 256;
 
-#[allow(clippy::type_complexity)]
-static BADGE_CACHE: OnceLock<Mutex<HashMap<(u8, u16), Arc<str>>>> = OnceLock::new();
+type BadgeCache = (HashMap<(u8, u16), Arc<str>>, VecDeque<(u8, u16)>);
 
-fn badge_cache() -> &'static Mutex<HashMap<(u8, u16), Arc<str>>> {
-    BADGE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+#[allow(clippy::type_complexity)]
+static BADGE_CACHE: OnceLock<Mutex<BadgeCache>> = OnceLock::new();
+
+fn badge_cache() -> &'static Mutex<BadgeCache> {
+    BADGE_CACHE.get_or_init(|| Mutex::new((HashMap::new(), VecDeque::new())))
 }
 
 fn cached_formatted(kind: u8, key: u16, make: impl FnOnce() -> String) -> Arc<str> {
+    let k = (kind, key);
     {
         let cache = badge_cache().lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(value) = cache.get(&(kind, key)) {
+        if let Some(value) = cache.0.get(&k) {
             return Arc::clone(value);
         }
     }
     let value = Arc::from(make());
     let mut cache = badge_cache().lock().unwrap_or_else(|e| e.into_inner());
-    if cache.len() >= BADGE_CACHE_CAP {
-        cache.clear();
-    }
-    cache.insert((kind, key), Arc::clone(&value));
+    let (map, order) = &mut *cache;
+    crate::util::insert_capped_fifo(map, order, BADGE_CACHE_CAP, k, Arc::clone(&value));
     value
 }
 
@@ -197,5 +198,26 @@ mod tests {
         let mut st = false;
         assert!(!badge_active(f32::NAN, &mut st));
         assert!(!badge_active(f32::INFINITY, &mut st));
+    }
+
+    #[test]
+    fn badge_cache_fifo_evicts_oldest_only() {
+        use std::collections::{HashMap, VecDeque};
+        let mut map: HashMap<(u8, u16), Arc<str>> = HashMap::new();
+        let mut order: VecDeque<(u8, u16)> = VecDeque::new();
+        for i in 0..BADGE_CACHE_CAP + 1 {
+            let key = (3u8, i as u16);
+            crate::util::insert_capped_fifo(
+                &mut map,
+                &mut order,
+                BADGE_CACHE_CAP,
+                key,
+                Arc::from(i.to_string()),
+            );
+        }
+        assert_eq!(map.len(), BADGE_CACHE_CAP);
+        assert!(!map.contains_key(&(3, 0)));
+        assert!(map.contains_key(&(3, 1)));
+        assert!(map.contains_key(&(3, BADGE_CACHE_CAP as u16)));
     }
 }

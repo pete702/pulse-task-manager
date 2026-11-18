@@ -166,6 +166,7 @@ impl NetworkCollector {
         adapters.sort_by(|a, b| a.name.cmp(&b.name));
         let rx_total: u64 = adapters.iter().map(|a| a.total_rx_bytes).sum();
         let tx_total: u64 = adapters.iter().map(|a| a.total_tx_bytes).sum();
+        self.adapter_baseline.retain(|k, _| self.scratch.contains_key(k));
         std::mem::swap(&mut self.prev, &mut self.scratch);
         (adapters, rx_total, tx_total)
     }

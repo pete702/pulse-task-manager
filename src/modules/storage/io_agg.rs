@@ -106,13 +106,9 @@ pub fn aggregate_io_by_disk(
 ) -> HashMap<u32, (f64, f64)> {
     let mut drive_to_disk: HashMap<char, u32> = HashMap::new();
     let mut unmapped: Vec<char> = Vec::new();
-    let mut first_disk: Option<u32> = None;
     for vol in volumes {
         let letter = crate::modules::storage::physical_disk::drive_letter(vol.mount_point.as_ref());
         if let Some(disk) = vol.physical_disk {
-            if first_disk.is_none_or(|f| disk < f) {
-                first_disk = Some(disk);
-            }
             if let Some(letter) = letter {
                 drive_to_disk.entry(letter).or_insert(disk);
             }
@@ -120,7 +116,6 @@ pub fn aggregate_io_by_disk(
             unmapped.push(letter);
         }
     }
-    let default_disk = first_disk.unwrap_or(0);
     let mut out: HashMap<u32, (f64, f64)> = HashMap::new();
     for row in raw {
         let r = f64::from(clamp_rate(row.disk_read_mb_s));
@@ -134,7 +129,9 @@ pub fn aggregate_io_by_disk(
                 continue;
             }
         }
-        let disk = letter.and_then(|l| drive_to_disk.get(&l).copied()).unwrap_or(default_disk);
+        let Some(disk) = letter.and_then(|l| drive_to_disk.get(&l).copied()) else {
+            continue;
+        };
         let entry = out.entry(disk).or_insert((0.0, 0.0));
         entry.0 += r;
         entry.1 += w;
@@ -160,4 +157,40 @@ pub(super) fn aggregate_io_by_letter(raw: &[RawProcessCpuRow]) -> HashMap<char, 
         e.1 += w;
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::cpu::model::RawProcessCpuRow;
+    use crate::modules::storage::model::DiskVolumeInfo;
+    use std::sync::Arc;
+
+    #[test]
+    fn unmapped_or_unc_does_not_hit_disk_zero() {
+        let mut vol = DiskVolumeInfo::new(
+            Arc::from("C:\\"),
+            Arc::from("C"),
+            Arc::from("NTFS"),
+            crate::modules::storage::model::DiskMediaKind::Ssd,
+            100,
+            50,
+        );
+        vol.physical_disk = Some(1);
+        let raw = RawProcessCpuRow {
+            pid: 1,
+            name: Arc::from("app.exe"),
+            cpu_usage: 0.0,
+            ram_bytes: 0,
+            disk_read_mb_s: 10.0,
+            disk_write_mb_s: 0.0,
+            eco_qos: None,
+            exe_path: None,
+            drive_letter: None,
+            creation_time: None,
+            start_time: 1,
+        };
+        let out = aggregate_io_by_disk(&[raw], &[vol]);
+        assert!(!out.contains_key(&0));
+    }
 }

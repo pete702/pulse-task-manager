@@ -116,6 +116,9 @@ pub fn apply_obsidian_theme(ctx: &egui::Context) {
         .text_styles
         .insert(egui::TextStyle::Body, egui::FontId::new(14.0, egui::FontFamily::Proportional));
 
+    // Disable accidental text selection on labels/headers/cards.
+    style.interaction.selectable_labels = false;
+
     ctx.set_style(style);
 }
 

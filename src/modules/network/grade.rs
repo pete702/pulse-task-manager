@@ -6,8 +6,9 @@ use crate::modules::network::model::ConnectionGrade;
 /// Before any sample exists (startup), reports `Probing`.
 /// Fast outage path: 3+ consecutive timeouts (or >= 50% loss) flips
 /// to OFFLINE/PACKET_LOSS without waiting for the full 20-sample window.
-/// Traffic-aware: active traffic above 0.25 Mbps proves connectivity, so
+/// Traffic-aware: active traffic above TRAFFIC_PROOF_MBPS proves connectivity, so
 /// firewall-blocked probes (e.g. :53 refused) never fake OFFLINE/PACKET_LOSS.
+pub const TRAFFIC_PROOF_MBPS: f32 = 1.5;
 pub fn classify_grade(
     ping_ms: Option<f32>,
     jitter_ms: Option<f32>,
@@ -24,7 +25,7 @@ pub fn classify_grade(
         return ConnectionGrade::Probing;
     }
     let jitter = jitter_ms.unwrap_or(0.0);
-    if traffic_mbps > 0.25 {
+    if traffic_mbps > TRAFFIC_PROOF_MBPS {
         if ping_ms.is_none() {
             return ConnectionGrade::Stable;
         }
@@ -109,6 +110,7 @@ mod tests {
             ConnectionGrade::PacketLoss
         );
         assert_eq!(classify_grade(None, None, 100.0, true, 2.0, 20, 5), ConnectionGrade::Stable);
+        assert_eq!(classify_grade(None, None, 100.0, true, 1.0, 20, 5), ConnectionGrade::Offline);
         assert_eq!(classify_grade(None, None, 100.0, true, 0.0, 20, 5), ConnectionGrade::Offline);
     }
 }

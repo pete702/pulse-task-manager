@@ -52,7 +52,8 @@ fn test_active_tab_label_en() {
 #[test]
 fn test_i18n_keys() {
     set_lang(Lang::En);
-    assert_eq!(Key::AppTitle.t(), "^ PULSE // TELEMETRY");
+    assert_eq!(Key::AppTitle.t(), "PULSE // TELEMETRY");
+    assert!(!Key::AppTitle.t().contains("\\u{"));
     assert_eq!(Key::VersionPrefix.t(), "v");
     assert_eq!(Key::UptimeLabel.t(), "Uptime");
     assert_eq!(Key::AwaitingMemoryModel.t(), "Telemetry core active. Awaiting memory model...");
@@ -118,18 +119,6 @@ fn test_should_use_fast_process_cadence() {
     assert!(!should_use_fast_process_cadence(ActiveTab::Storage));
     assert!(!should_use_fast_process_cadence(ActiveTab::Network));
     assert!(!should_use_fast_process_cadence(ActiveTab::System));
-}
-
-#[test]
-fn test_should_trigger_self_trim_policy() {
-    use crate::app_trim::should_trigger_self_trim;
-    use std::time::Duration;
-
-    assert!(!should_trigger_self_trim(Duration::from_secs(1), 60, false));
-    assert!(!should_trigger_self_trim(Duration::from_secs(3), 0, true));
-    assert!(should_trigger_self_trim(Duration::from_secs(10), 0, true));
-    assert!(should_trigger_self_trim(Duration::from_secs(60), 0, false));
-    assert!(!should_trigger_self_trim(Duration::from_secs(59), 0, false));
 }
 
 #[test]

@@ -7,11 +7,13 @@ use crate::modules::cpu::model::RawProcessCpuRow;
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 use sysinfo::{ProcessRefreshKind, System, UpdateKind};
+type PrevDiskEntry = (u64, u64, Option<u64>, f32, f32);
+
 pub struct CpuCollector {
     pub seen_pids: HashSet<(u32, u64)>,
     eco_cache: HashMap<(u32, u64), (bool, Instant)>,
     eco_cursor: usize,
-    prev_disk: HashMap<(u32, u64), (u64, u64, Option<u64>)>,
+    prev_disk: HashMap<(u32, u64), PrevDiskEntry>,
     creation_cache: HashMap<(u32, u64), Option<u64>>,
     last_scan: Option<Instant>,
 }
@@ -46,6 +48,7 @@ impl CpuCollector {
         let mut live: HashSet<(u32, u64)> = HashSet::with_capacity(sys.processes().len());
         let cores = logical_cores.max(1) as f32;
         let mut creation_probes: usize = 0;
+        let probe_budget = creation_probe_budget(self.creation_cache.len());
         let mut raw_rows: Vec<RawProcessCpuRow> = Vec::with_capacity(sys.processes().len());
         for (pid, process) in sys.processes().iter() {
             let pid_u32 = pid.as_u32();
@@ -71,7 +74,7 @@ impl CpuCollector {
             let creation_time =
                 if let Some(cached) = self.creation_cache.get(&key).copied().flatten() {
                     Some(cached)
-                } else if pid_u32 != 0 && pid_u32 != 4 && creation_probes < 64 {
+                } else if pid_u32 != 0 && pid_u32 != 4 && creation_probes < probe_budget {
                     creation_probes += 1;
                     if let Some(ct) = crate::modules::memory::query_creation_time_by_pid(pid_u32) {
                         if self.creation_cache.len() > 512 {
@@ -85,15 +88,20 @@ impl CpuCollector {
                 } else {
                     None
                 };
-            let (r_mb, w_mb) = Self::disk_rates_from_prev(
-                prev.map(|(r, w, _)| (r, w)),
-                tot_r,
-                tot_w,
-                elapsed_secs,
-            );
+            let short_dt = elapsed_secs > 0.0 && elapsed_secs < 0.2;
+            let (r_mb, w_mb) = if short_dt {
+                prev.map(|(_, _, _, rr, ww)| (rr, ww)).unwrap_or((0.0, 0.0))
+            } else {
+                Self::disk_rates_from_prev(
+                    prev.map(|(r, w, _, _, _)| (r, w)),
+                    tot_r,
+                    tot_w,
+                    elapsed_secs.max(0.2),
+                )
+            };
             let exe_path =
                 exe.and_then(|p| p.to_str()).filter(|s| !s.is_empty()).map(std::sync::Arc::from);
-            self.prev_disk.insert(key, (tot_r, tot_w, creation_time));
+            self.prev_disk.insert(key, (tot_r, tot_w, creation_time, r_mb, w_mb));
             raw_rows.push(RawProcessCpuRow {
                 pid: pid_u32,
                 name: crate::util::intern_name(process.name()),
@@ -164,7 +172,7 @@ impl CpuCollector {
     fn elapsed_since_last_scan(&mut self) -> f32 {
         let now = std::time::Instant::now();
         let elapsed = match self.last_scan {
-            Some(prev) => now.duration_since(prev).as_secs_f32().max(0.2),
+            Some(prev) => now.duration_since(prev).as_secs_f32(),
             None => 1.0,
         };
         self.last_scan = Some(now);
@@ -197,6 +205,14 @@ pub(crate) fn pid_contains(pid: u32, needle: &str) -> bool {
     let s = std::str::from_utf8(&buf[..len]).unwrap_or("");
     s.contains(needle)
 }
+pub(crate) fn creation_probe_budget(cached_len: usize) -> usize {
+    if cached_len < 32 {
+        256
+    } else {
+        128
+    }
+}
+
 #[cfg(test)]
 #[path = "collector_tests.rs"]
 mod tests;

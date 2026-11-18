@@ -68,3 +68,11 @@ fn sanitize_probe_target_strict() {
     assert_eq!(sanitize_probe_target("a\nb"), None);
     assert_eq!(sanitize_probe_target(&"a".repeat(254)), None);
 }
+
+#[test]
+fn probe_helpers_basic() {
+    let _lock = TEST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner());
+    assert_eq!(probe_timeout_ms(), 2000);
+    assert!(!resolve_probe_targets().is_empty());
+    assert!(!is_probe_watchdog_expired());
+}

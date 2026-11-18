@@ -8,7 +8,7 @@ impl Lang {
     pub(super) fn translate_frame(self, key: Key) -> Option<&'static str> {
         match (self, key) {
             // Top bar / window chrome
-            (Lang::En, Key::AppTitle) => Some("^ PULSE // TELEMETRY"),
+            (Lang::En, Key::AppTitle) => Some("PULSE // TELEMETRY"),
             (Lang::En, Key::VersionPrefix) => Some("v"),
             (Lang::En, Key::UptimeLabel) => Some("Uptime"),
 

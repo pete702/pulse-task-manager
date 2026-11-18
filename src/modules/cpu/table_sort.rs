@@ -17,6 +17,14 @@ pub fn item_from_raw_cpu(row: &RawProcessCpuRow, delta: i64) -> ProcessCpuItem {
     item
 }
 
+/// Quantized CPU percentage comparison to tenths.
+pub fn cmp_cpu_pct(a: f32, b: f32) -> std::cmp::Ordering {
+    let _ = crate::modules::cpu::table_rows::cmp_cpu_pct;
+    let aa = if a.is_finite() { a } else { 0.0 };
+    let bb = if b.is_finite() { b } else { 0.0 };
+    ((aa * 10.0).round() as i32).cmp(&((bb * 10.0).round() as i32))
+}
+
 /// Filters rows, merges clone groups, then sorts the result.
 /// `query_lower` is pre-lowercased once by the caller.
 #[allow(clippy::too_many_arguments)]
@@ -75,7 +83,7 @@ pub fn sort_slice(items: &mut [ProcessCpuItem], col: CpuSortCol, asc: bool) {
             CpuSortCol::RamBytes => a.ram_bytes.cmp(&b.ram_bytes),
             CpuSortCol::CloneCount => a.clone_count.cmp(&b.clone_count),
             CpuSortCol::Delta => a.ram_delta_10s.cmp(&b.ram_delta_10s),
-            CpuSortCol::CpuPct => table_rows::cmp_cpu_pct(a, b),
+            CpuSortCol::CpuPct => cmp_cpu_pct(a.cpu_pct, b.cpu_pct),
             CpuSortCol::DiskIo => table_rows::cmp_disk_io(a, b),
         };
         let directed = if asc { ord } else { ord.reverse() };
@@ -140,6 +148,12 @@ mod table_sort_tests {
             &eco,
         );
         assert_eq!(flat[0].pid, 2);
+    }
+
+    #[test]
+    fn cmp_cpu_pct_quantizes_tenths() {
+        assert_eq!(cmp_cpu_pct(12.31, 12.34), std::cmp::Ordering::Equal);
+        assert_eq!(cmp_cpu_pct(12.3, 12.4), std::cmp::Ordering::Less);
     }
 
     #[test]

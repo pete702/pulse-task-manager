@@ -134,7 +134,7 @@ pub fn render_storage_chart(
                 .show(ui, |pu| {
                     lock_time_chart_bounds(pu, window_secs, ceil);
                     pu.hline(
-                        HLine::new(IO_SPIKE_THRESHOLD_MB_S as f64)
+                        HLine::new(IO_SPIKE_THRESHOLD_MB_S)
                             .color(egui::Color32::from_rgba_unmultiplied(255, 42, 84, 110))
                             .style(LineStyle::Dashed { length: 6.0 }),
                     );

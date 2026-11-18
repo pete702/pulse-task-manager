@@ -58,10 +58,22 @@ pub(crate) fn state() -> &'static Mutex<ProbeState> {
 pub(crate) fn dns_slot() -> &'static Mutex<(DnsFlushState, Option<Instant>)> {
     DNS_STATE.get_or_init(|| Mutex::new((DnsFlushState::Idle, None)))
 }
-struct InFlightReset;
-impl Drop for InFlightReset {
+static PROBE_IN_FLIGHT_SINCE: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
+fn in_flight_since() -> &'static Mutex<Option<Instant>> {
+    PROBE_IN_FLIGHT_SINCE.get_or_init(|| Mutex::new(None))
+}
+pub fn is_probe_watchdog_expired() -> bool {
+    if !PROBE_IN_FLIGHT.load(Ordering::Acquire) {
+        return false;
+    }
+    let guard = in_flight_since().lock().unwrap_or_else(|e| e.into_inner());
+    guard.map(|t| t.elapsed().as_millis() >= 5000).unwrap_or(false)
+}
+pub(crate) struct InFlightGuard;
+impl Drop for InFlightGuard {
     fn drop(&mut self) {
         PROBE_IN_FLIGHT.store(false, Ordering::Release);
+        *in_flight_since().lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 }
 pub fn probe_enabled() -> bool {
@@ -112,7 +124,7 @@ pub(crate) fn ensure_worker() -> Option<mpsc::Sender<Cmd>> {
         while let Ok(cmd) = rx.recv() {
             match cmd {
                 Cmd::Probe => {
-                    let _reset = InFlightReset;
+                    let _guard = InFlightGuard;
                     let rtt = tcp_rtt_ms();
                     record_sample(rtt);
                 }
@@ -131,9 +143,14 @@ pub fn maybe_trigger_probe() {
         probe_sample_count(),
         probe_failures(),
     );
+    if is_probe_watchdog_expired() {
+        PROBE_IN_FLIGHT.store(false, Ordering::Release);
+        *in_flight_since().lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
     if !probe_enabled() || PROBE_IN_FLIGHT.swap(true, Ordering::AcqRel) {
         return;
     }
+    *in_flight_since().lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
     let now = Instant::now();
     let interval = probe_interval_ms();
     let due = {
@@ -167,16 +184,50 @@ pub(crate) fn sanitize_probe_target(raw: &str) -> Option<&str> {
     }
     Some(t)
 }
+pub(crate) fn probe_timeout_ms() -> u64 {
+    2000
+}
+pub(crate) fn probe_hosts() -> Vec<String> {
+    if let Ok(raw) = std::env::var("PULSE_PROBE_HOSTS") {
+        let parsed: Vec<String> =
+            raw.split(',').filter_map(sanitize_probe_target).map(str::to_owned).collect();
+        if !parsed.is_empty() {
+            return parsed;
+        }
+    }
+    vec![
+        "1.1.1.1:53".to_owned(),
+        "8.8.8.8:53".to_owned(),
+        "1.1.1.1:443".to_owned(),
+        "8.8.8.8:443".to_owned(),
+    ]
+}
+static CACHED_PROBE_TARGETS: OnceLock<Mutex<Vec<std::net::SocketAddr>>> = OnceLock::new();
+
+pub(crate) fn resolve_probe_targets() -> Vec<std::net::SocketAddr> {
+    let cache = CACHED_PROBE_TARGETS.get_or_init(|| Mutex::new(Vec::new()));
+    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+    if guard.is_empty() {
+        for host in probe_hosts() {
+            if let Some(addr) = host.to_socket_addrs().ok().and_then(|mut i| i.next()) {
+                guard.push(addr);
+            }
+        }
+        if guard.is_empty() {
+            for host in ["1.1.1.1:53", "8.8.8.8:53"] {
+                if let Some(addr) = host.to_socket_addrs().ok().and_then(|mut i| i.next()) {
+                    guard.push(addr);
+                }
+            }
+        }
+    }
+    guard.clone()
+}
+
 fn tcp_rtt_ms() -> Option<f32> {
-    for host in ["1.1.1.1:53", "8.8.8.8:53", "1.1.1.1:443", "8.8.8.8:443"] {
-        let Some(target) = sanitize_probe_target(host) else {
-            continue;
-        };
-        let Some(addr) = target.to_socket_addrs().ok().and_then(|mut i| i.next()) else {
-            continue;
-        };
+    for addr in resolve_probe_targets() {
         let start = Instant::now();
-        if TcpStream::connect_timeout(&addr, Duration::from_millis(800)).is_ok() {
+        if TcpStream::connect_timeout(&addr, Duration::from_millis(probe_timeout_ms())).is_ok() {
             return Some(start.elapsed().as_secs_f32() * 1000.0);
         }
     }

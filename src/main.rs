@@ -123,13 +123,19 @@ fn main() -> eframe::Result<()> {
             std::fs::symlink_metadata(&dir).map(|m| m.file_type().is_symlink()).unwrap_or(false);
         if !symlink_parent {
             let log_path = dir.join(format!("pulse_panic_{}_{}.log", std::process::id(), ts));
-            let _ =
-                std::fs::OpenOptions::new().write(true).create_new(true).open(&log_path).and_then(
-                    |mut f| {
+            let symlink_log = std::fs::symlink_metadata(&log_path)
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(false);
+            if !symlink_log {
+                let _ = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&log_path)
+                    .and_then(|mut f| {
                         use std::io::Write;
                         f.write_all(safe_msg.as_bytes())
-                    },
-                );
+                    });
+            }
         }
     }));
 
@@ -157,7 +163,9 @@ fn main() -> eframe::Result<()> {
                 fn AttachConsole(dw_process_id: u32) -> i32;
             }
             unsafe {
-                AttachConsole(u32::MAX);
+                // 0 is expected when launched from Explorer without a parent console;
+                // ERROR_ACCESS_DENIED occurs if already attached to a console.
+                let _attached = AttachConsole(u32::MAX);
             }
         }
     }

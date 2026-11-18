@@ -140,6 +140,7 @@ pub fn render_top_panel(
     cmds: &mut Vec<AppCommand>,
 ) {
     ui.horizontal(|ui| {
+        ui.add_space(8.0);
         let label = if telemetry_paused { "Resume" } else { "Pause" };
         if ui.button(label).clicked() {
             cmds.push(AppCommand::TogglePause);

@@ -7,7 +7,7 @@ use super::protected::{
     normalize_process_name, protection_reason,
 };
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, HANDLE};
+use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, FILETIME, HANDLE};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Security::{
     GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
@@ -87,16 +87,43 @@ pub fn is_app_elevated() -> bool {
     *ELEVATED.get_or_init(|| false)
 }
 
+/// Pure helper: returns the next buffer capacity when QueryFullProcessImageNameW reports
+/// ERROR_INSUFFICIENT_BUFFER (122), doubling up to a 32768 code-unit cap.
+pub(crate) fn next_path_buf_cap(current: usize, last_error: u32) -> Option<usize> {
+    const ERROR_INSUFFICIENT_BUFFER: u32 = 122;
+    const MAX_CAP: usize = 32768;
+    if last_error == ERROR_INSUFFICIENT_BUFFER && current < MAX_CAP {
+        Some(current * 2)
+    } else {
+        None
+    }
+}
+
+/// Pure helper: captures the Win32 error code when IsProcessCritical fails (ok == 0).
+pub(crate) fn critical_query_failed_code(ok: i32, last_err: u32) -> Option<u32> {
+    if ok == 0 {
+        Some(last_err)
+    } else {
+        None
+    }
+}
+
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 pub fn query_process_image_path(handle: &SafeHandle) -> Option<String> {
-    let mut buf = vec![0u16; 4096];
-    let mut size = buf.len() as u32;
-    let ok = unsafe { QueryFullProcessImageNameW(handle.as_raw(), 0, buf.as_mut_ptr(), &mut size) };
-    if ok == 0 || size == 0 {
-        return None;
+    let mut cap = 512usize;
+    loop {
+        let mut buf = vec![0u16; cap];
+        let mut size = buf.len() as u32;
+        let ok =
+            unsafe { QueryFullProcessImageNameW(handle.as_raw(), 0, buf.as_mut_ptr(), &mut size) };
+        if ok != 0 && size != 0 {
+            return Some(String::from_utf16_lossy(&buf[..size as usize]));
+        }
+        let err = unsafe { GetLastError() };
+        let next = next_path_buf_cap(cap, err)?;
+        cap = next;
     }
-    Some(String::from_utf16_lossy(&buf[..size as usize]))
 }
 
 #[cfg(target_os = "windows")]
@@ -170,6 +197,9 @@ pub fn is_handle_critical(handle: &SafeHandle) -> bool {
     let ok = unsafe {
         windows_sys::Win32::System::Threading::IsProcessCritical(handle.as_raw(), &mut critical)
     };
+    let last_err = if ok == 0 { unsafe { GetLastError() } } else { 0 };
+    // Fail-closed: capture the Win32 error code on failure but never clear criticality.
+    let _ = critical_query_failed_code(ok, last_err);
     ok == 0 || critical != 0
 }
 

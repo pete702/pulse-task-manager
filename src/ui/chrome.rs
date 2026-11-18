@@ -52,9 +52,12 @@ pub fn render_top_panel(
     last_ui_ms: f32,
 ) {
     let bar_w = ui.available_width();
-    let top_rect = ui.available_rect_before_wrap();
-    ui.horizontal(|ui| {
-        let title = if bar_w < 920.0 { "^ PULSE" } else { Key::AppTitle.t() };
+    let row = ui.horizontal(|ui| {
+        let title = if bar_w < 920.0 {
+            "PULSE"
+        } else {
+            Key::AppTitle.t()
+        };
         ui.heading(
             egui::RichText::new(title).monospace().size(18.0).color(colors::TEXT_PRIMARY),
         );
@@ -121,7 +124,8 @@ pub fn render_top_panel(
                     .cpu
                     .as_ref()
                     .is_some_and(|cpu| cpu.single_thread_bottleneck());
-                let storage_low = snapshot.storage.volumes.iter().any(|v| v.used_pct >= 95.0);
+                let (storage_low, storage_summary) =
+                    crate::modules::storage::model::low_space_alert(&snapshot.storage.volumes);
                 let net_bad = matches!(
                     snapshot.network.grade,
                     crate::modules::network::model::ConnectionGrade::Offline
@@ -155,7 +159,7 @@ pub fn render_top_panel(
                 );
                 if resp.hovered() {
                     // Tooltip built only on hover - avoids per-frame alloc.
-                    let tooltip = match snapshot.memory.as_ref() {
+                    let mut tooltip = match snapshot.memory.as_ref() {
                         Some(m) => {
                             let cpu_raw = snapshot.cpu.as_ref().map_or(0.0, |c| c.total_pct);
                             let cpu_pct = if cpu_raw.is_finite() { cpu_raw.clamp(0.0, 100.0) } else { 0.0 };
@@ -172,13 +176,19 @@ pub fn render_top_panel(
                         }
                         None => "Awaiting memory telemetry".to_owned(),
                     };
+                    if storage_low && !storage_summary.is_empty() {
+                        tooltip.push('\n');
+                        tooltip.push_str(&storage_summary);
+                    }
                     resp.on_hover_text(tooltip);
                 }
             }
             });
         }
     });
-    draw_top_scanline(ui, top_rect);
+    let row_rect = row.response.rect;
+    ui.add_space(5.0);
+    draw_top_scanline(ui, row_rect);
 }
 
 /// Dual-tone neon scanline along the bottom edge of the top bar.
@@ -186,7 +196,7 @@ fn draw_top_scanline(ui: &egui::Ui, rect: egui::Rect) {
     if rect.width() <= 0.0 || !rect.width().is_finite() {
         return;
     }
-    let y = rect.bottom() - 0.5;
+    let y = rect.max.y + 4.0;
     let painter = ui.painter();
     let base = egui::Color32::from_rgba_unmultiplied(51, 65, 85, 180);
     let glow = egui::Color32::from_rgba_unmultiplied(0, 240, 255, 220);

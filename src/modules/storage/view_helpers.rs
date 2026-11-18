@@ -30,7 +30,7 @@ pub(crate) fn scope_label_for(
     disk.map(|d| {
         if d >= 0x8000_0000 {
             let ch = ((d & 0xFF) as u8) as char;
-            return format!("Disk [{ch}:]");
+            return format!("VOLUME [{ch}:]");
         }
         let m: Vec<String> = snap
             .volumes
@@ -156,7 +156,7 @@ mod tests {
         };
         let key = 0x8000_0000 | (b'L' as u32);
         let label = scope_label_for(&snap, Some(key), |_| Some(key)).unwrap();
-        assert_eq!(label, "Disk [L:]");
+        assert_eq!(label, "VOLUME [L:]");
         assert!(!label.contains("214748"));
     }
 }

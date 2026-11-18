@@ -139,11 +139,51 @@ pub struct StorageSnapshot {
     pub last_io_spike: Option<IoSpikeEvent>,
 }
 
+pub fn low_space_alert(volumes: &[DiskVolumeInfo]) -> (bool, String) {
+    let mut low: Vec<String> = Vec::new();
+    let mut critical = false;
+    for v in volumes {
+        let free_pct = (100.0 - v.used_pct).max(0.0);
+        let free_gb = v.available_bytes as f64 / 1_073_741_824.0;
+        let is_low = free_pct < 10.0 || free_gb < 10.0;
+        if is_low {
+            let letter = v.mount_point.chars().next().unwrap_or('?');
+            low.push(format!("{}: ({:.1} GB)", letter, free_gb));
+        }
+        if free_pct < 2.0 || free_gb < 2.0 {
+            critical = true;
+        }
+        let is_system = v.mount_point.to_ascii_uppercase().starts_with("C:");
+        if is_system && (free_pct < 10.0 || free_gb < 10.0) {
+            critical = true;
+        }
+    }
+    let summary =
+        if low.is_empty() { String::new() } else { format!("Low free space: {}", low.join(", ")) };
+    (critical, summary)
+}
+
 pub use crate::modules::storage::history::StorageHistory;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn low_space_alert_summary() {
+        let gb = 1024 * 1024 * 1024u64;
+        let mut v = DiskVolumeInfo::new(
+            std::sync::Arc::from("E:\\"),
+            std::sync::Arc::from("E"),
+            std::sync::Arc::from("NTFS"),
+            DiskMediaKind::Ssd,
+            100 * gb,
+            0,
+        );
+        v.used_pct = 100.0;
+        let (crit, summary) = low_space_alert(&[v]);
+        assert!(crit || !summary.is_empty());
+        assert!(summary.contains("E:"));
+    }
     #[test]
     fn badge_mapping() {
         assert_eq!(DiskMediaKind::Ssd.badge(), "SSD");

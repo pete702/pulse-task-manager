@@ -54,6 +54,9 @@ fn render_activity_card(
                     .monospace()
                     .size(12.0)
                     .color(colors::TEXT_PRIMARY),
+            )
+            .on_hover_text(
+                "Process Logical I/O: per-process OS file/cache activity. Physical Disk I/O: hardware device throughput.",
             );
             if selected.is_some() && !letters.is_empty() {
                 let scope: Vec<String> = letters.iter().map(|c| format!("{c}:")).collect();

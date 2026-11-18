@@ -5,6 +5,15 @@ use std::sync::Arc;
 /// CPU hog threshold percentage. Processes using >= this % of total system capacity are flagged as hogs.
 pub const CPU_HOG_THRESHOLD_PCT: f32 = 20.0;
 
+/// Raw per-process CPU percentage at which a single core is saturated.
+pub const SINGLE_CORE_HOG_RAW_PCT: f32 = 85.0;
+
+/// Pure helper: a process is a CPU hog if normalized total CPU is high
+/// or a single logical core is saturated.
+pub fn is_process_cpu_hog(norm_cpu_pct: f32, raw_cpu_pct: f32) -> bool {
+    norm_cpu_pct >= CPU_HOG_THRESHOLD_PCT || raw_cpu_pct >= SINGLE_CORE_HOG_RAW_PCT
+}
+
 /// One raw process row with stable identity metadata and CPU-specific fields.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RawProcessCpuRow {
@@ -86,7 +95,7 @@ impl ProcessCpuItem {
             eco_qos: None,
             ram_delta_10s: 0,
             clone_count: 1,
-            is_cpu_hog: safe_cpu >= CPU_HOG_THRESHOLD_PCT,
+            is_cpu_hog: is_process_cpu_hog(safe_cpu, safe_cpu),
             pid_text,
             cpu_text,
             ram_text,
@@ -128,7 +137,7 @@ impl ProcessCpuItem {
         self.cpu_pct = if self.cpu_pct.is_finite() { self.cpu_pct.clamp(0.0, 100.0) } else { 0.0 };
 
         // Compute change flags BEFORE updating tracking fields
-        let cpu_changed = (self.cpu_pct - self.last_fmt_cpu_pct).abs() > f32::EPSILON;
+        let cpu_changed = (self.cpu_pct - self.last_fmt_cpu_pct).abs() > 0.05;
         let ram_changed = self.ram_bytes != self.last_fmt_ram_bytes;
         let delta_changed = self.ram_delta_10s != self.last_fmt_delta;
         let count_changed = self.clone_count != self.last_fmt_process_count;
@@ -169,13 +178,13 @@ impl ProcessCpuItem {
         }
         // disk_io_text: only if total I/O rate changed
         let io_total = self.disk_read_mb_s + self.disk_write_mb_s;
-        if (io_total - self.last_fmt_io_total).abs() > f32::EPSILON {
+        if (io_total - self.last_fmt_io_total).abs() > 0.05 {
             self.disk_io_text = Arc::from(format!("{:.1} MB/s", io_total));
             self.last_fmt_io_total = io_total;
         }
 
         if self.clone_count <= 1 {
-            self.is_cpu_hog = self.cpu_pct >= CPU_HOG_THRESHOLD_PCT;
+            self.is_cpu_hog = is_process_cpu_hog(self.cpu_pct, self.cpu_pct);
         }
     }
 }

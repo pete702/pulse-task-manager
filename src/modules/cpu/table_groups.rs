@@ -13,6 +13,11 @@ pub fn sanitize_group_cpu_percent(v: f32) -> f32 {
     }
 }
 
+/// Formats the member count for a grouped clone row, e.g. "(3 procs)".
+pub fn group_member_count_label(count: usize) -> String {
+    format!("({count} procs)")
+}
+
 pub fn aggregate_grouped_items(items: Vec<ProcessCpuItem>) -> Vec<ProcessCpuItem> {
     let mut grouped: HashMap<Arc<str>, ProcessCpuItem> = HashMap::new();
     for mut item in items {
@@ -41,4 +46,15 @@ pub fn aggregate_grouped_items(items: Vec<ProcessCpuItem>) -> Vec<ProcessCpuItem
             .then_with(|| a.pid.cmp(&b.pid))
     });
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::group_member_count_label;
+
+    #[test]
+    fn group_member_count_label_formats() {
+        assert_eq!(group_member_count_label(3), "(3 procs)");
+        assert_eq!(group_member_count_label(1), "(1 procs)");
+    }
 }

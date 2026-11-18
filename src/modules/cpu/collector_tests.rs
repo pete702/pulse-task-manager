@@ -1,6 +1,6 @@
 //! CPU collector tests.
 
-use super::{pid_contains, CpuCollector};
+use super::{creation_probe_budget, pid_contains, CpuCollector};
 use crate::modules::cpu::table_sort::contains_ci;
 
 #[test]
@@ -44,6 +44,14 @@ fn contains_ci_ascii_and_unicode() {
     assert!(contains_ci(lower, upper));
     assert!(!contains_ci(lower, "other"));
 }
+#[test]
+fn creation_probe_budget_cold_and_warm() {
+    assert_eq!(creation_probe_budget(0), 256);
+    assert_eq!(creation_probe_budget(31), 256);
+    assert_eq!(creation_probe_budget(32), 128);
+    assert_eq!(creation_probe_budget(100), 128);
+}
+
 #[test]
 fn pid_contains_edges() {
     assert!(pid_contains(0, "0"));

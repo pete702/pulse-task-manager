@@ -30,6 +30,15 @@ struct DeltaState {
     last_attempt: Option<Instant>,
 }
 
+/// Probe budget helper for creation_time resolution.
+pub(crate) fn creation_probe_budget(cached_len: usize) -> usize {
+    if cached_len < 32 {
+        256
+    } else {
+        128
+    }
+}
+
 /// Internal state for tracking process memory deltas across ticks.
 /// Single HashMap keyed by (pid, start_time) where start_time = sysinfo Process::start_time().
 /// On first sighting (Vacant entry), we call query_creation_time_by_pid() ONCE and cache it.
@@ -70,13 +79,14 @@ impl ProcessDeltaTracker {
             .last_sample
             .map(|prev| now.saturating_duration_since(prev).as_secs_f64())
             .unwrap_or(0.0);
-        // A very short (or first-pass) interval must not produce an unrealistic spike rate.
-        let short_interval = dt_raw > 0.0 && dt_raw < 1.0;
+        // Short interval: dt in (0.05, 1.0) -- project instead of reset.
+        let short_interval = dt_raw > 0.05 && dt_raw < 1.0;
         let dt = dt_raw.max(MIN_DT_SECS);
         self.current_gen = self.current_gen.wrapping_add(1);
         let mut result = Vec::with_capacity(processes.len());
         // Syscall budget shared by new PIDs and deferred retries.
-        let mut budget: u32 = 64;
+        let probe_budget = creation_probe_budget(self.states.len());
+        let mut budget: u32 = probe_budget as u32;
 
         for (pid, name, ram, virt, exe_path, start_time) in processes {
             let key = (*pid, *start_time);
@@ -119,10 +129,18 @@ impl ProcessDeltaTracker {
             let identity = state.creation_time;
 
             // Treat very short / first-pass intervals like the stale-window rule: no delta.
-            let is_new = state.last_gen == 0 || dt > 15.0 || short_interval;
+            let is_new = state.last_gen == 0 || dt_raw > 15.0 || dt_raw <= 0.05;
             let prev = if is_new { *ram } else { state.prev_ram };
             let delta_bytes = *ram as i64 - prev as i64;
-            let delta_per_sec = (delta_bytes as f64 / dt).round() as i64;
+            let delta_per_sec = if is_new {
+                0
+            } else if short_interval {
+                let dt_clamped = dt_raw.max(0.2);
+                let scale = 10.0 / dt_clamped;
+                (delta_bytes as f64 * scale).round() as i64
+            } else {
+                (delta_bytes as f64 / dt).round() as i64
+            };
             let delta_per_sec = delta_per_sec.clamp(-MAX_DELTA_PER_SEC, MAX_DELTA_PER_SEC);
 
             state.prev_ram = *ram;

@@ -23,24 +23,29 @@ pub fn render_cpu_cards_row(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
     }
 }
 
+/// Pure helper for precision bar threshold color.
+pub(crate) fn precision_bar_color(pct: f32) -> egui::Color32 {
+    if pct >= 85.0 {
+        crate::theme::colors::ACCENT_RED
+    } else if pct >= 70.0 {
+        crate::theme::colors::ACCENT_AMBER
+    } else {
+        crate::theme::colors::ACCENT_CYAN
+    }
+}
+
 /// Smooth continuous precision bar with threshold marker (85%).
 pub fn draw_precision_bar_with_threshold(
     ui: &egui::Ui,
     rect: egui::Rect,
     ratio: f32,
-    active_color: egui::Color32,
+    _active_color: egui::Color32,
     threshold: f32,
 ) {
     let r = ratio.clamp(0.0, 1.0);
 
-    // Determine threshold color (same logic as draw_segmented_led_bar)
-    let threshold_color = if r >= 0.85 {
-        egui::Color32::from_rgb(239, 68, 68) // red alert
-    } else if r >= 0.70 {
-        egui::Color32::from_rgb(245, 158, 11) // amber warning
-    } else {
-        active_color
-    };
+    // Determine threshold color via pure helper.
+    let threshold_color = precision_bar_color(r * 100.0);
 
     // 1. Draw dark recessed track background
     let track_color = egui::Color32::from_rgba_unmultiplied(15, 23, 42, 220);
@@ -85,4 +90,21 @@ pub fn draw_precision_bar_with_threshold(
         ui.painter().rect_filled(cap_rect, egui::Rounding::ZERO, cap_color);
     }
     draw_tactical_ticks(ui, rect);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::precision_bar_color;
+    use crate::theme::colors;
+
+    #[test]
+    fn precision_bar_color_thresholds() {
+        assert_eq!(precision_bar_color(50.0), colors::ACCENT_CYAN);
+        assert_eq!(precision_bar_color(69.9), colors::ACCENT_CYAN);
+        assert_eq!(precision_bar_color(70.0), colors::ACCENT_AMBER);
+        assert_eq!(precision_bar_color(80.0), colors::ACCENT_AMBER);
+        assert_eq!(precision_bar_color(84.9), colors::ACCENT_AMBER);
+        assert_eq!(precision_bar_color(85.0), colors::ACCENT_RED);
+        assert_eq!(precision_bar_color(100.0), colors::ACCENT_RED);
+    }
 }

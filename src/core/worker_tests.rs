@@ -3,7 +3,12 @@
 #[cfg(test)]
 mod tests {
     use crate::core::worker::spawn_telemetry_worker;
+    use crate::core::worker_io::{
+        catch_collector_tick, catch_unwind_collector, compute_scheduler_overshoot_ms,
+        panic_recoveries as io_panic_recoveries, recover_collector_panic, reset_panic_recoveries,
+    };
     use crate::core::worker_io::{publish, PublishResult};
+    use crate::core::worker_loop::{set_worker_paused, worker_paused};
     use crate::core::worker_policy::{
         should_scan_processes, worker_tick_interval, WORKER_INTERVAL_MINIMIZED,
         WORKER_INTERVAL_VISIBLE,
@@ -148,10 +153,43 @@ mod tests {
 
     #[test]
     fn test_set_worker_paused_edge_transitions() {
-        use crate::core::worker_loop::set_worker_paused;
         set_worker_paused(false);
+        assert!(!worker_paused());
         set_worker_paused(false);
+        assert!(!worker_paused());
         set_worker_paused(true);
+        assert!(worker_paused());
         set_worker_paused(false);
+        assert!(!worker_paused());
+    }
+
+    #[test]
+    fn test_compute_scheduler_overshoot_ms() {
+        assert_eq!(compute_scheduler_overshoot_ms(1200, 1000, false), 200);
+        assert_eq!(compute_scheduler_overshoot_ms(900, 1000, false), 0);
+        assert_eq!(compute_scheduler_overshoot_ms(1500, 1000, true), 0);
+        assert_eq!(compute_scheduler_overshoot_ms(1000, 1000, false), 0);
+    }
+
+    #[test]
+    fn test_catch_unwind_increments_recovery_counter() {
+        reset_panic_recoveries();
+        let mut recoveries = 0u32;
+        let panicked = catch_collector_tick(|| panic!("boom"), &mut recoveries);
+        assert!(panicked);
+        assert_eq!(recoveries, 1);
+        let panicked = catch_collector_tick(|| {}, &mut recoveries);
+        assert!(!panicked);
+        assert_eq!(recoveries, 1);
+        let panicked = recover_collector_panic(|| panic!("again"), &mut recoveries);
+        assert!(panicked);
+        assert_eq!(recoveries, 2);
+        let panicked = catch_unwind_collector(|| panic!("third"), &mut recoveries);
+        assert!(panicked);
+        assert_eq!(recoveries, 3);
+        assert!(io_panic_recoveries() >= 3);
+        let _ = crate::core::worker_loop::panic_recoveries();
+        crate::core::worker_io::reset_dropped_snapshots();
+        let _ = crate::core::worker_io::dropped_snapshots();
     }
 }
