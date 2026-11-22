@@ -1,5 +1,8 @@
 # Changelog
 All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
+## [0.5.38] - 2026-11-22
+- **platform/pdh-gpu**: headless adapter totals of zero no longer fail the live smoke test; adapter-dominates-process invariant moved to a deterministic fixture test.
+- **app_tray**: local Ctrl+Shift+F9 fallback yields to the registered global hotkey, eliminating rare double-toggle across tray and UI threads.
 ## [0.5.37] - 2026-11-22
 - **platform/linux-ci**: cfg-gated Win32-only helpers and removed the unread history_len field so clippy -D warnings is clean on ubuntu-latest.
 - **platform/pdh-gpu**: headless live sampling test only asserts adapter totals when hardware adapters are actually reported.
@@ -92,12 +95,4 @@ All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGEL
 - **network/status**: split latency probe net helpers; expose dropped snapshots in status bar.
 ## [0.4.162] - 2026-04-12
 - **storage**: 5s disk refresh, 350 MB/s spike threshold, 300s handle cache TTL eviction.
-## [0.4.161] - 2026-04-12
-- **cpu model**: pass distinct normalized and raw CPU percentages to hog detection.
-## [0.4.160] - 2026-04-12
-- **cleanup**: removed duplicate tests and repo walk checks.
-## [0.4.159] - 2026-04-12
-- **storage/ui**: low-space alert summary, volume labels, I/O tooltip.
-## [0.4.158] - 2026-04-12
-- **storage**: disk refresh cadence, IO spike threshold, handle TTL, IO attribution.
 

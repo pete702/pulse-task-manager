@@ -65,9 +65,19 @@ pub(crate) fn should_use_fast_process_cadence(tab: crate::app_tabs::ActiveTab) -
     matches!(tab, crate::app_tabs::ActiveTab::Cpu | crate::app_tabs::ActiveTab::Processes)
 }
 
-/// Local safeguard: bare F9 or Ctrl+Shift+F9 while the window is focused.
-pub(crate) fn local_toggle_pressed(focused: bool, f9: bool, ctrl: bool, shift: bool) -> bool {
-    focused && f9 && ((!ctrl && !shift) || (ctrl && shift))
+/// Bare F9 always works; Ctrl+Shift+F9 is a fallback only when no global hotkey
+/// is actively registered, so WM_HOTKEY and the UI frame cannot both toggle.
+pub(crate) fn local_toggle_pressed(
+    focused: bool,
+    f9: bool,
+    ctrl: bool,
+    shift: bool,
+    global_registered: bool,
+) -> bool {
+    if !focused || !f9 {
+        return false;
+    }
+    (!ctrl && !shift) || (ctrl && shift && !global_registered)
 }
 
 pub fn update(app: &mut PulseApp, ctx: &egui::Context) {
@@ -113,6 +123,11 @@ pub fn update(app: &mut PulseApp, ctx: &egui::Context) {
             }
         }
     }
+    #[cfg(target_os = "windows")]
+    let global_registered =
+        hotkey::is_global_hotkey_enabled() && hotkey::hotkey_status_label() != "Busy";
+    #[cfg(not(target_os = "windows"))]
+    let global_registered = false;
     if hotkey::take_mini_hud_toggle_request()
         || ctx.input(|i| {
             local_toggle_pressed(
@@ -120,6 +135,7 @@ pub fn update(app: &mut PulseApp, ctx: &egui::Context) {
                 i.key_pressed(egui::Key::F9),
                 i.modifiers.ctrl,
                 i.modifiers.shift,
+                global_registered,
             )
         })
     {
@@ -161,11 +177,19 @@ mod tests {
 
     #[test]
     fn local_f9_and_ctrl_shift_f9_toggle() {
-        assert!(local_toggle_pressed(true, true, false, false));
-        assert!(local_toggle_pressed(true, true, true, true));
-        assert!(!local_toggle_pressed(false, true, true, true));
-        assert!(!local_toggle_pressed(true, true, true, false));
-        assert!(!local_toggle_pressed(true, false, false, false));
+        assert!(local_toggle_pressed(true, true, false, false, true));
+        assert!(local_toggle_pressed(true, true, false, false, false));
+        assert!(local_toggle_pressed(true, true, true, true, false));
+        assert!(!local_toggle_pressed(false, true, true, true, false));
+        assert!(!local_toggle_pressed(true, true, true, false, false));
+        assert!(!local_toggle_pressed(true, false, false, false, false));
+    }
+
+    #[test]
+    fn local_ctrl_shift_f9_yields_to_active_global_hotkey() {
+        assert!(!local_toggle_pressed(true, true, true, true, true));
+        assert!(local_toggle_pressed(true, true, true, true, false));
+        assert!(local_toggle_pressed(true, true, false, false, true));
     }
 
     #[test]
