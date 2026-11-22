@@ -43,8 +43,10 @@ pub struct PulseApp {
     pub(crate) dirty_state_snapshot: Option<persist::PersistedState>,
     pub(crate) pointer_down: bool,
     pub(crate) last_self_trim: Instant,
+    #[cfg(target_os = "windows")]
     pub(crate) main_hwnd: isize,
     pub(crate) tray: Option<crate::platform::tray::TrayGuard>,
+    #[cfg(target_os = "windows")]
     pub(crate) tray_rx: Option<std::sync::mpsc::Receiver<crate::platform::tray::TrayAction>>,
     pub(crate) tray_tooltip_last: Instant,
 }
@@ -82,8 +84,10 @@ impl PulseApp {
             dirty_state_snapshot: None,
             pointer_down: false,
             last_self_trim: Instant::now(),
+            #[cfg(target_os = "windows")]
             main_hwnd: 0,
             tray: None,
+            #[cfg(target_os = "windows")]
             tray_rx: None,
             tray_tooltip_last: Instant::now(),
         };

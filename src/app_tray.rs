@@ -2,8 +2,10 @@ use crate::app::PulseApp;
 use crate::app_cmd::AppCommand;
 use crate::core::worker_policy;
 use crate::platform::hotkey;
+use crate::platform::tray;
 pub use crate::platform::tray::set_allow_real_close;
-use crate::platform::tray::{self, TrayAction};
+#[cfg(target_os = "windows")]
+use crate::platform::tray::TrayAction;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -20,6 +22,7 @@ pub fn admin_restart_failed() -> bool {
     ADMIN_RESTART_FAILED.load(Ordering::SeqCst)
 }
 
+#[cfg(target_os = "windows")]
 pub fn mark_admin_restart_failed() {
     ADMIN_RESTART_FAILED.store(true, Ordering::SeqCst);
 }
@@ -27,6 +30,8 @@ pub fn mark_admin_restart_failed() {
 fn hide_window_to_tray(app: &mut PulseApp) {
     #[cfg(target_os = "windows")]
     let hidden = tray::hide_main_window(app.main_hwnd);
+    #[cfg(not(target_os = "windows"))]
+    let _ = app;
     #[cfg(not(target_os = "windows"))]
     let hidden = false;
     if hidden {
@@ -80,24 +85,31 @@ pub fn update(app: &mut PulseApp, ctx: &egui::Context) {
             }
         }
     }
-    let mut actions = Vec::new();
-    if let Some(rx) = &app.tray_rx {
-        while let Ok(a) = rx.try_recv() {
-            actions.push(a);
-        }
+    #[cfg(not(target_os = "windows"))]
+    if app.tray.is_none() {
+        let (guard, _rx) = tray::start_tray(0, ctx.clone());
+        app.tray = Some(guard);
     }
-    for action in actions {
-        match action {
-            TrayAction::Open => {
-                #[cfg(target_os = "windows")]
-                tray::restore_main_window(app.main_hwnd);
-                worker_policy::set_tray_hidden(false);
-                app.worker.request_process_scan();
+    #[cfg(target_os = "windows")]
+    {
+        let mut actions = Vec::new();
+        if let Some(rx) = &app.tray_rx {
+            while let Ok(a) = rx.try_recv() {
+                actions.push(a);
             }
-            TrayAction::TogglePause => app.apply_command(AppCommand::TogglePause),
-            TrayAction::Exit => {
-                tray::set_allow_real_close(true);
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        for action in actions {
+            match action {
+                TrayAction::Open => {
+                    tray::restore_main_window(app.main_hwnd);
+                    worker_policy::set_tray_hidden(false);
+                    app.worker.request_process_scan();
+                }
+                TrayAction::TogglePause => app.apply_command(AppCommand::TogglePause),
+                TrayAction::Exit => {
+                    tray::set_allow_real_close(true);
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
             }
         }
     }
@@ -126,14 +138,14 @@ pub fn update(app: &mut PulseApp, ctx: &egui::Context) {
         if let Some(snap) = &app.latest_snapshot {
             let cpu = snap.cpu.as_ref().map(|c| c.total_pct as u32).unwrap_or(0);
             let ram = snap.memory.as_ref().map(|m| m.ram_usage_percent() as u32).unwrap_or(0);
-            let tip = format!(
+            let _tip = format!(
                 "PULSE | CPU {}% | RAM {}% | HK {}",
                 cpu,
                 ram,
                 hotkey::hotkey_status_label()
             );
             #[cfg(target_os = "windows")]
-            tray::update_tray_tooltip(&tip);
+            tray::update_tray_tooltip(&_tip);
             app.tray_tooltip_last = Instant::now();
         }
     }

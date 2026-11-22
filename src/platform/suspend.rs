@@ -7,8 +7,11 @@ extern "system" {
     fn NtSuspendProcess(ProcessHandle: isize) -> i32;
     fn NtResumeProcess(ProcessHandle: isize) -> i32;
 }
+#[cfg(target_os = "windows")]
 const SUSPEND_ACCESS: u32 = 0x0800 | 0x1000;
+#[cfg(any(target_os = "windows", test))]
 const TICKS: u64 = 10_000_000;
+#[cfg(any(target_os = "windows", test))]
 const EPOCH: u64 = 11_644_473_600;
 const BLOCKLIST: &str = "dwm.exe explorer.exe csrss.exe audiodg.exe textinputhost.exe svchost.exe winlogon.exe lsass.exe smss.exe services.exe sihost.exe taskmgr.exe";
 /// Outcome of a verified mutating action, suitable for the status bar.
@@ -18,6 +21,7 @@ pub struct ActionResult {
     pub message: String,
 }
 impl ActionResult {
+    #[cfg(any(target_os = "windows", test))]
     pub fn success(m: impl Into<String>) -> Self {
         Self { ok: true, message: m.into() }
     }
@@ -53,6 +57,7 @@ pub fn is_process_suspended(pid: u32, ct: u64) -> bool {
     found
 }
 /// Pure FILETIME to Unix-seconds conversion used for the passport check.
+#[cfg(any(target_os = "windows", test))]
 pub fn filetime_to_unix_secs(ft: u64) -> u64 {
     (ft / TICKS).saturating_sub(EPOCH)
 }

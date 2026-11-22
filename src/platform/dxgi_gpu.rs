@@ -1,7 +1,6 @@
-//! Pure DXGI enumeration; system-wide adapter usage comes from PDH counters.
-//! COM slots: IUnknown 0-2, EnumAdapters1 12, GetDesc1 10, QueryVideoMemoryInfo 14 (budget only).
-//! dxgi1_4.h / windows-rs IDXGIAdapter3_Vtbl: [12]=RegisterHWC,
-//! [13]=UnregisterHWC, [14]=QueryVideoMemoryInfo. NEVER move this call to slot 12.
+//! Pure DXGI enumeration; adapter usage comes from PDH counters.
+//! COM slots: EnumAdapters1 12, GetDesc1 10, QueryVideoMemoryInfo 14 (budget only).
+#[cfg(target_os = "windows")]
 use std::ffi::c_void;
 #[cfg(target_os = "windows")]
 #[link(name = "dxgi")]
@@ -10,6 +9,7 @@ extern "system" {
 }
 #[repr(C)]
 #[derive(Clone, Copy)]
+#[cfg(target_os = "windows")]
 struct Guid {
     data1: u32,
     data2: u16,
@@ -31,12 +31,14 @@ const IID_IDXGI_ADAPTER3: Guid = Guid {
     data4: [0xa7, 0x98, 0x80, 0x53, 0xce, 0x3e, 0x93, 0xfd],
 };
 #[repr(C)]
+#[cfg(target_os = "windows")]
 struct IUnknownVtbl {
     query_interface: unsafe extern "system" fn(*mut c_void, *const Guid, *mut *mut c_void) -> i32,
     _add_ref: unsafe extern "system" fn(*mut c_void) -> u32,
     release: unsafe extern "system" fn(*mut c_void) -> u32,
 }
 #[repr(C)]
+#[cfg(target_os = "windows")]
 struct Factory1Vtbl {
     _base: IUnknownVtbl,
     _object: [*mut c_void; 4],
@@ -44,15 +46,15 @@ struct Factory1Vtbl {
     enum_adapters1: unsafe extern "system" fn(*mut c_void, u32, *mut *mut c_void) -> i32,
 }
 #[repr(C)]
+#[cfg(target_os = "windows")]
 struct Adapter1Vtbl {
     _base: IUnknownVtbl,
     _object: [*mut c_void; 4],
     _adapter: [*mut c_void; 3],
     get_desc1: unsafe extern "system" fn(*mut c_void, *mut DxgiAdapterDesc1) -> i32,
 }
-/// IDXGIAdapter3 vtable: slots 0-11 inherited, 12=RegisterHWC,
-/// 13=UnregisterHWC, 14=QueryVideoMemoryInfo (per dxgi1_4.h).
 #[repr(C)]
+#[cfg(target_os = "windows")]
 struct Adapter3Vtbl {
     _base: IUnknownVtbl,
     _object: [*mut c_void; 4],
@@ -65,11 +67,13 @@ struct Adapter3Vtbl {
 }
 #[repr(C)]
 #[derive(Default)]
+#[cfg(target_os = "windows")]
 struct Luid {
     low_part: u32,
     high_part: i32,
 }
 #[repr(C)]
+#[cfg(target_os = "windows")]
 struct DxgiAdapterDesc1 {
     description: [u16; 128],
     vendor_id: u32,
@@ -84,15 +88,18 @@ struct DxgiAdapterDesc1 {
 }
 #[repr(C)]
 #[derive(Default)]
+#[cfg(target_os = "windows")]
 struct DxgiQueryVideoMemoryInfo {
     budget: u64,
     current_usage: u64,
     _available_for_reservation: u64,
     _current_reservation: u64,
 }
+#[cfg(target_os = "windows")]
 struct ComPtr {
     ptr: *mut c_void,
 }
+#[cfg(target_os = "windows")]
 impl ComPtr {
     fn null() -> Self {
         Self { ptr: std::ptr::null_mut() }
@@ -113,6 +120,7 @@ impl ComPtr {
     }
 }
 #[allow(unsafe_code)]
+#[cfg(target_os = "windows")]
 impl Drop for ComPtr {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
@@ -138,24 +146,26 @@ pub struct DxgiGpuAdapter {
     pub dedicated_budget_bytes: u64,
     pub shared_is_spill: bool,
 }
-/// Combines the two halves of a DXGI LUID into one comparable value.
+#[cfg(any(target_os = "windows", test))]
 pub fn pack_luid(low: u32, high: i32) -> u64 {
     ((high as u64) << 32) | low as u64
 }
 /// True for `DXGI_ADAPTER_FLAG_SOFTWARE` or the Microsoft WARP adapter.
+#[cfg(any(target_os = "windows", test))]
 pub fn is_software_adapter(flags: u32, vendor_id: u32, device_id: u32) -> bool {
     (flags & 2) != 0 || (vendor_id == 0x1414 && device_id == 0x008c)
 }
+#[cfg(any(target_os = "windows", test))]
 pub fn is_integrated_gpu(vendor_id: u32, dedicated: u64, shared: u64) -> bool {
     matches!(vendor_id, 0x8086 | 0x5143 | 0x1002)
         && dedicated <= 512 * 1024 * 1024
         && shared > dedicated
 }
-/// Spill is only meaningful on a discrete adapter; APUs share system RAM by design.
+#[cfg(any(target_os = "windows", test))]
 pub fn adapter_shared_is_spill(integrated: bool, shared_used: u64) -> bool {
     !integrated && crate::platform::pdh_gpu::is_vram_spill(shared_used)
 }
-/// Small carve-outs and APU vendors are shared-memory GPUs, not discrete VRAM.
+#[cfg(any(target_os = "windows", test))]
 pub fn classify_gpu_memory_kind(vendor: u32, ded: u64, shared: u64) -> &'static str {
     if is_integrated_gpu(vendor, ded, shared) {
         "Integrated (Shared RAM)"
@@ -164,6 +174,7 @@ pub fn classify_gpu_memory_kind(vendor: u32, ded: u64, shared: u64) -> &'static 
     }
 }
 /// Decodes a fixed UTF-16 DXGI description, trimming NULs and outer spaces.
+#[cfg(any(target_os = "windows", test))]
 pub fn decode_adapter_description(raw: &[u16; 128]) -> String {
     let len = raw.iter().position(|&c| c == 0).unwrap_or(raw.len());
     String::from_utf16_lossy(&raw[..len]).trim().to_string()
@@ -214,7 +225,6 @@ fn windows_query() -> Vec<DxgiGpuAdapter> {
         return Vec::new();
     }
     let telemetry = crate::platform::pdh_gpu::sample_gpu_telemetry();
-    let _history_ready = telemetry.history_len > 0;
     let totals = telemetry.adapters;
     let factory_vtbl = unsafe { factory.vtable::<Factory1Vtbl>() };
     let mut hardware = Vec::new();

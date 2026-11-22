@@ -2,8 +2,11 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static ARMED: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "windows")]
 const GA_ROOT: u32 = 2;
+#[cfg(target_os = "windows")]
 const VK_LEFT_BUTTON: i32 = 0x01;
+#[cfg(target_os = "windows")]
 const VK_ESCAPE: i32 = 0x1B;
 
 #[cfg(target_os = "windows")]
@@ -40,6 +43,7 @@ pub fn is_pick_window_armed() -> bool {
 }
 
 /// Pure self-PID filter: zero and the caller's own PID are never selectable.
+#[cfg(any(target_os = "windows", test))]
 pub fn filter_picked_pid(pid: u32, self_pid: u32) -> Option<u32> {
     if pid != 0 && pid != self_pid {
         Some(pid)

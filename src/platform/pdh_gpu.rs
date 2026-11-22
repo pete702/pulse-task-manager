@@ -1,10 +1,9 @@
 //! Persistent PDH query: total adapter VRAM, per-process VRAM, GPU % and paged est.
 #[cfg(target_os = "windows")]
 use super::pdh_gpu_counters::{aggregate, read_wide, wide, CounterRows};
-pub use super::pdh_gpu_counters::{
-    detect_ai_model_tag, is_vram_spill, AdapterMemoryTotals, GpuHistoryRing, GpuHistorySample,
-    GpuTelemetrySnapshot,
-};
+pub use super::pdh_gpu_counters::{detect_ai_model_tag, is_vram_spill, GpuTelemetrySnapshot};
+#[cfg(target_os = "windows")]
+pub use super::pdh_gpu_counters::{AdapterMemoryTotals, GpuHistoryRing, GpuHistorySample};
 use std::collections::HashMap;
 #[cfg(target_os = "windows")]
 use std::time::{Duration, Instant};
@@ -16,16 +15,20 @@ const PDH_FMT_NOCAP100: u32 = 0x0000_8000;
 const PDH_MORE_DATA: i32 = 0x8000_07D2u32 as i32;
 #[cfg(target_os = "windows")]
 const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
+#[cfg(any(target_os = "windows", test))]
 const INITIAL_BACKOFF_SECS: u64 = 5;
+#[cfg(any(target_os = "windows", test))]
 const MAX_BACKOFF_SECS: u64 = 60;
 
 /// True when PdhCollectQueryData succeeded or returned benign PDH_NO_DATA.
+#[cfg(any(target_os = "windows", test))]
 pub fn collect_status_ok(status: i32) -> bool {
     const PDH_NO_DATA: i32 = 0x8000_07D5u32 as i32;
     status == 0 || status == PDH_NO_DATA
 }
 
 /// Pure backoff progression: 5 -> 10 -> 20 -> 40 -> 60 -> 60.
+#[cfg(any(target_os = "windows", test))]
 pub fn next_backoff_secs(current: u64) -> u64 {
     if current == 0 {
         INITIAL_BACKOFF_SECS
@@ -49,6 +52,7 @@ extern "system" {
     fn PdhCloseQuery(query: isize) -> i32;
 }
 #[repr(C)]
+#[cfg(target_os = "windows")]
 struct PdhItem {
     sz_name: *mut u16,
     c_status: u32,
@@ -240,10 +244,6 @@ pub fn sample_gpu_telemetry() -> GpuTelemetrySnapshot {
 pub fn sample_gpu_history() -> GpuHistoryRing {
     let lock = HISTORY.get_or_init(|| std::sync::Mutex::new(GpuHistoryRing::with_cap(120)));
     lock.lock().unwrap_or_else(|err| err.into_inner()).clone()
-}
-#[cfg(not(target_os = "windows"))]
-pub fn sample_gpu_history() -> GpuHistoryRing {
-    GpuHistoryRing::default()
 }
 #[cfg(target_os = "windows")]
 pub fn sample_process_gpu_memory() -> HashMap<u32, (u64, u64)> {

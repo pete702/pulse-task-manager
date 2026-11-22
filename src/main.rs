@@ -234,13 +234,17 @@ fn main() -> eframe::Result<()> {
         core::selftest::run_self_test(options)
     } else {
         let instance_outcome = crate::platform::instance::acquire_single_instance();
+        #[cfg(target_os = "windows")]
         if let crate::platform::instance::AcquireOutcome::AlreadyRunningWoken = instance_outcome {
             return Ok(());
         }
+        #[cfg(target_os = "windows")]
         let _instance_guard = match instance_outcome {
             crate::platform::instance::AcquireOutcome::Primary(g) => g,
             crate::platform::instance::AcquireOutcome::AlreadyRunningWoken => unreachable!(),
         };
+        #[cfg(not(target_os = "windows"))]
+        let crate::platform::instance::AcquireOutcome::Primary(_instance_guard) = instance_outcome;
         let saved_for_app = saved.clone();
         eframe::run_native(
             "PULSE",

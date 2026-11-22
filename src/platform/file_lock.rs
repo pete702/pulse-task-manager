@@ -2,6 +2,7 @@
 use std::path::PathBuf;
 
 pub const MAX_LOCK_FILES: usize = 64;
+#[cfg(target_os = "windows")]
 const ERROR_MORE_DATA: u32 = 234;
 const CWD_NOTE: &str = "Note: Restart Manager detects open file/DLL handles; folder cwd locks held by a shell are not reported by RM.";
 

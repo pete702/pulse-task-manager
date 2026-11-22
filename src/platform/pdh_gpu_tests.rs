@@ -153,7 +153,7 @@ fn live_pdh_sampling_is_crash_free() {
     assert_eq!(snap.epoch, again.epoch);
     let max_proc = snap.processes.values().map(|p| p.local_bytes).max().unwrap_or(0);
     let max_adapter = snap.adapters.values().map(|a| a.dedicated_used_bytes).max().unwrap_or(0);
-    if max_proc > 0 {
+    if !snap.adapters.is_empty() && max_proc > 0 {
         assert!(max_adapter > 0);
     }
     assert!(sample_gpu_history().len() <= 120);

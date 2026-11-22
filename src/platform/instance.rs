@@ -1,13 +1,17 @@
+#[cfg(any(target_os = "windows", test))]
 use crate::platform::sys_metrics::is_pulse_main_window_title;
+#[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicIsize, Ordering};
 
 /// Handle of the acquired single-instance mutex (0 = none held).
+#[cfg(target_os = "windows")]
 static INSTANCE_MUTEX_HANDLE: AtomicIsize = AtomicIsize::new(0);
 
 pub struct SingleInstanceGuard;
 
 pub enum AcquireOutcome {
     Primary(SingleInstanceGuard),
+    #[cfg(target_os = "windows")]
     AlreadyRunningWoken,
 }
 
@@ -26,6 +30,7 @@ pub fn acquire_single_instance() -> AcquireOutcome {
     }
 }
 
+#[cfg(any(target_os = "windows", test))]
 pub fn decide_already_exists_outcome(woken: bool) -> bool {
     woken
 }
@@ -49,6 +54,7 @@ impl Drop for SingleInstanceGuard {
 }
 
 /// Closes the held mutex so a restarted elevated instance can acquire it.
+#[cfg(target_os = "windows")]
 pub fn release_single_instance_mutex() {
     let handle = INSTANCE_MUTEX_HANDLE.swap(0, Ordering::SeqCst);
     #[cfg(target_os = "windows")]
@@ -58,12 +64,14 @@ pub fn release_single_instance_mutex() {
 }
 
 /// Pure check: a valid handle is required and ERROR_ALREADY_EXISTS means another owner.
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn reacquire_ok(handle: isize, last_error: u32) -> bool {
     const ERROR_ALREADY_EXISTS: u32 = 183;
     handle != 0 && last_error != ERROR_ALREADY_EXISTS
 }
 
 /// Re-acquires the mutex after a cancelled UAC prompt; true when held again.
+#[cfg(target_os = "windows")]
 pub fn reacquire_single_instance_mutex() -> bool {
     #[cfg(target_os = "windows")]
     {
@@ -143,10 +151,12 @@ pub fn restart_as_admin(portable: bool) -> bool {
     }
 }
 
+#[cfg(any(target_os = "windows", test))]
 pub fn basename_of(path: &str) -> &str {
     path.rsplit(['\\', '/']).next().unwrap_or(path)
 }
 
+#[cfg(any(target_os = "windows", test))]
 pub fn window_matches(
     current_pid: u32,
     candidate_pid: u32,

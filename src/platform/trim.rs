@@ -55,6 +55,7 @@ pub enum TrimSkipReason {
 }
 
 /// Maps a Win32 error code for handle-open/operation failures.
+#[cfg(target_os = "windows")]
 #[cfg(any(target_os = "windows", test))]
 pub fn map_win32_error(code: u32) -> TrimSkipReason {
     #[cfg(target_os = "windows")]

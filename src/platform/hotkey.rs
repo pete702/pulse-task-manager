@@ -1,24 +1,39 @@
 //! Single global Mini-HUD hotkey with registration fallback and a runtime toggle.
 //! Primary Ctrl+Shift+F9 avoids Alt+F9 / Ctrl+Alt+F9 (NVIDIA Overlay).
 
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
+#[cfg(target_os = "windows")]
+use std::sync::atomic::AtomicIsize;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+#[cfg(target_os = "windows")]
 pub const HOTKEY_ID_MINI_HUD: i32 = 1;
+#[cfg(any(target_os = "windows", test))]
 pub const MOD_ALT: u32 = 0x0001;
+#[cfg(any(target_os = "windows", test))]
 pub const MOD_CONTROL: u32 = 0x0002;
+#[cfg(any(target_os = "windows", test))]
 pub const MOD_SHIFT: u32 = 0x0004;
+#[cfg(any(target_os = "windows", test))]
 pub const MOD_NOREPEAT: u32 = 0x4000;
+#[cfg(any(target_os = "windows", test))]
 pub const VK_F9: u32 = 0x78;
+#[cfg(any(target_os = "windows", test))]
 pub const VK_F10: u32 = 0x79;
+#[cfg(target_os = "windows")]
 pub const WM_HOTKEY: u32 = 0x0312;
+#[cfg(target_os = "windows")]
 pub const WM_APP_REBIND_HOTKEY: u32 = 0x0400 + 201;
+#[cfg(any(target_os = "windows", test))]
 pub const PRIMARY_HOTKEY: (u32, u32) = (MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_F9);
+#[cfg(any(target_os = "windows", test))]
 pub const FALLBACK_HOTKEY: (u32, u32) = (MOD_ALT | MOD_SHIFT | MOD_NOREPEAT, VK_F9);
+#[cfg(any(target_os = "windows", test))]
 pub const THIRD_HOTKEY: (u32, u32) = (MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, VK_F10);
 pub const HOTKEY_TOOLTIP: &str =
     "Global Mini-HUD hotkey: Ctrl+Shift+F9 (fallbacks Alt+Shift+F9, Ctrl+Shift+F10)";
 
 /// Registration order: primary first, then two silent fallbacks when occupied.
+#[cfg(any(target_os = "windows", test))]
 pub fn registration_candidates() -> [(u32, u32); 3] {
     [PRIMARY_HOTKEY, FALLBACK_HOTKEY, THIRD_HOTKEY]
 }
@@ -28,6 +43,7 @@ static MINI_HUD_ACTIVE: AtomicBool = AtomicBool::new(false);
 static GLOBAL_HOTKEY_ENABLED: AtomicBool = AtomicBool::new(true);
 static ACTIVE_CANDIDATE: AtomicUsize = AtomicUsize::new(0);
 static HOTKEY_BUSY: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "windows")]
 static TRAY_HWND_HOTKEY: AtomicIsize = AtomicIsize::new(0);
 
 pub fn is_global_hotkey_enabled() -> bool {
@@ -53,6 +69,7 @@ pub fn hotkey_status_label() -> &'static str {
     }
 }
 
+#[cfg(target_os = "windows")]
 pub fn set_tray_hwnd(hwnd: isize) {
     TRAY_HWND_HOTKEY.store(hwnd, Ordering::SeqCst);
 }
@@ -77,6 +94,7 @@ pub fn request_rebind() {
     }
 }
 
+#[cfg(any(target_os = "windows", test))]
 pub fn request_mini_hud_toggle() {
     MINI_HUD_TOGGLE_REQUEST.store(true, Ordering::SeqCst);
 }
@@ -131,19 +149,6 @@ pub fn unregister_global_hotkey(hwnd: isize) {
     use windows_sys::Win32::Foundation::HWND;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::UnregisterHotKey;
     unsafe { UnregisterHotKey(hwnd as HWND, HOTKEY_ID_MINI_HUD) };
-    ACTIVE_CANDIDATE.store(0, Ordering::SeqCst);
-    HOTKEY_BUSY.store(false, Ordering::SeqCst);
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn register_global_hotkey(_hwnd: isize) -> bool {
-    ACTIVE_CANDIDATE.store(0, Ordering::SeqCst);
-    HOTKEY_BUSY.store(false, Ordering::SeqCst);
-    true
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn unregister_global_hotkey(_hwnd: isize) {
     ACTIVE_CANDIDATE.store(0, Ordering::SeqCst);
     HOTKEY_BUSY.store(false, Ordering::SeqCst);
 }

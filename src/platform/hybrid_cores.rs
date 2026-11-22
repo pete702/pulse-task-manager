@@ -1,7 +1,9 @@
 //! Hybrid CPU detection and verified process affinity pinning (Windows only).
 use crate::platform::suspend::ActionResult;
 use std::sync::OnceLock;
+#[cfg(target_os = "windows")]
 const REL: u32 = 0;
+#[cfg(target_os = "windows")]
 const AFFINITY_ACCESS: u32 = 0x0200 | 0x1000;
 
 #[cfg(target_os = "windows")]
@@ -15,6 +17,7 @@ extern "system" {
     fn SetProcessAffinityMask(handle: isize, mask: usize) -> i32;
 }
 
+#[cfg(target_os = "windows")]
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct GroupAffinity {
@@ -23,6 +26,7 @@ struct GroupAffinity {
     reserved: [u16; 3],
 }
 
+#[cfg(target_os = "windows")]
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct ProcessorRelationship {
@@ -33,6 +37,7 @@ struct ProcessorRelationship {
     group_mask: [GroupAffinity; 1],
 }
 
+#[cfg(target_os = "windows")]
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct LogicalProcessorInfoEx {
@@ -71,6 +76,7 @@ fn parse_core_records(words: &[u64], used: usize) -> (Vec<(u8, usize)>, bool) {
 }
 
 /// Pure helper: split physical-core masks into P-core and E-core masks.
+#[cfg(any(target_os = "windows", test))]
 pub fn compute_hybrid_masks(cores: &[(u8, usize)], total: usize) -> Option<(usize, usize)> {
     if total == 0 || total > 64 || cores.is_empty() {
         return None;
@@ -213,14 +219,17 @@ pub fn set_process_affinity_verified(
     #[cfg(not(target_os = "windows"))]
     {
         let _ = (expected_start_time, expected_exe_path, mask, label);
-        return ActionResult::failure("Affinity unavailable on this platform".to_owned());
+        ActionResult::failure("Affinity unavailable on this platform".to_owned())
     }
-    let message = if label == "All Cores" {
-        format!("PID {pid}: affinity reset to All Cores")
-    } else {
-        format!("PID {pid}: pinned to {label} (mask 0x{mask:X})")
-    };
-    ActionResult::success(message)
+    #[cfg(target_os = "windows")]
+    {
+        let message = if label == "All Cores" {
+            format!("PID {pid}: affinity reset to All Cores")
+        } else {
+            format!("PID {pid}: pinned to {label} (mask 0x{mask:X})")
+        };
+        ActionResult::success(message)
+    }
 }
 
 /// Runs the single/multi-PID affinity loop; returns the success count and status message.

@@ -1,6 +1,9 @@
 //! Pure PDH GPU parsing, aggregation and snapshot types (no Win32 calls).
+#[cfg(any(target_os = "windows", test))]
 use crate::platform::dxgi_gpu::pack_luid;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
+#[cfg(target_os = "windows")]
+use std::collections::VecDeque;
 /// Per-process GPU telemetry aggregated from PDH counters.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ProcessGpuTelemetry {
@@ -14,6 +17,7 @@ pub struct ProcessGpuTelemetry {
     pub gpu_pct: Option<f32>,
 }
 /// System-wide memory totals for one adapter, matched by exact packed LUID.
+#[cfg(any(target_os = "windows", test))]
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AdapterMemoryTotals {
     pub luid: u64,
@@ -24,12 +28,13 @@ pub struct AdapterMemoryTotals {
 /// Cached snapshot of all GPU telemetry for one successful collection tick.
 #[derive(Clone, Debug, Default)]
 pub struct GpuTelemetrySnapshot {
+    #[cfg(any(target_os = "windows", test))]
     pub adapters: HashMap<u64, AdapterMemoryTotals>,
     pub processes: HashMap<u32, ProcessGpuTelemetry>,
     pub epoch: u64,
-    pub history_len: usize,
 }
 #[derive(Clone, Debug, Default, PartialEq)]
+#[cfg(target_os = "windows")]
 pub struct GpuHistorySample {
     pub epoch: u64,
     pub dedicated_used_bytes: u64,
@@ -37,10 +42,12 @@ pub struct GpuHistorySample {
     pub busiest_gpu_pct: f32,
 }
 #[derive(Clone, Debug, Default)]
+#[cfg(target_os = "windows")]
 pub struct GpuHistoryRing {
     samples: VecDeque<GpuHistorySample>,
     cap: usize,
 }
+#[cfg(target_os = "windows")]
 impl GpuHistoryRing {
     pub fn with_cap(cap: usize) -> Self {
         Self { samples: VecDeque::new(), cap: cap.max(1) }
@@ -56,6 +63,7 @@ impl GpuHistoryRing {
     }
 }
 #[derive(Clone, Debug, Default)]
+#[cfg(any(target_os = "windows", test))]
 pub struct CounterRows {
     pub local: Vec<(String, f64)>,
     pub non_local: Vec<(String, f64)>,
@@ -66,6 +74,7 @@ pub struct CounterRows {
     pub adapter_shared: Vec<(String, f64)>,
     pub engines: Vec<(String, f64)>,
 }
+#[cfg(target_os = "windows")]
 impl CounterRows {
     pub fn is_empty(&self) -> bool {
         [
@@ -83,6 +92,7 @@ impl CounterRows {
     }
 }
 /// Parses `luid_0x00000000_0x0000E9B0_phys_0` into a packed u64 LUID.
+#[cfg(any(target_os = "windows", test))]
 pub fn parse_adapter_luid(instance: &str) -> Option<u64> {
     let tail = instance.strip_prefix("luid_0x")?;
     let (high_s, rest) = tail.split_once('_')?;
@@ -92,6 +102,7 @@ pub fn parse_adapter_luid(instance: &str) -> Option<u64> {
     Some(pack_luid(low, high as i32))
 }
 /// Parses `pid_1234_luid_0x..._0x..._...` into `(pid, packed_luid)`.
+#[cfg(any(target_os = "windows", test))]
 pub fn parse_engine_pid_luid(instance: &str) -> Option<(u32, u64)> {
     let tail = instance.strip_prefix("pid_")?;
     let (pid_s, luid_part) = tail.split_once('_')?;
@@ -99,6 +110,7 @@ pub fn parse_engine_pid_luid(instance: &str) -> Option<(u32, u64)> {
     Some((pid, parse_adapter_luid(luid_part)?))
 }
 /// Extracts `1234` from `pid_1234_luid_0x00000000_0x00012345_phys_0`.
+#[cfg(any(target_os = "windows", test))]
 pub fn parse_pdh_gpu_instance_pid(instance_name: &str) -> Option<u32> {
     let rest = instance_name.strip_prefix("pid_")?;
     let end = rest.find('_').unwrap_or(rest.len());
@@ -109,6 +121,7 @@ pub fn is_vram_spill(non_local_bytes: u64) -> bool {
     non_local_bytes > 128 * 1024 * 1024
 }
 /// Rejects driver glitches and clamps the display value to 0..=100.
+#[cfg(any(target_os = "windows", test))]
 pub fn clean_engine_pct(raw: f64) -> Option<f32> {
     if !raw.is_finite() || raw < 0.0 || raw > 1000.0 {
         return None;
@@ -116,6 +129,7 @@ pub fn clean_engine_pct(raw: f64) -> Option<f32> {
     Some((raw as f32).clamp(0.0, 100.0))
 }
 /// Paged pool estimate: committed minus locally and non-locally resident bytes.
+#[cfg(any(target_os = "windows", test))]
 pub fn paged_estimate(total_committed: u64, local: u64, non_local: u64) -> u64 {
     total_committed.saturating_sub(local.saturating_add(non_local))
 }
@@ -173,6 +187,7 @@ fn extract_model_token(cmd: &str) -> Option<String> {
     }
     None
 }
+#[cfg(any(target_os = "windows", test))]
 fn positive(value: f64) -> u64 {
     if value.is_finite() && value > 0.0 {
         value as u64
@@ -180,6 +195,7 @@ fn positive(value: f64) -> u64 {
         0
     }
 }
+#[cfg(any(target_os = "windows", test))]
 fn accumulate_pid(
     rows: Vec<(String, f64)>,
     processes: &mut HashMap<u32, ProcessGpuTelemetry>,
@@ -199,7 +215,8 @@ fn accumulate_pid(
     }
 }
 /// Aggregates PDH rows into a snapshot keyed by LUID and PID.
-pub fn aggregate(rows: CounterRows, epoch: u64, history_len: usize) -> GpuTelemetrySnapshot {
+#[cfg(any(target_os = "windows", test))]
+pub fn aggregate(rows: CounterRows, epoch: u64, _history_len: usize) -> GpuTelemetrySnapshot {
     let mut adapters: HashMap<u64, AdapterMemoryTotals> = HashMap::new();
     for (name, value) in rows.adapter_dedicated {
         if let Some(luid) = parse_adapter_luid(&name) {
@@ -241,7 +258,7 @@ pub fn aggregate(rows: CounterRows, epoch: u64, history_len: usize) -> GpuTeleme
         row.paged_est_bytes =
             paged_estimate(row.total_committed_bytes, row.local_bytes, row.non_local_bytes);
     }
-    GpuTelemetrySnapshot { adapters, processes, epoch, history_len }
+    GpuTelemetrySnapshot { adapters, processes, epoch }
 }
 #[cfg(target_os = "windows")]
 pub(crate) fn wide(text: &str) -> Vec<u16> {

@@ -1,6 +1,9 @@
 pub enum TrayAction {
+    #[cfg(target_os = "windows")]
     Open,
+    #[cfg(target_os = "windows")]
     TogglePause,
+    #[cfg(target_os = "windows")]
     Exit,
 }
 
@@ -31,16 +34,6 @@ pub fn allow_real_close() -> bool {
 }
 #[cfg(not(target_os = "windows"))]
 pub fn set_allow_real_close(_v: bool) {}
-#[cfg(not(target_os = "windows"))]
-pub fn encode_tray_tip(_text: &str) -> [u16; 128] {
-    [0u16; 128]
-}
-#[cfg(not(target_os = "windows"))]
-pub fn hide_main_window(_hwnd: isize) {}
-#[cfg(not(target_os = "windows"))]
-pub fn restore_main_window(_hwnd: isize) {}
-#[cfg(not(target_os = "windows"))]
-pub fn update_tray_tooltip(_text: &str) {}
 #[cfg(not(target_os = "windows"))]
 pub fn start_tray(
     _main_hwnd: isize,

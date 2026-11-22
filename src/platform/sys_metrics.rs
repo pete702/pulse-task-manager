@@ -15,6 +15,7 @@ pub fn hr_succeeded(hr: i32) -> bool {
 
 /// True only for the real main window title set in `main.rs`.
 /// Rejects empty strings and helper titles such as "PulseTrayHost".
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn is_pulse_main_window_title(title: &str) -> bool {
     let t = title.trim();
     if t.is_empty() || t == "PulseTrayHost" {

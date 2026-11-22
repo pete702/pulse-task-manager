@@ -1,5 +1,8 @@
 # Changelog
 All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
+## [0.5.37] - 2026-11-22
+- **platform/linux-ci**: cfg-gated Win32-only helpers and removed the unread history_len field so clippy -D warnings is clean on ubuntu-latest.
+- **platform/pdh-gpu**: headless live sampling test only asserts adapter totals when hardware adapters are actually reported.
 ## [0.5.36] - 2026-11-22
 - **platform/linux-ci**: cfg-gate Windows-only helpers and imports so clippy -D warnings passes on ubuntu-latest.
 ## [0.5.35] - 2026-11-22
@@ -97,10 +100,4 @@ All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGEL
 - **storage/ui**: low-space alert summary, volume labels, I/O tooltip.
 ## [0.4.158] - 2026-04-12
 - **storage**: disk refresh cadence, IO spike threshold, handle TTL, IO attribution.
-## [0.4.157] - 2026-04-12
-- **network**: probe guard/watchdog, adapter prune, traffic threshold, card epsilon.
-## [0.4.156] - 2026-04-12
-- **memory delta/top cards**: probe budget, short-interval projection, cached tooltip.
-## [0.4.155] - 2026-04-12
-- **memory spike**: fallback by abs delta, none on zero.
 
