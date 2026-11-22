@@ -1,6 +1,17 @@
 //! Worker polling policy constants for PULSE telemetry.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+
+static TRAY_HIDDEN: AtomicBool = AtomicBool::new(false);
+
+pub fn set_tray_hidden(hidden: bool) {
+    TRAY_HIDDEN.store(hidden, Ordering::SeqCst);
+}
+
+pub fn is_tray_hidden() -> bool {
+    TRAY_HIDDEN.load(Ordering::SeqCst)
+}
 
 /// Worker tick interval when UI is visible (1 second).
 pub const WORKER_INTERVAL_VISIBLE: Duration = Duration::from_millis(1000);
@@ -34,7 +45,7 @@ pub fn should_scan_processes(
     minimized: bool,
     is_first_tick: bool,
 ) -> bool {
-    if minimized {
+    if minimized || is_tray_hidden() {
         return false;
     }
     if is_first_tick || force_request {
@@ -45,4 +56,16 @@ pub fn should_scan_processes(
     }
     let interval = if fast { SCAN_TICKS_VISIBLE } else { SCAN_TICKS_BACKGROUND };
     ticks_since_scan >= interval
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn tray_hidden_pauses_scan() {
+        set_tray_hidden(true);
+        assert!(!should_scan_processes(10, true, false, false, false));
+        set_tray_hidden(false);
+        assert!(should_scan_processes(10, true, false, false, false));
+    }
 }

@@ -115,6 +115,9 @@ pub fn collect_process_memory(
 
     const HEAVY_THRESHOLD: u64 = 2560_u64 << 20; // 2.5 GiB
     let has_heavy_process = processes.iter().any(|(_, _, ram, _, _, _)| *ram >= HEAVY_THRESHOLD);
+    let leak_input: Vec<(u32, u64, u64)> =
+        processes.iter().map(|(pid, _, ram, _, _, start)| (*pid, *start, *ram)).collect();
+    crate::modules::memory::leak_detector::record_memory_snapshot(&leak_input);
     let processes_with_delta = delta_tracker.track(&processes);
     let spike = crate::modules::memory::process_spike::detect_memory_spike(
         &processes_with_delta,

@@ -28,7 +28,10 @@ pub fn aggregate_grouped_items(items: Vec<ProcessCpuItem>) -> Vec<ProcessCpuItem
             .and_modify(|ex| {
                 let add_cpu = sanitize_group_cpu_percent(item.cpu_pct).min(100.0);
                 ex.cpu_pct = (sanitize_group_cpu_percent(ex.cpu_pct) + add_cpu).clamp(0.0, 100.0);
+                ex.raw_cpu_pct += item.raw_cpu_pct;
                 ex.is_cpu_hog |= add_cpu >= crate::modules::cpu::model::CPU_HOG_THRESHOLD_PCT;
+                ex.is_cpu_hog |=
+                    item.raw_cpu_pct >= crate::modules::cpu::model::SINGLE_CORE_HOG_RAW_PCT;
                 ex.ram_bytes = ex.ram_bytes.saturating_add(item.ram_bytes);
                 ex.disk_read_mb_s += item.disk_read_mb_s;
                 ex.disk_write_mb_s += item.disk_write_mb_s;

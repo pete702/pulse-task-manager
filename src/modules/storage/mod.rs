@@ -3,6 +3,7 @@
 pub mod chart_tip;
 pub mod chart_view;
 pub mod collector;
+pub mod collector_io;
 pub mod history;
 pub mod inspector;
 pub mod inspector_group;

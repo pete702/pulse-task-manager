@@ -1,8 +1,10 @@
 //! Unified process table body with sortable headers, bars, and row actions.
 use crate::modules::cpu::model::{ProcessCpuItem, RawProcessCpuRow};
+use crate::modules::cpu::table_body_hover::{copy_summary, hover_text};
 use crate::modules::cpu::table_cols::{col_widths, compute_col_x, draw_separators, truncate_name};
 use crate::modules::cpu::table_menu::{render_sort_button, show_row_menu};
 use crate::modules::cpu::table_state::{CpuSortCol, CpuTableState};
+use crate::modules::cpu::table_tree::{tree_indent, CpuViewMode};
 use crate::theme::colors;
 use crate::ui::table_kit;
 use eframe::egui;
@@ -93,8 +95,26 @@ pub fn render_virtualized_table(
                 let cc = if selected { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
                 txt(ui, c0, &item.pid_text, cc);
                 let c1 = cell_r(&col_x, &widths, 1, top, bot);
-                let shown = truncate_name(&item.name, widths[1]);
-                let nc = if selected { colors::ACCENT_CYAN } else { colors::TEXT_PRIMARY };
+                let mut nm = if state.view_mode == CpuViewMode::Tree && item.tree_depth > 0 {
+                    format!("{}{}", tree_indent(item.tree_depth), item.name)
+                } else {
+                    item.name.to_string()
+                };
+                let suspended = crate::platform::suspend::is_process_suspended(
+                    item.pid,
+                    item.creation_time.unwrap_or(0),
+                );
+                if suspended {
+                    nm = format!("[SUSPENDED] {nm}");
+                }
+                let shown = truncate_name(&nm, widths[1]);
+                let nc = if suspended {
+                    colors::ACCENT_AMBER
+                } else if selected {
+                    colors::ACCENT_CYAN
+                } else {
+                    colors::TEXT_PRIMARY
+                };
                 txt(ui, c1, &shown, nc);
                 if item.is_cpu_hog {
                     let hog = egui::Rect::from_min_max(
@@ -149,6 +169,25 @@ pub fn render_virtualized_table(
                 }
                 let c4 = cell_r(&col_x, &widths, 4, top, bot);
                 txt(ui, c4, &item.ram_text, colors::TEXT_PRIMARY);
+                if let Some(rate) =
+                    crate::modules::memory::leak_detector::get_process_leak_mb_per_min(
+                        item.pid,
+                        item.start_time,
+                    )
+                {
+                    let badge = crate::modules::memory::leak_detector::format_leak_badge(rate);
+                    let lr = egui::Rect::from_min_max(
+                        egui::pos2(c4.right() - 92.0, top),
+                        egui::pos2(c4.right(), bot),
+                    );
+                    ui.painter().with_clip_rect(lr).text(
+                        lr.right_center(),
+                        egui::Align2::RIGHT_CENTER,
+                        &badge,
+                        egui::FontId::monospace(9.0),
+                        colors::ACCENT_RED,
+                    );
+                }
                 let c5 = cell_r(&col_x, &widths, 5, top, bot);
                 let stable = item.ram_delta_10s.abs() < 512 * 1024;
                 let dc = if stable {
@@ -172,16 +211,7 @@ pub fn render_virtualized_table(
                 };
                 txt(ui, c6, &item.disk_io_text, ic);
                 let hov = resp.hovered();
-                let resp = if hov {
-                    let p = crate::modules::cpu::exe_cache::resolve_exe_cached(
-                        item.pid,
-                        item.start_time,
-                        if item.exe_path.is_empty() { None } else { Some(item.exe_path.as_ref()) },
-                    );
-                    resp.on_hover_text(format!("{}\n{}", item.name, p))
-                } else {
-                    resp
-                };
+                let resp = if hov { resp.on_hover_text(hover_text(item, raw_rows)) } else { resp };
                 resp.on_hover_cursor(egui::CursorIcon::Default).context_menu(|ui| {
                     show_row_menu(ui, item, raw_rows, state);
                 });
@@ -194,9 +224,7 @@ pub fn render_virtualized_table(
         if let Some(item) = rows.iter().find(|r| {
             state.selected_pid == Some(r.pid) && state.selected_start_time == Some(r.start_time)
         }) {
-            let mem_mb = item.ram_bytes as f64 / 1_048_576.0;
-            let summary = table_kit::format_copy_row(&item.name, item.pid, item.cpu_pct, mem_mb);
-            ui.ctx().copy_text(summary);
+            ui.ctx().copy_text(copy_summary(item, raw_rows));
         }
     }
     draw_separators(ui, tbl_r, &mut widths, rows);

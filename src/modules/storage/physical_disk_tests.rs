@@ -28,3 +28,8 @@ fn handle_ttl_expiration() {
     assert!(!is_handle_expired(Duration::from_secs(299)));
     assert!(!is_handle_expired(Duration::from_secs(0)));
 }
+
+#[test]
+fn clear_handle_cache_does_not_panic() {
+    clear_handle_cache();
+}

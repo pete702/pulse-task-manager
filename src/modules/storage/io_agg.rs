@@ -181,6 +181,7 @@ mod tests {
             pid: 1,
             name: Arc::from("app.exe"),
             cpu_usage: 0.0,
+            raw_cpu_usage: 0.0,
             ram_bytes: 0,
             disk_read_mb_s: 10.0,
             disk_write_mb_s: 0.0,
@@ -189,6 +190,9 @@ mod tests {
             drive_letter: None,
             creation_time: None,
             start_time: 1,
+            parent_pid: None,
+            command_line: None,
+            user: None,
         };
         let out = aggregate_io_by_disk(&[raw], &[vol]);
         assert!(!out.contains_key(&0));

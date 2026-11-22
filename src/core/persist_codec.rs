@@ -44,6 +44,7 @@ pub fn serialize(s: &crate::core::persist::PersistedState) -> String {
             w[0], w[1], w[2], w[3], w[4], w[5], w[6]
         ));
     }
+    out.push_str(&format!("global_hotkey_enabled={}\n", b(s.global_hotkey_enabled)));
     out
 }
 pub fn parse(text: &str) -> crate::core::persist::PersistedState {
@@ -88,6 +89,7 @@ pub(crate) fn parse_kv(
         }
         "win_h" => s.win_h = parse_f32(v, 760.0, 560.0, 2160.0, i),
         "cpu_col_widths" => s.cpu_col_widths = parse_col_widths(v, i),
+        "global_hotkey_enabled" => s.global_hotkey_enabled = parse_bool(v),
         _ => *i += 1,
     }
 }
@@ -139,4 +141,26 @@ fn sort_col_from_str(v: &str) -> CpuSortCol {
         .into_iter()
         .find(|&c| sort_col_str(c) == v.trim().to_ascii_lowercase())
         .unwrap_or(CpuPct)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn global_hotkey_enabled_key_roundtrips_and_defaults() {
+        let text = serialize(&crate::core::persist::PersistedState::default());
+        assert!(text.contains("global_hotkey_enabled=1"));
+        assert!(!text.contains("hotkey_preset"));
+        assert!(parse(&text).global_hotkey_enabled);
+
+        let off = crate::core::persist::PersistedState {
+            global_hotkey_enabled: false,
+            ..Default::default()
+        };
+        let text = serialize(&off);
+        assert!(text.contains("global_hotkey_enabled=0"));
+        assert!(!parse(&text).global_hotkey_enabled);
+        assert!(parse("version=1\nactive_tab=0\n").global_hotkey_enabled);
+    }
 }

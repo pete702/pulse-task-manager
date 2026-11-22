@@ -1,6 +1,7 @@
 //! Bottom action bar and grouped process actions (split from table_menu.rs).
 use crate::modules::cpu::model::{ProcessCpuItem, RawProcessCpuRow};
 use crate::modules::cpu::table_menu::{action_button, resolve_group_targets, GroupTarget};
+pub(crate) use crate::modules::cpu::table_menu_affinity::spawn_affinity;
 use crate::modules::cpu::table_state::CpuTableState;
 use crate::platform::qos as q;
 use crate::theme::colors;
@@ -200,6 +201,30 @@ pub(crate) fn render_bottom_action_bar(
             if action_button(ui, can_act, "[ Open Location ]", colors::TEXT_PRIMARY).clicked() {
                 let t = resolve_group_targets(item, state.group_clones, raw);
                 spawn_open(state, t);
+            }
+            let path = raw
+                .iter()
+                .find(|r| r.pid == item.pid && r.start_time == item.start_time)
+                .and_then(|r| r.exe_path.as_deref())
+                .unwrap_or("");
+            let blocked = crate::platform::suspend::is_suspend_blocklisted(
+                &item.name,
+                path,
+                item.pid,
+                std::process::id(),
+            );
+            let suspended = crate::platform::suspend::is_process_suspended(
+                item.pid,
+                item.creation_time.unwrap_or(0),
+            );
+            let label = if suspended { "[ Resume ]" } else { "[ Suspend ]" };
+            if action_button(ui, can_act && !blocked, label, colors::ACCENT_AMBER).clicked() {
+                let t = resolve_group_targets(item, state.group_clones, raw);
+                if suspended {
+                    crate::modules::cpu::table_menu::spawn_resume(state, t, item.name.to_string());
+                } else {
+                    crate::modules::cpu::table_menu::spawn_suspend(state, t, item.name.to_string());
+                }
             }
             if let Some((armed, _, _)) = state.confirm_kill {
                 if armed == item.pid {

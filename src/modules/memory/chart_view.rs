@@ -49,8 +49,22 @@ pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemoryS
                     e.culprit_bytes / 1024 / 1024
                 )
             });
-            // Pass latest_spike to header for blackbox indicator
-            render_header(ui, &mut selected, ram, commit, swap, has_commit, spike_text.as_deref());
+            let leak_note =
+                crate::modules::memory::leak_detector::get_top_leak().map(|(pid, mb)| {
+                    format!(
+                        "{} (pid {})",
+                        crate::modules::memory::leak_detector::format_leak_badge(mb),
+                        pid
+                    )
+                });
+            let note = match (spike_text, leak_note) {
+                (Some(spike), Some(leak)) => Some(format!("{spike} | {leak}")),
+                (Some(spike), None) => Some(spike),
+                (None, Some(leak)) => Some(leak),
+                (None, None) => None,
+            };
+            // Pass spike and leak indicators to the chart header.
+            render_header(ui, &mut selected, ram, commit, swap, has_commit, note.as_deref());
             ui.add_space(6.0);
             h.chart_window = selected;
 

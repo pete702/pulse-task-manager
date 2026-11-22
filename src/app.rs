@@ -5,6 +5,7 @@ use std::time::Instant;
 use eframe::egui;
 
 use crate::app_render::render_chrome;
+pub(crate) use crate::app_tray::should_use_fast_process_cadence;
 use crate::core::persist;
 use crate::core::{spawn_telemetry_worker_with_wakeup, SystemSnapshot, Wakeup};
 use crate::modules::cpu::history::CpuHistory;
@@ -33,6 +34,7 @@ pub struct PulseApp {
     pub(crate) was_minimized: bool,
     pub(crate) startup_frames: u8,
     pub(crate) telemetry_paused: bool,
+    pub(crate) close_to_tray: bool,
     pub(crate) paused_pending_snapshot: Option<Arc<SystemSnapshot>>,
     pub(crate) worker: crate::core::TelemetryWorker,
     pub(crate) last_viewport_size: Option<egui::Vec2>,
@@ -41,6 +43,10 @@ pub struct PulseApp {
     pub(crate) dirty_state_snapshot: Option<persist::PersistedState>,
     pub(crate) pointer_down: bool,
     pub(crate) last_self_trim: Instant,
+    pub(crate) main_hwnd: isize,
+    pub(crate) tray: Option<crate::platform::tray::TrayGuard>,
+    pub(crate) tray_rx: Option<std::sync::mpsc::Receiver<crate::platform::tray::TrayAction>>,
+    pub(crate) tray_tooltip_last: Instant,
 }
 
 impl PulseApp {
@@ -67,6 +73,7 @@ impl PulseApp {
             was_minimized: false,
             startup_frames: 0,
             telemetry_paused: false,
+            close_to_tray: false,
             paused_pending_snapshot: None,
             worker,
             last_viewport_size: None,
@@ -75,6 +82,10 @@ impl PulseApp {
             dirty_state_snapshot: None,
             pointer_down: false,
             last_self_trim: Instant::now(),
+            main_hwnd: 0,
+            tray: None,
+            tray_rx: None,
+            tray_tooltip_last: Instant::now(),
         };
         app.apply_persisted(&saved);
         app
@@ -88,45 +99,16 @@ impl PulseApp {
         crate::modules::cpu::chart_axis::set_window(ctx, app.cpu_history.chart_window);
         app
     }
-    /// Applies a high-level UI command to app state.
-    pub fn apply_command(&mut self, cmd: crate::app_cmd::AppCommand) {
-        match cmd {
-            crate::app_cmd::AppCommand::SetTab(tab) => self.active_tab = tab,
-            crate::app_cmd::AppCommand::TogglePause => {
-                self.telemetry_paused = !self.telemetry_paused;
-            }
-            crate::app_cmd::AppCommand::RequestProcessScan => {
-                self.worker.request_process_scan();
-            }
-            crate::app_cmd::AppCommand::RequestMemoryTrim => {
-                let ok = crate::core::win32::self_trim_working_set();
-                self.last_self_trim =
-                    crate::app_trim::next_last_after_attempt(std::time::Instant::now(), ok);
-            }
-        }
-    }
-}
-
-pub(crate) fn should_use_fast_process_cadence(tab: crate::app_tabs::ActiveTab) -> bool {
-    matches!(tab, crate::app_tabs::ActiveTab::Cpu | crate::app_tabs::ActiveTab::Processes)
 }
 
 impl eframe::App for PulseApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let frame_start = Instant::now();
         self.startup_frames = self.startup_frames.saturating_add(1);
-        if self.startup_frames == 1 {
-            #[cfg(target_os = "windows")]
-            {
-                let hwnd = crate::platform::sys_metrics::get_hwnd(ctx);
-                if hwnd != 0 {
-                    let _ = crate::platform::sys_metrics::set_dark_title_bar(hwnd);
-                }
-            }
-        }
         if self.startup_frames <= 3 {
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
+        crate::app_tray::update(self, ctx);
         let is_minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
         self.worker.set_minimized(is_minimized);
         let just_minimized = is_minimized && !self.was_minimized;
@@ -196,6 +178,11 @@ impl eframe::App for PulseApp {
         {
             self.apply_command(crate::app_cmd::AppCommand::RequestProcessScan);
         }
+        if self.active_tab == crate::app_tabs::ActiveTab::Storage
+            && self.prev_active_tab != crate::app_tabs::ActiveTab::Storage
+        {
+            crate::modules::storage::collector::request_storage_refresh();
+        }
         self.prev_active_tab = self.active_tab;
         if self.prev_cpu_sub_view != self.cpu_sub_view {
             if self.cpu_sub_view == CpuSubView::Processes {
@@ -206,7 +193,14 @@ impl eframe::App for PulseApp {
         let _ = &self.latency_probe;
         self.frame_count = self.frame_count.wrapping_add(1);
         if let Some(rect) = ctx.input(|i| i.viewport().inner_rect.or(i.viewport().outer_rect)) {
-            self.last_viewport_size = Some(rect.size());
+            let size = rect.size();
+            if crate::ui::mini_hud::should_persist_window_size(
+                crate::platform::hotkey::is_mini_hud_active(),
+                size.x,
+                size.y,
+            ) {
+                self.last_viewport_size = Some(size);
+            }
         }
         let latest_snapshot = self.latest_snapshot.clone();
         let active_processes = latest_snapshot
@@ -231,6 +225,7 @@ impl eframe::App for PulseApp {
             &latest_snapshot,
             uptime,
             &mut self.telemetry_paused,
+            &mut self.close_to_tray,
             self.last_ui_ms,
             active_processes,
             &mut cmds,
@@ -251,6 +246,10 @@ impl eframe::App for PulseApp {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.save_state_if_needed(true);
         crate::core::persist::flush_staged_state();
+        let (resumed, failed) = crate::platform::suspend::resume_all_suspended();
+        if failed > 0 {
+            eprintln!("pulse: exit resume (resumed={resumed}, failed={failed})");
+        }
     }
 }
 

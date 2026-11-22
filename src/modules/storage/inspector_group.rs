@@ -140,6 +140,7 @@ mod tests {
             pid,
             name: Arc::from(n),
             cpu_usage: 0.0,
+            raw_cpu_usage: 0.0,
             ram_bytes: 0,
             disk_read_mb_s: rd,
             disk_write_mb_s: wr,
@@ -148,6 +149,9 @@ mod tests {
             drive_letter: None,
             creation_time: None,
             start_time: 0,
+            parent_pid: None,
+            command_line: None,
+            user: None,
         }
     }
     #[test]

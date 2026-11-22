@@ -66,6 +66,7 @@ fn item_clamps_nonfinite_cpu() {
         pid: 2,
         name: Arc::from("b.exe"),
         cpu_usage: f32::INFINITY,
+        raw_cpu_usage: 0.0,
         ram_bytes: 2048,
         disk_read_mb_s: 0.0,
         disk_write_mb_s: 0.0,
@@ -74,11 +75,14 @@ fn item_clamps_nonfinite_cpu() {
         drive_letter: None,
         creation_time: None,
         start_time: 0,
+        parent_pid: None,
+        command_line: None,
+        user: None,
     };
     let item = ProcessCpuItem::from_raw(&raw);
     assert_eq!(item.cpu_pct, 0.0);
     assert_eq!(item.cpu_text.as_ref(), "0.0%");
-    let raw2 = RawProcessCpuRow { cpu_usage: 150.0, ..raw.clone() };
+    let raw2 = RawProcessCpuRow { cpu_usage: 150.0, raw_cpu_usage: 150.0, ..raw.clone() };
     let item2 = ProcessCpuItem::from_raw(&raw2);
     assert_eq!(item2.cpu_pct, 100.0);
     assert_eq!(item2.cpu_text.as_ref(), "100.0%");

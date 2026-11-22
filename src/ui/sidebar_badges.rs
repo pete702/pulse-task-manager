@@ -105,6 +105,12 @@ pub(super) fn draw_badge_text(
     );
 }
 
+/// Live GPU/VRAM badge for tab [05]; never the old "v0.5" placeholder.
+pub(crate) fn draw_system_badge(ui: &eframe::egui::Ui, rect: eframe::egui::Rect) {
+    let text = crate::ui::system_gpu_tab::gpu_badge();
+    draw_badge_text(ui, rect, &text, 12.0, crate::theme::colors::ACCENT_CYAN);
+}
+
 pub(super) fn draw_tab_badge(
     ui: &eframe::egui::Ui,
     rect: eframe::egui::Rect,
@@ -174,13 +180,7 @@ pub(super) fn draw_tab_badge(
             };
             draw_badge_text(ui, rect, &cached_network_badge(t), 14.0, col);
         }
-        T::System => draw_badge_text(
-            ui,
-            rect,
-            "v0.5",
-            11.0,
-            eframe::egui::Color32::from_rgba_unmultiplied(92, 104, 122, 190),
-        ),
+        T::System => draw_system_badge(ui, rect),
     }
 }
 

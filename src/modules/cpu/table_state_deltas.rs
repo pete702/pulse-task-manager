@@ -1,10 +1,44 @@
 //! RAM delta computation for CpuTableState.
 use std::collections::{HashMap, HashSet};
+use std::sync::{mpsc, OnceLock};
+use std::thread;
 use std::time::Instant;
 
 use crate::modules::cpu::model::RawProcessCpuRow;
 
 use super::CpuTableState;
+
+type MenuJob = Box<dyn FnOnce() -> super::ActionMsg + Send>;
+type QueuedMenuJob = (MenuJob, mpsc::Sender<super::ActionMsg>);
+static ACTION_WORKER: OnceLock<mpsc::Sender<QueuedMenuJob>> = OnceLock::new();
+
+const PANIC_FALLBACK: &str = "Action failed (internal error)";
+
+fn failed_msg() -> super::ActionMsg {
+    (PANIC_FALLBACK.to_owned(), None, Vec::new())
+}
+
+fn action_worker() -> Option<&'static mpsc::Sender<QueuedMenuJob>> {
+    if ACTION_WORKER.get().is_some() {
+        return ACTION_WORKER.get();
+    }
+    let (tx, rx) = mpsc::channel::<QueuedMenuJob>();
+    let installed = ACTION_WORKER.set(tx);
+    let worker = thread::Builder::new()
+        .name("pulse-menu-action".into())
+        .spawn(move || {
+            while let Ok((job, done_tx)) = rx.recv() {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job));
+                let _ = done_tx.send(result.unwrap_or_else(|_| failed_msg()));
+            }
+        })
+        .ok();
+    worker.as_ref()?;
+    if installed.is_err() {
+        return ACTION_WORKER.get();
+    }
+    ACTION_WORKER.get()
+}
 
 impl CpuTableState {
     pub(crate) fn compute_ram_deltas(
@@ -63,11 +97,19 @@ impl CpuTableState {
             return;
         }
         self.last_action_msg = Some(("Working...".to_owned(), Instant::now()));
-        let (tx, rx) = std::sync::mpsc::channel();
-        self.action_rx = Some(rx);
-        std::thread::spawn(move || {
-            let _ = tx.send(job());
-        });
+        let Some(worker) = action_worker() else {
+            self.last_action_msg =
+                Some(("Action failed (worker unavailable)".to_owned(), Instant::now()));
+            return;
+        };
+        let (done_tx, done_rx) = mpsc::channel();
+        self.action_rx = Some(done_rx);
+        let wrapped: MenuJob = Box::new(job);
+        if worker.send((wrapped, done_tx)).is_err() {
+            self.action_rx = None;
+            self.last_action_msg =
+                Some(("Action failed (worker disconnected)".to_owned(), Instant::now()));
+        }
     }
     pub fn poll_menu_action(&mut self) {
         if let Some(rx) = self.action_rx.take() {

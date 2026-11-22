@@ -10,12 +10,13 @@ impl PulseApp {
     pub(crate) fn apply_persisted(&mut self, s: &persist::PersistedState) {
         self.active_tab = persist::active_tab_from_index(s.active_tab);
         self.prev_active_tab = self.active_tab;
-        self.cpu_table_state.group_clones = s.group_clones;
+        self.cpu_table_state.set_group_clones(s.group_clones);
         self.cpu_table_state.comfort_density = !s.compact_rows;
         self.cpu_table_state.sort_col = s.sort_col;
         self.cpu_table_state.sort_asc = s.sort_asc;
         self.cpu_table_state.quick_filter =
             crate::modules::cpu::table_state::ProcessQuickFilter::from_u8(s.process_quick_filter);
+        crate::platform::hotkey::set_global_hotkey_enabled(s.global_hotkey_enabled);
         self.memory_history.chart_window = persist::chart_window_from_secs(s.mem_window_secs);
         self.cpu_history.chart_window = persist::chart_window_from_secs(s.cpu_window_secs);
         self.cpu_history.set_show_core_grid(s.cpu_show_grid);
@@ -47,6 +48,7 @@ impl PulseApp {
             network_chart_mode: self.network_view_state.chart_mode_value(),
             network_probe_enabled: crate::modules::network::latency_probe::probe_enabled(),
             process_quick_filter: self.cpu_table_state.quick_filter.to_u8(),
+            global_hotkey_enabled: crate::platform::hotkey::is_global_hotkey_enabled(),
             cpu_col_widths: crate::modules::cpu::table_cols::get_persisted_col_widths(),
             win_w: (wx.clamp(MIN_WINDOW_WIDTH, 3840.0) * 10.0).round() / 10.0,
             win_h: (wy.clamp(560.0, 2160.0) * 10.0).round() / 10.0,

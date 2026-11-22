@@ -15,7 +15,6 @@ static DROPPED_SNAPSHOTS: AtomicU64 = AtomicU64::new(0);
 static PANIC_RECOVERIES: AtomicU32 = AtomicU32::new(0);
 
 /// Returns the number of snapshots dropped because the channel was full.
-#[cfg(test)]
 pub fn dropped_snapshots() -> u64 {
     DROPPED_SNAPSHOTS.load(Ordering::Relaxed)
 }

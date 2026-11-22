@@ -246,3 +246,35 @@ fn affinity_and_protected_pid_helpers() {
     assert!(is_protected_pid(0) && is_protected_pid(4) && is_protected_pid(std::process::id()));
     assert!(!is_protected_pid(999_999));
 }
+fn wait_for_action(state: &mut CpuTableState, wanted: &str) -> bool {
+    for _ in 0..200 {
+        state.poll_menu_action();
+        if state.last_action_msg.as_ref().is_some_and(|m| m.0 == wanted) {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    false
+}
+#[test]
+fn persistent_menu_action_worker_executes_job() {
+    let mut state = CpuTableState::default();
+    state.spawn_menu_action(|| ("done".to_owned(), None, vec![]));
+    assert!(wait_for_action(&mut state, "done"));
+}
+#[test]
+fn panicking_menu_job_keeps_worker_alive() {
+    let mut first = CpuTableState::default();
+    first.spawn_menu_action(|| panic!("intentional menu job panic"));
+    assert!(wait_for_action(&mut first, "Action failed (internal error)"));
+    let mut second = CpuTableState::default();
+    second.spawn_menu_action(|| ("after panic".to_owned(), None, vec![]));
+    assert!(wait_for_action(&mut second, "after panic"));
+}
+#[test]
+fn affinity_action_dispatches_through_menu_worker() {
+    let mut state = CpuTableState::default();
+    let mode = crate::platform::hybrid_cores::AffinityMode::PCores;
+    crate::modules::cpu::table_menu_affinity::spawn_affinity(&mut state, vec![], 0x1, 0x2, mode);
+    assert!(wait_for_action(&mut state, "Affinity unchanged (no processes)"));
+}

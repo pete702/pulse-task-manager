@@ -8,5 +8,6 @@ pub mod grade;
 pub mod history;
 pub mod latency_probe;
 pub mod latency_probe_handle;
+pub mod latency_probe_net;
 pub mod model;
 pub mod view;

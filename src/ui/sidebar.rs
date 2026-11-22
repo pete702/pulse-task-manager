@@ -1,7 +1,7 @@
 //! Rich Telemetry Sidebar for PULSE -- Obsidian HUD Navigation Cards.
 use crate::core::SystemSnapshot;
 use crate::theme::colors;
-use crate::ui::sidebar_badges::draw_tab_badge;
+use crate::ui::sidebar_badges::{draw_system_badge, draw_tab_badge};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 static STORAGE_LATCH: Mutex<(u64, bool)> = Mutex::new((0, false));
@@ -96,7 +96,9 @@ pub fn render_sidebar(
                 text_col,
             );
             if rect.width() >= 140.0 {
-                if let Some(ref snap) = latest_snapshot {
+                if tab == crate::app_tabs::ActiveTab::System {
+                    draw_system_badge(ui, rect);
+                } else if let Some(ref snap) = latest_snapshot {
                     draw_tab_badge(ui, rect, tab, snap, &STORAGE_LATCH, &NETWORK_LATCH);
                 }
             }

@@ -145,6 +145,19 @@ pub(crate) fn full_paths_match(a: &str, b: &str) -> bool {
     !na.is_empty() && na == nb
 }
 
+/// True when a PID/exe-path pair must never be targeted by mutating actions.
+pub fn is_process_protected(pid: u32, exe_path: &str) -> bool {
+    if pid <= 4 || pid == std::process::id() {
+        return true;
+    }
+    let path = exe_path.trim();
+    if path.is_empty() {
+        return true;
+    }
+    let name = path.rsplit(['\\', '/']).next().unwrap_or(path);
+    crate::platform::handle::verify_pid_safety_gate_ex(pid, name, Some(path)).is_err()
+}
+
 #[cfg(target_os = "windows")]
 pub(crate) fn is_under_system_root(path: &str) -> bool {
     let p = normalize_path_for_match(path);

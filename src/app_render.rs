@@ -49,78 +49,64 @@ pub fn render_central_panel(
     }
     match *active_tab {
         ActiveTab::Processes => {
-            if let Some(ref snap) = snapshot {
-                if let Some(ref cpu) = snap.cpu {
-                    let process_scan_id = s_cpu_scan_id(snap);
-                    cpu_page::render_processes_page(ui, cpu, cpu_table_state, process_scan_id);
-                } else {
-                    render_awaiting(ui);
-                }
-            } else {
-                render_awaiting(ui);
-            }
+            let pair = snapshot.as_deref().and_then(|s| s.cpu.as_ref().map(|c| (s, c)));
+            let Some((snap, cpu)) = pair else { return render_awaiting(ui) };
+            let id = s_cpu_scan_id(snap);
+            cpu_page::render_processes_page(ui, cpu, cpu_table_state, id);
         }
         ActiveTab::Memory => {
-            if let Some(ref snap) = snapshot {
-                if let Some(ref mem) = snap.memory {
-                    mem_page::render_memory_page(
-                        ui,
-                        mem,
-                        memory_history,
-                        uptime_secs,
-                        active_tab,
-                        cpu_table_state,
-                    );
-                } else {
-                    render_awaiting(ui);
-                }
-            } else {
-                render_awaiting(ui);
-            }
+            let mem = snapshot.as_deref().and_then(|s| s.memory.as_ref());
+            let Some(mem) = mem else { return render_awaiting(ui) };
+            mem_page::render_memory_page(
+                ui,
+                mem,
+                memory_history,
+                uptime_secs,
+                active_tab,
+                cpu_table_state,
+            );
         }
         ActiveTab::Cpu => {
-            if let Some(ref snap) = snapshot {
-                if let Some(ref cpu) = snap.cpu {
-                    let scan_generation = s_cpu_scan_id(snap);
-                    cpu_page::render_cpu_page(
-                        ui,
-                        cpu,
-                        cpu_history,
-                        cpu_sub_view,
-                        cpu_table_state,
-                        uptime_secs,
-                        active_tab,
-                        scan_generation,
-                    );
-                } else {
-                    render_awaiting(ui);
-                }
-            } else {
-                render_awaiting(ui);
-            }
+            let pair = snapshot.as_deref().and_then(|s| s.cpu.as_ref().map(|c| (s, c)));
+            let Some((snap, cpu)) = pair else { return render_awaiting(ui) };
+            let gen = s_cpu_scan_id(snap);
+            cpu_page::render_cpu_page(
+                ui,
+                cpu,
+                cpu_history,
+                cpu_sub_view,
+                cpu_table_state,
+                uptime_secs,
+                active_tab,
+                gen,
+            );
         }
         ActiveTab::Storage => {
-            if let Some(ref snap) = snapshot {
-                let raw: &[crate::modules::cpu::model::RawProcessCpuRow] =
-                    snap.cpu.as_ref().map(|c| c.raw_processes.as_ref()).unwrap_or(&[]);
-                crate::modules::storage::view::render_storage_tab(
-                    ui,
-                    &snap.storage,
-                    raw,
-                    storage_state,
-                );
-            } else {
-                render_awaiting(ui);
-            }
+            let Some(snap) = snapshot.as_deref() else { return render_awaiting(ui) };
+            let raw = snap.cpu.as_ref().map(|c| c.raw_processes.as_ref()).unwrap_or(&[]);
+            crate::modules::storage::view::render_storage_tab(
+                ui,
+                &snap.storage,
+                raw,
+                storage_state,
+            );
         }
         ActiveTab::Network => {
-            if let Some(ref snap) = snapshot {
-                crate::modules::network::view::render_network_tab(ui, &snap.network, network_state);
-            } else {
-                render_awaiting(ui);
-            }
+            let Some(snap) = snapshot.as_deref() else { return render_awaiting(ui) };
+            crate::modules::network::view::render_network_tab(ui, &snap.network, network_state);
         }
-        ActiveTab::System => chrome::render_placeholder_tab(ui, Key::TabSystem.t(), "v0.5.0"),
+        ActiveTab::System => {
+            // A vertical child Ui with bounded width keeps the GPU cockpit and
+            // both read-only tables inside the central panel's clip rectangle.
+            ui.vertical(|ui| {
+                crate::ui::system_gpu_tab::render_system_gpu_tab(
+                    ui,
+                    snapshot,
+                    cpu_table_state,
+                    cmds,
+                );
+            });
+        }
     }
 }
 
@@ -137,6 +123,7 @@ pub fn render_top_panel(
     snapshot: &Option<Arc<SystemSnapshot>>,
     last_ui_ms: f32,
     telemetry_paused: bool,
+    close_to_tray: &mut bool,
     cmds: &mut Vec<AppCommand>,
 ) {
     ui.horizontal(|ui| {
@@ -146,7 +133,7 @@ pub fn render_top_panel(
             cmds.push(AppCommand::TogglePause);
         }
         ui.separator();
-        chrome::render_top_panel(ui, snapshot, last_ui_ms);
+        chrome::render_top_panel(ui, snapshot, last_ui_ms, close_to_tray, cmds);
     });
 }
 
@@ -176,17 +163,55 @@ pub fn render_chrome(
     snapshot: &Option<Arc<SystemSnapshot>>,
     uptime_secs: u64,
     telemetry_paused: &mut bool,
+    close_to_tray: &mut bool,
     last_ui_ms: f32,
     active_processes: u32,
     cmds: &mut Vec<AppCommand>,
 ) {
-    egui::TopBottomPanel::top("top_header")
-        .exact_height(36.0)
-        .show(ctx, |ui| render_top_panel(ui, snapshot, last_ui_ms, *telemetry_paused, cmds));
+    crate::core::blackbox::observe(snapshot.as_deref());
+    crate::modules::cpu::table_tools::poll_pick_into_table(cpu_table_state, cmds);
+    crate::modules::cpu::table_tools::handle_dropped_files(ctx, cpu_table_state, cmds);
+    let mini_hud_active = crate::platform::hotkey::is_mini_hud_active();
+    crate::ui::mini_hud::sync_viewport(ctx, mini_hud_active);
+    if mini_hud_active {
+        egui::CentralPanel::default()
+            .frame(egui::Frame::none().inner_margin(egui::Margin::same(4.0)))
+            .show(ctx, |ui| crate::ui::mini_hud::render_mini_hud(ui, snapshot, cmds));
+        crate::modules::cpu::table_tools::render_pick_mode_feedback(ctx);
+        return;
+    }
+    let ctrl_k = ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::K));
+    if ctrl_k {
+        crate::ui::command_palette::toggle();
+        ctx.request_repaint();
+    }
+    let palette_processes: &[crate::modules::cpu::model::RawProcessCpuRow] = snapshot
+        .as_ref()
+        .and_then(|s| s.cpu.as_ref())
+        .map(|c| c.raw_processes.as_ref())
+        .unwrap_or(&[]);
+    crate::ui::command_palette::render_command_palette(
+        ctx,
+        active_tab,
+        cpu_table_state,
+        cmds,
+        palette_processes,
+    );
+    egui::TopBottomPanel::top("top_header").exact_height(36.0).show(ctx, |ui| {
+        render_top_panel(ui, snapshot, last_ui_ms, *telemetry_paused, close_to_tray, cmds)
+    });
     egui::TopBottomPanel::bottom("bottom_status_bar")
         .exact_height(26.0)
         .frame(crate::theme::status_bar_frame())
-        .show(ctx, |ui| chrome::render_status_bar(ui, active_processes, snapshot, last_ui_ms));
+        .show(ctx, |ui| {
+            chrome::render_status_bar(
+                ui,
+                active_processes,
+                snapshot,
+                last_ui_ms,
+                crate::core::worker_io::dropped_snapshots(),
+            )
+        });
     egui::SidePanel::left("left_sidebar")
         .resizable(false)
         .exact_width(210.0)
@@ -215,4 +240,5 @@ pub fn render_chrome(
                 cmds,
             );
         });
+    crate::modules::cpu::table_tools::render_pick_mode_feedback(ctx);
 }

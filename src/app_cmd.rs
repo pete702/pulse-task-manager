@@ -9,4 +9,5 @@ pub enum AppCommand {
     TogglePause,
     RequestProcessScan,
     RequestMemoryTrim,
+    HideToTray,
 }

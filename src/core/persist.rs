@@ -13,6 +13,33 @@ static STAGED_STATE: OnceLock<Mutex<Option<PersistedState>>> = OnceLock::new();
 static SAVE_TX: OnceLock<SyncSender<(PathBuf, String)>> = OnceLock::new();
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
 static WRITE_FAILED: AtomicBool = AtomicBool::new(false);
+static PORTABLE_MODE: AtomicBool = AtomicBool::new(false);
+
+/// Pure path rule: portable mode uses `pulse.cfg` beside the executable.
+pub fn resolve_portable_config_path(
+    exe_path: &Path,
+    cli_portable: bool,
+    local_pulse_cfg_exists: bool,
+) -> Option<PathBuf> {
+    if cli_portable || local_pulse_cfg_exists {
+        exe_path.parent().map(|dir| dir.join("pulse.cfg"))
+    } else {
+        None
+    }
+}
+
+/// Detects portable mode from `--portable` or a side-by-side `pulse.cfg`.
+pub fn init_portable_mode(cli_portable: bool) {
+    let local_exists = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("pulse.cfg").is_file()))
+        .unwrap_or(false);
+    PORTABLE_MODE.store(cli_portable || local_exists, Ordering::SeqCst);
+}
+
+pub fn is_portable_mode() -> bool {
+    PORTABLE_MODE.load(Ordering::SeqCst)
+}
 
 fn save_sender() -> &'static SyncSender<(PathBuf, String)> {
     SAVE_TX.get_or_init(|| {
@@ -59,6 +86,7 @@ pub struct PersistedState {
     pub network_chart_mode: u8,
     pub network_probe_enabled: bool,
     pub process_quick_filter: u8,
+    pub global_hotkey_enabled: bool,
     pub win_w: f32,
     pub win_h: f32,
     pub cpu_col_widths: Option<[f32; 7]>,
@@ -79,6 +107,7 @@ impl Default for PersistedState {
             network_chart_mode: 0,
             network_probe_enabled: true,
             process_quick_filter: 0,
+            global_hotkey_enabled: true,
             win_w: 1180.0,
             win_h: 760.0,
             cpu_col_widths: None,
@@ -87,6 +116,10 @@ impl Default for PersistedState {
 }
 
 pub fn state_path() -> Option<PathBuf> {
+    if is_portable_mode() {
+        let exe = std::env::current_exe().ok()?;
+        return resolve_portable_config_path(&exe, true, true);
+    }
     std::env::var_os("LOCALAPPDATA").map(|p| PathBuf::from(p).join("PULSE").join("state.cfg"))
 }
 pub fn load_state() -> PersistedState {
@@ -144,6 +177,13 @@ pub fn save_now(s: &PersistedState) {
     }
     clear_staged_state();
 }
+/// Persists the global hotkey toggle without disturbing other settings.
+pub fn save_hotkey_enabled(enabled: bool) {
+    let mut s = load_state();
+    s.global_hotkey_enabled = enabled;
+    crate::platform::hotkey::set_global_hotkey_enabled(enabled);
+    save_now(&s);
+}
 pub fn save_if_due(s: &PersistedState) -> bool {
     let Some(path) = state_path() else { return true };
     match save_sender().try_send((path, persist_codec::serialize(s))) {
@@ -162,6 +202,35 @@ pub use crate::core::persist_codec::{
     active_tab_from_index, active_tab_index, chart_window_from_secs, parse, parse_col_widths,
     secs_from_chart_window, serialize,
 };
+
+#[cfg(test)]
+mod portable_tests {
+    use super::*;
+
+    #[test]
+    fn portable_path_from_cli_flag() {
+        let exe = Path::new("C:\\apps\\pulse_manager.exe");
+        assert_eq!(
+            resolve_portable_config_path(exe, true, false),
+            Some(PathBuf::from("C:\\apps\\pulse.cfg"))
+        );
+    }
+
+    #[test]
+    fn portable_path_from_side_by_side_cfg() {
+        let exe = Path::new("C:\\apps\\pulse_manager.exe");
+        assert_eq!(
+            resolve_portable_config_path(exe, false, true),
+            Some(PathBuf::from("C:\\apps\\pulse.cfg"))
+        );
+    }
+
+    #[test]
+    fn portable_path_falls_back_to_appdata() {
+        let exe = Path::new("C:\\apps\\pulse_manager.exe");
+        assert_eq!(resolve_portable_config_path(exe, false, false), None);
+    }
+}
 
 #[cfg(test)]
 #[path = "persist_tests.rs"]

@@ -1,14 +1,13 @@
 //! UI Chrome: Top bar for PULSE.
 use crate::core::SystemSnapshot;
 use crate::i18n::{os_locale_short, Key};
+use crate::platform::hotkey;
 use crate::theme::colors;
+pub use crate::ui::status_bar::render_status_bar;
 use crate::util::format_uptime;
 use eframe::egui;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-// Re-export for compatibility with app.rs
-pub use crate::ui::placeholder_tab::render_placeholder_tab;
-pub use crate::ui::status_bar::render_status_bar;
 
 fn cached_version() -> &'static str {
     static VERSION: OnceLock<String> = OnceLock::new();
@@ -50,6 +49,8 @@ pub fn render_top_panel(
     ui: &mut egui::Ui,
     latest_snapshot: &Option<Arc<SystemSnapshot>>,
     last_ui_ms: f32,
+    close_to_tray: &mut bool,
+    cmds: &mut Vec<crate::app_cmd::AppCommand>,
 ) {
     let bar_w = ui.available_width();
     let row = ui.horizontal(|ui| {
@@ -114,6 +115,39 @@ pub fn render_top_panel(
             os_locale_short(),
             crate::i18n::Key::UptimeLabel.t()
         ));
+
+        ui.separator();
+        ui.checkbox(close_to_tray, "Tray on X");
+        if ui
+            .button("[ Ctrl+K ]")
+            .on_hover_text("Open Command Palette (Ctrl+K)")
+            .clicked()
+        {
+            crate::ui::command_palette::toggle();
+        }
+        if ui.button("[ TRAY ]").clicked() {
+            cmds.push(crate::app_cmd::AppCommand::HideToTray);
+        }
+        let mut hk_on = hotkey::is_global_hotkey_enabled();
+        let hk_label = format!("HK: {}", hotkey::hotkey_status_label());
+        if ui
+            .checkbox(&mut hk_on, hk_label)
+            .on_hover_text(hotkey::HOTKEY_TOOLTIP)
+            .changed()
+        {
+            hotkey::set_global_hotkey_enabled(hk_on);
+            crate::core::persist::save_hotkey_enabled(hk_on);
+            hotkey::request_rebind();
+            ui.ctx().request_repaint();
+        }
+        if ui.button("Mini-HUD").on_hover_text(hotkey::HOTKEY_TOOLTIP).clicked() {
+            hotkey::set_mini_hud_active(!hotkey::is_mini_hud_active());
+            ui.ctx().request_repaint();
+        }
+        if ui.button("[ EXIT ]").clicked() {
+            crate::platform::tray::set_allow_real_close(true);
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
 
         // Right-aligned single System Health Pill (wide windows only).
         if bar_w >= 720.0 {

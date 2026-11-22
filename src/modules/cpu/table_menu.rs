@@ -1,8 +1,9 @@
 //! Process row context menu and sort button for PULSE CPU table.
 use crate::modules::cpu::kill_modal::is_protected_pid;
 use crate::modules::cpu::model::{ProcessCpuItem, RawProcessCpuRow};
-use crate::modules::cpu::table_menu_actions::{spawn_eco, spawn_open, spawn_trim};
+use crate::modules::cpu::table_menu_actions::{spawn_affinity, spawn_eco, spawn_open, spawn_trim};
 use crate::modules::cpu::table_state::CpuTableState;
+use crate::platform::hybrid_cores::AffinityMode;
 use crate::platform::qos::is_system_process;
 use crate::theme::colors;
 use crate::ui::table_kit;
@@ -94,6 +95,8 @@ pub fn arm_context_menu_kill(
     let m = format!("Confirm Kill for {} (PID {}) in bottom bar (3s)", item.name, item.pid);
     state.last_action_msg = Some((m, Instant::now()));
 }
+pub(crate) use crate::modules::cpu::table_menu_proc::{spawn_resume, spawn_suspend};
+
 pub fn show_row_menu(
     ui: &mut egui::Ui,
     item: &ProcessCpuItem,
@@ -128,8 +131,50 @@ pub fn show_row_menu(
         spawn_open(state, tg(state));
         ui.close_menu();
     }
+    let path_opt = exe_opt(item);
+    let path = path_opt.as_deref().unwrap_or("");
+    let self_pid = std::process::id();
+    let blocked =
+        crate::platform::suspend::is_suspend_blocklisted(&item.name, path, item.pid, self_pid);
+    let suspended =
+        crate::platform::suspend::is_process_suspended(item.pid, item.creation_time.unwrap_or(0));
+    let label = if suspended { "Resume Process" } else { "Suspend Process" };
+    let resp = ui.add_enabled(!blocked, egui::Button::new(label));
+    if blocked {
+        resp.on_hover_text("Suspend blocked: protected or critical process");
+    } else if resp.clicked() {
+        let targets = tg(state);
+        if suspended {
+            spawn_resume(state, targets, item.name.to_string());
+        } else {
+            spawn_suspend(state, targets, item.name.to_string());
+        }
+        ui.close_menu();
+    }
     ui.separator();
     let protected = is_protected_pid(item.pid) || is_system_process(&item.name);
+    let hybrid_masks = if crate::platform::hybrid_cores::is_hybrid_cpu() {
+        crate::platform::hybrid_cores::query_hybrid_core_masks()
+    } else {
+        None
+    };
+    if let Some((p_mask, e_mask)) = hybrid_masks {
+        let blocked = crate::platform::protected::is_process_protected(item.pid, path);
+        for (label, tip, mode) in [
+            ("[ P-Cores ]", "Pin process to Performance cores", AffinityMode::PCores),
+            ("[ E-Cores ]", "Pin process to Efficiency cores", AffinityMode::ECores),
+            ("[ All Cores ]", "Reset process affinity to all CPU cores", AffinityMode::AllCores),
+        ] {
+            let button = egui::Button::new(egui::RichText::new(label).monospace().size(11.0));
+            let response = ui.add_enabled(!blocked, button).on_hover_text(tip);
+            if response.clicked() {
+                let targets = resolve_group_targets(item, state.group_clones, raw);
+                spawn_affinity(state, targets, p_mask, e_mask, mode);
+                ui.close_menu();
+            }
+        }
+        ui.separator();
+    }
     let k = egui::RichText::new("Terminate Process").color(if protected {
         colors::TEXT_SECONDARY
     } else {
@@ -146,6 +191,31 @@ pub fn show_row_menu(
     ui.separator();
     if ui.button("Copy Name & PID").clicked() {
         ui.output_mut(|o| o.copied_text = format!("{} (PID {})", item.name, item.pid));
+        ui.close_menu();
+    }
+    if ui.button("Copy Full Row").clicked() {
+        let (path, cmd, user) = raw
+            .iter()
+            .find(|r| r.pid == item.pid && r.start_time == item.start_time)
+            .map(|r| {
+                (
+                    r.exe_path.as_deref().unwrap_or(""),
+                    r.command_line.as_deref().unwrap_or(""),
+                    r.user.as_deref().unwrap_or(""),
+                )
+            })
+            .unwrap_or(("", "", ""));
+        let meta =
+            crate::modules::cpu::proc_meta::get_or_cache(item.pid, item.start_time, cmd, user);
+        let line = crate::modules::cpu::proc_meta::format_process_copy_line(
+            &item.name,
+            item.pid,
+            &item.ram_text,
+            &item.cpu_text,
+            path,
+            &meta.command_line,
+        );
+        ui.output_mut(|o| o.copied_text = line);
         ui.close_menu();
     }
 }

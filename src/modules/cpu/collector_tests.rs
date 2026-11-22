@@ -45,6 +45,13 @@ fn contains_ci_ascii_and_unicode() {
     assert!(!contains_ci(lower, "other"));
 }
 #[test]
+fn is_process_cpu_hog_core_saturation_distinct_values() {
+    use crate::modules::cpu::model::is_process_cpu_hog;
+    assert!(is_process_cpu_hog(3.6, 100.0));
+    assert!(!is_process_cpu_hog(3.6, 3.6));
+}
+
+#[test]
 fn creation_probe_budget_cold_and_warm() {
     assert_eq!(creation_probe_budget(0), 256);
     assert_eq!(creation_probe_budget(31), 256);

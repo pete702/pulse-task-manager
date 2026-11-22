@@ -8,10 +8,9 @@ mod tests {
         open_verified_process_location, sanitize_explorer_location_path,
     };
     use crate::platform::target::ProcessTarget;
-    use crate::platform::trim::{
-        map_win32_error, trim_process_group, trim_processes_working_sets, trim_working_set_outcome,
-        TrimSkipReason,
-    };
+    #[cfg(target_os = "windows")]
+    use crate::platform::trim::{map_win32_error, trim_working_set_outcome, TrimSkipReason};
+    use crate::platform::trim::{trim_process_group, trim_processes_working_sets};
     #[cfg(target_os = "windows")]
     use windows_sys::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION;
 

@@ -57,14 +57,20 @@ impl Drop for VolumeHandle {
     }
 }
 
+#[cfg(any(target_os = "windows", test))]
 pub fn is_handle_expired(age: std::time::Duration) -> bool {
     age >= std::time::Duration::from_secs(300)
 }
 
 #[cfg(target_os = "windows")]
-fn handle_cache() -> &'static Mutex<HashMap<char, (VolumeHandle, std::time::Instant)>> {
-    static CACHE: OnceLock<Mutex<HashMap<char, (VolumeHandle, std::time::Instant)>>> =
-        OnceLock::new();
+struct CachedHandle {
+    handle: VolumeHandle,
+    last_used: std::time::Instant,
+}
+
+#[cfg(target_os = "windows")]
+fn handle_cache() -> &'static Mutex<HashMap<char, CachedHandle>> {
+    static CACHE: OnceLock<Mutex<HashMap<char, CachedHandle>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -73,21 +79,28 @@ fn handle_cache() -> &'static Mutex<HashMap<char, (VolumeHandle, std::time::Inst
 fn cached_volume(letter: char) -> Option<isize> {
     {
         let mut cache = handle_cache().lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((h, last)) = cache.get(&letter) {
-            if !is_handle_expired(last.elapsed()) {
-                return Some(h.0);
-            }
+        let expired = match cache.get(&letter) {
+            Some(cached) => is_handle_expired(cached.last_used.elapsed()),
+            None => false,
+        };
+        if expired {
             let _ = cache.remove(&letter);
+        } else if let Some(cached) = cache.get_mut(&letter) {
+            if !is_handle_expired(cached.last_used.elapsed()) {
+                cached.last_used = std::time::Instant::now();
+                return Some(cached.handle.0);
+            }
         }
     }
     let volume = open_volume(letter)?;
     let raw = volume.0;
     let mut cache = handle_cache().lock().unwrap_or_else(|e| e.into_inner());
-    cache.retain(|_, (_, last)| !is_handle_expired(last.elapsed()));
+    cache.retain(|_, cached| !is_handle_expired(cached.last_used.elapsed()));
     if cache.len() >= 32 && !cache.contains_key(&letter) {
         cache.clear();
     }
-    let _ = cache.insert(letter, (volume, std::time::Instant::now()));
+    let _ =
+        cache.insert(letter, CachedHandle { handle: volume, last_used: std::time::Instant::now() });
     Some(raw)
 }
 

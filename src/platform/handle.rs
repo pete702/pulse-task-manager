@@ -89,6 +89,7 @@ pub fn is_app_elevated() -> bool {
 
 /// Pure helper: returns the next buffer capacity when QueryFullProcessImageNameW reports
 /// ERROR_INSUFFICIENT_BUFFER (122), doubling up to a 32768 code-unit cap.
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn next_path_buf_cap(current: usize, last_error: u32) -> Option<usize> {
     const ERROR_INSUFFICIENT_BUFFER: u32 = 122;
     const MAX_CAP: usize = 32768;
@@ -100,6 +101,7 @@ pub(crate) fn next_path_buf_cap(current: usize, last_error: u32) -> Option<usize
 }
 
 /// Pure helper: captures the Win32 error code when IsProcessCritical fails (ok == 0).
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn critical_query_failed_code(ok: i32, last_err: u32) -> Option<u32> {
     if ok == 0 {
         Some(last_err)

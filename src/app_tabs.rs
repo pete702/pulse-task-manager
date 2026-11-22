@@ -117,7 +117,8 @@ pub fn handle_global_hotkeys(
         handled = true;
     }
     // Escape: tab-scoped clear search or selection only for active tab.
-    if esc {
+    // The command palette consumes Escape itself when open.
+    if esc && !crate::ui::command_palette::is_open() {
         if matches!(*active_tab, ActiveTab::Cpu | ActiveTab::Processes) {
             ctx.memory_mut(|m| {
                 let id = egui::Id::new("cpu_search_filter");

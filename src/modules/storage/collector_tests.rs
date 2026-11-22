@@ -7,6 +7,7 @@ fn raw(pid: u32, name: &str, read: f32, write: f32) -> RawProcessCpuRow {
         pid,
         name: Arc::from(name),
         cpu_usage: 0.0,
+        raw_cpu_usage: 0.0,
         ram_bytes: 0,
         disk_read_mb_s: read,
         disk_write_mb_s: write,
@@ -15,6 +16,9 @@ fn raw(pid: u32, name: &str, read: f32, write: f32) -> RawProcessCpuRow {
         drive_letter: None,
         creation_time: None,
         start_time: 0,
+        parent_pid: None,
+        command_line: None,
+        user: None,
     }
 }
 #[test]
@@ -46,6 +50,24 @@ fn spike_ages_without_new_spike() {
     let spike = snap.last_io_spike.clone().unwrap_or_default();
     assert_eq!(spike.ticks_ago, 1);
 }
+#[test]
+fn io_spike_threshold_is_350_mb_s() {
+    assert_eq!(IO_SPIKE_THRESHOLD_MB_S, 350.0);
+    let mut c = StorageCollector::new();
+    let hot = [raw(7, "writer.exe", 175.0, 175.0)];
+    let snap = c.collect(&hot, 1);
+    assert!(snap.last_io_spike.is_some());
+    let mut c2 = StorageCollector::new();
+    let warm = [raw(8, "writer.exe", 174.0, 174.0)];
+    let snap2 = c2.collect(&warm, 1);
+    assert!(snap2.last_io_spike.is_none());
+}
+
+#[test]
+fn disk_list_refresh_ticks_is_five() {
+    assert_eq!(DISK_LIST_REFRESH_TICKS, 5);
+}
+
 #[test]
 fn top_io_ignores_quiet_processes() {
     let mut c = StorageCollector::new();

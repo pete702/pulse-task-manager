@@ -1,5 +1,7 @@
 //! Latency probe handle.
 use std::sync::{mpsc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::modules::network::grade::classify_grade;
 use crate::modules::network::latency_probe::ensure_worker;
@@ -25,12 +27,19 @@ impl LatencyProbe {
 
 impl Drop for LatencyProbe {
     fn drop(&mut self) {
+        crate::modules::network::latency_probe::request_probe_shutdown();
         if let Some(tx) = self.tx.take() {
             let _ = tx.send(Cmd::Shutdown);
             drop(tx);
         }
         if let Some(h) = self.worker.take() {
-            let _ = h.join();
+            let deadline = Instant::now() + Duration::from_millis(50);
+            while !h.is_finished() && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(5));
+            }
+            if h.is_finished() {
+                let _ = h.join();
+            }
         }
         if let Some(slot) = TX.get() {
             *slot.lock().unwrap_or_else(|e| e.into_inner()) = None;

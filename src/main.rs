@@ -16,6 +16,7 @@ mod app_ingest;
 mod app_persist;
 mod app_render;
 mod app_tabs;
+mod app_tray;
 mod app_trim;
 mod core;
 mod i18n;
@@ -83,6 +84,7 @@ fn print_help() {
     println!();
     println!("Options:");
     println!("  --self-test    Run self-test (headless in CI, GUI locally)");
+    println!("  --portable     Store config and logs next to the executable");
     println!("  --version, -V  Print version and exit");
     println!("  --help, -h, /? Print this help and exit");
     println!();
@@ -118,7 +120,14 @@ fn main() -> eframe::Result<()> {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0);
-        let dir = std::env::temp_dir();
+        let dir = if crate::core::persist::is_portable_mode() {
+            std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+                .unwrap_or_else(std::env::temp_dir)
+        } else {
+            std::env::temp_dir()
+        };
         let symlink_parent =
             std::fs::symlink_metadata(&dir).map(|m| m.file_type().is_symlink()).unwrap_or(false);
         if !symlink_parent {
@@ -142,10 +151,19 @@ fn main() -> eframe::Result<()> {
     let args: Vec<String> =
         std::env::args_os().skip(1).map(|a| a.to_string_lossy().into_owned()).collect();
     let args_skip = args.as_slice();
+    core::persist::init_portable_mode(args_skip.iter().any(|a| a == "--portable"));
     if let Some(arg1) = args_skip.first() {
         let recognized = matches!(
             arg1.as_str(),
-            "--help" | "-h" | "/?" | "--version" | "-V" | "--selftest" | "--self-test" | "--smoke"
+            "--help"
+                | "-h"
+                | "/?"
+                | "--version"
+                | "-V"
+                | "--selftest"
+                | "--self-test"
+                | "--smoke"
+                | "--portable"
         ) || arg1.starts_with("--lang=");
         if arg1.starts_with('-') && !recognized {
             eprintln!("Unknown option: {arg1}. Use --help for usage.");
@@ -186,6 +204,8 @@ fn main() -> eframe::Result<()> {
 
     // Warm up elevation check once at startup (uses OnceLock internally)
     let _ = crate::platform::handle::is_app_elevated();
+    // Enumerate DXGI adapters once in user mode; no D3DKMT, no GPU wake-up.
+    let _ = crate::platform::dxgi_gpu::query_dxgi_gpus();
 
     // Initialize language from OS detection (or CLI override)
     i18n::init_language(lang_override);
@@ -213,6 +233,14 @@ fn main() -> eframe::Result<()> {
     if self_test {
         core::selftest::run_self_test(options)
     } else {
+        let instance_outcome = crate::platform::instance::acquire_single_instance();
+        if let crate::platform::instance::AcquireOutcome::AlreadyRunningWoken = instance_outcome {
+            return Ok(());
+        }
+        let _instance_guard = match instance_outcome {
+            crate::platform::instance::AcquireOutcome::Primary(g) => g,
+            crate::platform::instance::AcquireOutcome::AlreadyRunningWoken => unreachable!(),
+        };
         let saved_for_app = saved.clone();
         eframe::run_native(
             "PULSE",

@@ -107,6 +107,7 @@ mod table_sort_tests {
             pid,
             name: Arc::from(name),
             cpu_usage: 0.0,
+            raw_cpu_usage: 0.0,
             ram_bytes: 10,
             disk_read_mb_s: read,
             disk_write_mb_s: write,
@@ -115,6 +116,9 @@ mod table_sort_tests {
             drive_letter: None,
             creation_time: None,
             start_time: 1,
+            parent_pid: None,
+            command_line: None,
+            user: None,
         }
     }
 

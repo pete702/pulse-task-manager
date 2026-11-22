@@ -10,6 +10,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 /// Medium CPU alert tier threshold: total CPU >= 85% or single-thread bottleneck.
 const CPU_ALERT_TIER_PCT: f32 = 85.0;
 
+fn warn(text: impl Into<String>, color: egui::Color32) -> egui::RichText {
+    egui::RichText::new(text).monospace().size(11.0).color(color)
+}
+
 /// Cached status line keyed by process count: zero format! on idle frames.
 fn cached_status(active_processes: u32) -> Arc<str> {
     static CACHE: OnceLock<Mutex<(u32, Arc<str>)>> = OnceLock::new();
@@ -85,13 +89,42 @@ fn cached_jitter(jitter_ms: u32) -> Arc<str> {
 }
 
 /// Renders the bottom status bar with active process count, self-diagnostics, and OS jitter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StatusBarCacheKey {
+    pub active_processes: u32,
+    pub dropped_snapshots: u64,
+    pub wide: bool,
+}
+
+fn receipt_tip() -> &'static Mutex<Option<String>> {
+    static TIP: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+    TIP.get_or_init(|| Mutex::new(None))
+}
+
+/// Cached dropped-snapshot indicator text.
+fn cached_drops(dropped: u64) -> Arc<str> {
+    static CACHE: OnceLock<Mutex<(u64, Arc<str>)>> = OnceLock::new();
+    let mut cache = CACHE
+        .get_or_init(|| Mutex::new((u64::MAX, Arc::from(""))))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if cache.0 != dropped {
+        cache.0 = dropped;
+        cache.1 = if dropped > 0 { Arc::from(format!("Drops: {dropped}")) } else { Arc::from("") };
+    }
+    Arc::clone(&cache.1)
+}
+
 pub fn render_status_bar(
     ui: &mut egui::Ui,
     active_processes: u32,
     snapshot: &Option<Arc<SystemSnapshot>>,
     last_ui_ms: f32,
+    dropped_snapshots: u64,
 ) {
     let bar_w = ui.available_width().max(0.0);
+    let elevated = crate::platform::handle::is_app_elevated();
+    let portable = persist::is_portable_mode();
     ui.horizontal(|ui| {
         ui.label(
             egui::RichText::new(Key::StatusReady.t())
@@ -100,7 +133,51 @@ pub fn render_status_bar(
                 .color(colors::ACCENT_CYAN),
         );
         ui.separator();
+        let (badge, badge_color) =
+            if elevated { ("ADMIN", colors::ACCENT_CYAN) } else { ("USER", colors::ACCENT_AMBER) };
+        ui.label(egui::RichText::new(badge).monospace().size(11.0).color(badge_color));
+        if portable {
+            ui.label(
+                egui::RichText::new("[PORTABLE]").monospace().size(11.0).color(colors::ACCENT_CYAN),
+            );
+        }
+        if !elevated
+            && ui.button("[ Restart as Admin ]").clicked()
+            && crate::platform::instance::restart_as_admin(portable)
+        {
+            crate::app_tray::set_allow_real_close(true);
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        if crate::app_tray::admin_restart_failed() {
+            ui.label(warn("[ ADMIN RESTART FAILED ]", colors::ACCENT_RED));
+        }
+        if crate::app_tray::tray_icon_failed() {
+            ui.label(warn("[ TRAY ICON FAILED ]", colors::ACCENT_AMBER))
+                .on_hover_text("Tray icon could not be added after one retry");
+        }
+        let latest_verdict = crate::core::blackbox::latest_verdict();
+        if let Some(ref verdict) = latest_verdict {
+            ui.separator();
+            ui.label(warn(verdict.as_str(), colors::ACCENT_AMBER))
+                .on_hover_text("Latest stutter verdict (last 60 s)");
+        }
+        let holder = receipt_tip();
+        let hint = holder
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .or_else(|| latest_verdict.clone())
+            .unwrap_or_else(|| "Export last 60 seconds of blackbox samples".to_string());
+        if ui.button("[ Lag-Receipt ]").on_hover_text(hint).clicked() {
+            let msg = match crate::core::blackbox::export_lag_receipt() {
+                Ok(path) => format!("Exported: {}", path.display()),
+                Err(err) => format!("Export failed: {err}"),
+            };
+            *holder.lock().unwrap_or_else(|e| e.into_inner()) = Some(msg);
+        }
+        ui.separator();
         let wide = bar_w >= 960.0;
+        let _cache_key = StatusBarCacheKey { active_processes, dropped_snapshots, wide };
         let status_text = if wide {
             cached_status(active_processes)
         } else {
@@ -115,12 +192,17 @@ pub fn render_status_bar(
 
         if persist::config_write_failed() {
             ui.separator();
+            ui.label(warn("CONFIG WRITE FAILED", colors::ACCENT_RED));
+        }
+        if dropped_snapshots > 0 {
+            ui.separator();
             ui.label(
-                egui::RichText::new("CONFIG WRITE FAILED")
+                egui::RichText::new(cached_drops(dropped_snapshots).as_ref())
                     .monospace()
                     .size(11.0)
-                    .color(colors::ACCENT_RED),
-            );
+                    .color(colors::ACCENT_AMBER),
+            )
+            .on_hover_text("Snapshots dropped because the channel was full");
         }
         if let Some(ref snap) = snapshot {
             let diag = cached_diag(snap.pulse_ram_mb, last_ui_ms);
@@ -175,4 +257,20 @@ pub fn render_status_bar(
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn status_bar_cache_key_differs_on_drops() {
+        let a = StatusBarCacheKey { active_processes: 10, dropped_snapshots: 0, wide: true };
+        let b = StatusBarCacheKey { active_processes: 10, dropped_snapshots: 3, wide: true };
+        assert_ne!(a, b);
+    }
+    #[test]
+    fn cached_drops_hides_when_zero() {
+        assert_eq!(cached_drops(0).as_ref(), "");
+        assert_eq!(cached_drops(5).as_ref(), "Drops: 5");
+    }
 }

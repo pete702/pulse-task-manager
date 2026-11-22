@@ -1,11 +1,11 @@
+pub(crate) use super::latency_probe_net::*;
 use std::{
     collections::VecDeque,
-    net::{TcpStream, ToSocketAddrs},
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc, Mutex, OnceLock,
     },
-    time::{Duration, Instant},
+    time::Instant,
 };
 #[derive(Debug, Default)]
 pub(crate) struct ProbeState {
@@ -30,20 +30,13 @@ pub(crate) enum Cmd {
 }
 static STATE: OnceLock<Mutex<ProbeState>> = OnceLock::new();
 static PROBE_ENABLED: AtomicBool = AtomicBool::new(true);
-static PROBE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static FAST_PROBE_MODE: AtomicBool = AtomicBool::new(false);
 #[allow(clippy::type_complexity)]
 pub(crate) static TX: OnceLock<
     Mutex<Option<(mpsc::Sender<Cmd>, Option<std::thread::JoinHandle<()>>)>>,
 > = OnceLock::new();
 static DNS_STATE: OnceLock<Mutex<(DnsFlushState, Option<Instant>)>> = OnceLock::new();
-fn probe_interval_ms() -> u64 {
-    if FAST_PROBE_MODE.load(Ordering::Relaxed) {
-        1000
-    } else {
-        10_000
-    }
-}
+
 pub fn set_fast_probe_mode(fast: bool) {
     let prev = FAST_PROBE_MODE.swap(fast, Ordering::Relaxed);
     if fast && !prev {
@@ -57,24 +50,6 @@ pub(crate) fn state() -> &'static Mutex<ProbeState> {
 }
 pub(crate) fn dns_slot() -> &'static Mutex<(DnsFlushState, Option<Instant>)> {
     DNS_STATE.get_or_init(|| Mutex::new((DnsFlushState::Idle, None)))
-}
-static PROBE_IN_FLIGHT_SINCE: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
-fn in_flight_since() -> &'static Mutex<Option<Instant>> {
-    PROBE_IN_FLIGHT_SINCE.get_or_init(|| Mutex::new(None))
-}
-pub fn is_probe_watchdog_expired() -> bool {
-    if !PROBE_IN_FLIGHT.load(Ordering::Acquire) {
-        return false;
-    }
-    let guard = in_flight_since().lock().unwrap_or_else(|e| e.into_inner());
-    guard.map(|t| t.elapsed().as_millis() >= 5000).unwrap_or(false)
-}
-pub(crate) struct InFlightGuard;
-impl Drop for InFlightGuard {
-    fn drop(&mut self) {
-        PROBE_IN_FLIGHT.store(false, Ordering::Release);
-        *in_flight_since().lock().unwrap_or_else(|e| e.into_inner()) = None;
-    }
 }
 pub fn probe_enabled() -> bool {
     PROBE_ENABLED.load(Ordering::Relaxed)
@@ -120,12 +95,13 @@ pub(crate) fn ensure_worker() -> Option<mpsc::Sender<Cmd>> {
     }
     let (tx, rx) = mpsc::channel::<Cmd>();
     let tx2 = tx.clone();
+    reset_probe_shutdown();
     let handle = std::thread::spawn(move || {
         while let Ok(cmd) = rx.recv() {
             match cmd {
                 Cmd::Probe => {
                     let _guard = InFlightGuard;
-                    let rtt = tcp_rtt_ms();
+                    let rtt = super::latency_probe_net::tcp_rtt_ms();
                     record_sample(rtt);
                 }
                 Cmd::Flush => crate::modules::network::latency_probe_handle::run_flush(),
@@ -152,7 +128,7 @@ pub fn maybe_trigger_probe() {
     }
     *in_flight_since().lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
     let now = Instant::now();
-    let interval = probe_interval_ms();
+    let interval = if FAST_PROBE_MODE.load(Ordering::Relaxed) { 1000 } else { 10_000 };
     let due = {
         let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
         let due =
@@ -173,65 +149,6 @@ pub fn maybe_trigger_probe() {
     if tx.send(Cmd::Probe).is_err() {
         PROBE_IN_FLIGHT.store(false, Ordering::Release);
     }
-}
-pub(crate) fn sanitize_probe_target(raw: &str) -> Option<&str> {
-    let t = raw.trim_matches(|c: char| c.is_ascii_whitespace());
-    if t.is_empty() || t.len() > 253 {
-        return None;
-    }
-    if t.bytes().any(|b| !(b.is_ascii_alphanumeric() || b == b'.' || b == b'-' || b == b':')) {
-        return None;
-    }
-    Some(t)
-}
-pub(crate) fn probe_timeout_ms() -> u64 {
-    2000
-}
-pub(crate) fn probe_hosts() -> Vec<String> {
-    if let Ok(raw) = std::env::var("PULSE_PROBE_HOSTS") {
-        let parsed: Vec<String> =
-            raw.split(',').filter_map(sanitize_probe_target).map(str::to_owned).collect();
-        if !parsed.is_empty() {
-            return parsed;
-        }
-    }
-    vec![
-        "1.1.1.1:53".to_owned(),
-        "8.8.8.8:53".to_owned(),
-        "1.1.1.1:443".to_owned(),
-        "8.8.8.8:443".to_owned(),
-    ]
-}
-static CACHED_PROBE_TARGETS: OnceLock<Mutex<Vec<std::net::SocketAddr>>> = OnceLock::new();
-
-pub(crate) fn resolve_probe_targets() -> Vec<std::net::SocketAddr> {
-    let cache = CACHED_PROBE_TARGETS.get_or_init(|| Mutex::new(Vec::new()));
-    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-    if guard.is_empty() {
-        for host in probe_hosts() {
-            if let Some(addr) = host.to_socket_addrs().ok().and_then(|mut i| i.next()) {
-                guard.push(addr);
-            }
-        }
-        if guard.is_empty() {
-            for host in ["1.1.1.1:53", "8.8.8.8:53"] {
-                if let Some(addr) = host.to_socket_addrs().ok().and_then(|mut i| i.next()) {
-                    guard.push(addr);
-                }
-            }
-        }
-    }
-    guard.clone()
-}
-
-fn tcp_rtt_ms() -> Option<f32> {
-    for addr in resolve_probe_targets() {
-        let start = Instant::now();
-        if TcpStream::connect_timeout(&addr, Duration::from_millis(probe_timeout_ms())).is_ok() {
-            return Some(start.elapsed().as_secs_f32() * 1000.0);
-        }
-    }
-    None
 }
 fn record_sample(rtt: Option<f32>) {
     let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());

@@ -19,7 +19,8 @@ pub fn is_process_cpu_hog(norm_cpu_pct: f32, raw_cpu_pct: f32) -> bool {
 pub struct RawProcessCpuRow {
     pub pid: u32,
     pub name: Arc<str>,
-    pub cpu_usage: f32, // Normalized 0.0..=100.0 of total system capacity
+    pub cpu_usage: f32,     // Normalized 0.0..=100.0 of total system capacity
+    pub raw_cpu_usage: f32, // Un-divided process.cpu_usage() (100.0 = 1 full logical core)
     pub ram_bytes: u64,
     pub disk_read_mb_s: f32,
     pub disk_write_mb_s: f32,
@@ -27,7 +28,10 @@ pub struct RawProcessCpuRow {
     pub exe_path: Option<Arc<str>>,
     pub drive_letter: Option<u8>,
     pub creation_time: Option<u64>,
-    pub start_time: u64, // sysinfo start_time (Unix seconds)
+    pub start_time: u64,                // sysinfo start_time (Unix seconds)
+    pub parent_pid: Option<u32>,        // parent process id for tree view
+    pub command_line: Option<Arc<str>>, // lazily cached on hover/copy
+    pub user: Option<Arc<str>>,         // lazily cached on hover/copy
 }
 
 /// A single process CPU entry for display and analysis.
@@ -40,7 +44,8 @@ pub struct ProcessCpuItem {
     pub drive_letter: Option<u8>,
     pub name: Arc<str>,
     pub exe_path: Arc<str>,
-    pub cpu_pct: f32, // Normalized 0.0..=100.0 of total system capacity
+    pub cpu_pct: f32,     // Normalized 0.0..=100.0 of total system capacity
+    pub raw_cpu_pct: f32, // Un-divided raw CPU (100.0 = 1 full logical core)
     pub ram_bytes: u64,
     pub disk_read_mb_s: f32,
     pub disk_write_mb_s: f32,
@@ -49,6 +54,7 @@ pub struct ProcessCpuItem {
     pub ram_delta_10s: i64,
     pub clone_count: usize,
     pub is_cpu_hog: bool,
+    pub tree_depth: usize, // indentation depth in Tree view mode
 
     // Pre-formatted display strings (Arc<str> for zero-copy sharing)
     pub pid_text: Arc<str>,
@@ -81,7 +87,7 @@ impl ProcessCpuItem {
         let delta_text = Arc::from("Stable");
         let clone_text = Arc::from("1x");
         let disk_io_text = Arc::from("0.0 MB/s");
-        Self {
+        let mut item = Self {
             pid,
             start_time: 0,
             creation_time,
@@ -89,13 +95,15 @@ impl ProcessCpuItem {
             name: Arc::clone(&name),
             exe_path: Arc::from(""),
             cpu_pct: safe_cpu,
+            raw_cpu_pct: safe_cpu,
             ram_bytes,
             disk_read_mb_s: 0.0,
             disk_write_mb_s: 0.0,
             eco_qos: None,
             ram_delta_10s: 0,
             clone_count: 1,
-            is_cpu_hog: is_process_cpu_hog(safe_cpu, safe_cpu),
+            is_cpu_hog: false,
+            tree_depth: 0,
             pid_text,
             cpu_text,
             ram_text,
@@ -108,7 +116,9 @@ impl ProcessCpuItem {
             last_fmt_delta: i64::MAX,
             last_fmt_process_count: usize::MAX,
             last_fmt_io_total: f32::MAX,
-        }
+        };
+        item.is_cpu_hog = is_process_cpu_hog(item.cpu_pct, item.raw_cpu_pct);
+        item
     }
     pub(crate) fn from_raw(raw: &RawProcessCpuRow) -> Self {
         let mut item = Self::new(
@@ -124,6 +134,8 @@ impl ProcessCpuItem {
         item.disk_write_mb_s = raw.disk_write_mb_s;
         item.eco_qos = raw.eco_qos;
         item.exe_path = raw.exe_path.clone().unwrap_or_default();
+        item.raw_cpu_pct =
+            if raw.raw_cpu_usage.is_finite() { raw.raw_cpu_usage.clamp(0.0, 10000.0) } else { 0.0 };
         // Seed fmt trackers so cpu/ram are not reformatted a second time.
         item.last_fmt_cpu_pct = item.cpu_pct;
         item.last_fmt_ram_bytes = item.ram_bytes;
@@ -184,7 +196,7 @@ impl ProcessCpuItem {
         }
 
         if self.clone_count <= 1 {
-            self.is_cpu_hog = is_process_cpu_hog(self.cpu_pct, self.cpu_pct);
+            self.is_cpu_hog = is_process_cpu_hog(self.cpu_pct, self.raw_cpu_pct);
         }
     }
 }

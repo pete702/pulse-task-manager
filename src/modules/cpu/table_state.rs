@@ -1,5 +1,6 @@
 use crate::modules::cpu::model::{ProcessCpuItem, RawProcessCpuRow};
 use crate::modules::cpu::table_sort::{filter_group_and_sort, sort_slice};
+use crate::modules::cpu::table_tree::CpuViewMode;
 use std::collections::{HashMap, VecDeque};
 use std::{sync::Arc, time::Instant};
 pub(crate) type ActionMsg = (String, Option<(u32, u64, bool)>, Vec<((u32, u64), Option<bool>)>);
@@ -16,7 +17,7 @@ pub enum CpuSortCol {
     DiskIo,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct CpuTableCacheKey(u64, String, CpuSortCol, bool, bool, u8);
+struct CpuTableCacheKey(u64, String, CpuSortCol, bool, u8, u8);
 #[derive(Debug)]
 pub struct CpuTableState {
     pub comfort_density: bool,
@@ -24,6 +25,7 @@ pub struct CpuTableState {
     pub focus_search_next_frame: bool,
     pub quick_filter: ProcessQuickFilter,
     pub group_clones: bool,
+    pub view_mode: CpuViewMode,
     pub sort_col: CpuSortCol,
     pub sort_asc: bool,
     pub selected_pid: Option<u32>,
@@ -50,6 +52,7 @@ impl Default for CpuTableState {
             focus_search_next_frame: false,
             quick_filter: ProcessQuickFilter::All,
             group_clones: true,
+            view_mode: CpuViewMode::Clones,
             sort_col: CpuSortCol::CpuPct,
             sort_asc: false,
             selected_pid: None,
@@ -89,7 +92,7 @@ impl CpuTableState {
             query_lower.clone(),
             self.sort_col,
             self.sort_asc,
-            self.group_clones,
+            self.view_mode as u8,
             self.quick_filter.to_u8(),
         );
         if !first_build
@@ -111,7 +114,7 @@ impl CpuTableState {
             || self.ram_baseline.is_empty();
         let ram_deltas =
             self.compute_ram_deltas(raw_rows, Instant::now(), scan_changed, scan_generation);
-        let rows: Arc<[ProcessCpuItem]> = filter_group_and_sort(
+        let mut sorted: Vec<ProcessCpuItem> = filter_group_and_sort(
             raw_rows,
             &ram_deltas,
             &query_lower,
@@ -120,8 +123,9 @@ impl CpuTableState {
             self.sort_col,
             self.sort_asc,
             &self.eco_overrides,
-        )
-        .into();
+        );
+        crate::modules::cpu::table_tree::apply_tree_order(&mut sorted, raw_rows, self.view_mode);
+        let rows: Arc<[ProcessCpuItem]> = sorted.into();
         self.preserve_selection(&rows);
         self.cached_rows = Some(Arc::clone(&rows));
         self.cache_key = Some(new_key);
@@ -179,6 +183,9 @@ impl CpuTableState {
         self.apply_sort_in_place();
     }
     pub fn apply_sort_in_place(&mut self) {
+        if self.view_mode == CpuViewMode::Tree {
+            return;
+        }
         if let Some(rows) = &mut self.cached_rows {
             sort_slice(Arc::make_mut(rows), self.sort_col, self.sort_asc);
         }
@@ -197,6 +204,7 @@ impl CpuTableState {
     pub fn set_group_clones(&mut self, value: bool) {
         if self.group_clones != value {
             self.group_clones = value;
+            self.view_mode = if value { CpuViewMode::Clones } else { CpuViewMode::Flat };
             self.dirty = true;
         }
     }

@@ -5,6 +5,7 @@ use crate::modules::cpu::collector_eco;
 use crate::modules::cpu::model::RawProcessCpuRow;
 #[allow(unused_imports)]
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::Instant;
 use sysinfo::{ProcessRefreshKind, System, UpdateKind};
 type PrevDiskEntry = (u64, u64, Option<u64>, f32, f32);
@@ -42,7 +43,9 @@ impl CpuCollector {
                 .with_memory()
                 .with_cpu()
                 .with_disk_usage()
-                .with_exe(UpdateKind::OnlyIfNotSet),
+                .with_exe(UpdateKind::OnlyIfNotSet)
+                .with_cmd(UpdateKind::OnlyIfNotSet)
+                .with_user(UpdateKind::OnlyIfNotSet),
         );
         let elapsed_secs = self.elapsed_since_last_scan();
         let mut live: HashSet<(u32, u64)> = HashSet::with_capacity(sys.processes().len());
@@ -55,7 +58,8 @@ impl CpuCollector {
             let start_time = process.start_time();
             let key = (pid_u32, start_time);
             live.insert(key);
-            let raw_cpu = process.cpu_usage() / cores;
+            let raw_cpu_usage = process.cpu_usage();
+            let raw_cpu = raw_cpu_usage / cores;
             let cpu_usage = if raw_cpu.is_finite() { raw_cpu.clamp(0.0, 100.0) } else { 0.0 };
             let ram = process.memory();
             let du = process.disk_usage();
@@ -99,13 +103,30 @@ impl CpuCollector {
                     elapsed_secs.max(0.2),
                 )
             };
-            let exe_path =
-                exe.and_then(|p| p.to_str()).filter(|s| !s.is_empty()).map(std::sync::Arc::from);
+            let exe_path = exe.and_then(|p| p.to_str()).filter(|s| !s.is_empty()).map(Arc::from);
+            let meta = crate::modules::cpu::proc_meta::get_or_compute(pid_u32, start_time, || {
+                let cmd = process.cmd();
+                let command_line =
+                    if cmd.is_empty() { Arc::from("") } else { Arc::from(cmd.join(" ")) };
+                let user = process
+                    .user_id()
+                    .map(|u| Arc::from(format!("{}", **u)))
+                    .unwrap_or_else(|| Arc::from(""));
+                (command_line, user)
+            });
+            let command_line =
+                (!meta.command_line.is_empty()).then(|| Arc::clone(&meta.command_line));
+            let user = (!meta.user.is_empty()).then(|| Arc::clone(&meta.user));
             self.prev_disk.insert(key, (tot_r, tot_w, creation_time, r_mb, w_mb));
             raw_rows.push(RawProcessCpuRow {
                 pid: pid_u32,
                 name: crate::util::intern_name(process.name()),
                 cpu_usage,
+                raw_cpu_usage: if raw_cpu_usage.is_finite() {
+                    raw_cpu_usage.clamp(0.0, 10000.0)
+                } else {
+                    0.0
+                },
                 ram_bytes: ram,
                 disk_read_mb_s: r_mb,
                 disk_write_mb_s: w_mb,
@@ -114,6 +135,9 @@ impl CpuCollector {
                 drive_letter: drive,
                 creation_time,
                 start_time,
+                parent_pid: process.parent().map(|p| p.as_u32()),
+                command_line,
+                user,
             });
         }
         self.fill_eco_qos(&mut raw_rows);

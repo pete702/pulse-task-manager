@@ -7,9 +7,20 @@ use std::sync::atomic::{AtomicBool, Ordering};
 static DARK_TITLEBAR_APPLIED: AtomicBool = AtomicBool::new(false);
 
 /// Pure helper: a non-negative HRESULT means success (S_OK).
+#[cfg(any(target_os = "windows", test))]
 #[inline]
 pub fn hr_succeeded(hr: i32) -> bool {
     hr >= 0
+}
+
+/// True only for the real main window title set in `main.rs`.
+/// Rejects empty strings and helper titles such as "PulseTrayHost".
+pub(crate) fn is_pulse_main_window_title(title: &str) -> bool {
+    let t = title.trim();
+    if t.is_empty() || t == "PulseTrayHost" {
+        return false;
+    }
+    t == "\u{25B2} PULSE" || t == "PULSE"
 }
 
 #[cfg(target_os = "windows")]
@@ -25,6 +36,7 @@ pub fn get_hwnd(_ctx: &eframe::egui::Context) -> isize {
         fn EnumWindows(cb: unsafe extern "system" fn(isize, isize) -> i32, lparam: isize) -> i32;
         fn IsWindowVisible(hwnd: isize) -> i32;
         fn GetWindowThreadProcessId(hwnd: isize, pid: *mut u32) -> u32;
+        fn GetWindowTextW(hwnd: isize, lpstring: *mut u16, nmaxcount: i32) -> i32;
     }
     #[link(name = "kernel32")]
     extern "system" {
@@ -36,7 +48,16 @@ pub fn get_hwnd(_ctx: &eframe::egui::Context) -> isize {
         }
         let mut pid: u32 = 0;
         let tid = GetWindowThreadProcessId(hwnd, &mut pid);
-        if tid != 0 && pid == GetCurrentProcessId() {
+        if tid == 0 || pid != GetCurrentProcessId() {
+            return 1;
+        }
+        let mut buf = [0u16; 256];
+        let n = GetWindowTextW(hwnd, buf.as_mut_ptr(), buf.len() as i32);
+        if n <= 0 {
+            return 1;
+        }
+        let title = String::from_utf16_lossy(&buf[..n as usize]);
+        if is_pulse_main_window_title(&title) {
             FOUND.store(hwnd, Ordering::Relaxed);
             return 0;
         }
@@ -87,12 +108,22 @@ pub fn set_dark_title_bar(hwnd: isize) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::hr_succeeded;
+    use super::{hr_succeeded, is_pulse_main_window_title};
 
     #[test]
     fn hr_succeeded_checks_non_negative() {
         assert!(hr_succeeded(0));
         assert!(hr_succeeded(1));
         assert!(!hr_succeeded(-1));
+    }
+
+    #[test]
+    fn main_window_titles_are_matched_exactly() {
+        assert!(is_pulse_main_window_title("\u{25B2} PULSE"));
+        assert!(is_pulse_main_window_title("PULSE"));
+        assert!(is_pulse_main_window_title("  \u{25B2} PULSE  "));
+        assert!(!is_pulse_main_window_title(""));
+        assert!(!is_pulse_main_window_title("PulseTrayHost"));
+        assert!(!is_pulse_main_window_title("Some IME Helper"));
     }
 }

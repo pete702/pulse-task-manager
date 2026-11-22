@@ -11,6 +11,7 @@ pub mod delta_tracker_tests;
 pub mod formatters;
 pub mod history;
 pub mod history_tests;
+pub mod leak_detector;
 pub mod model;
 pub mod model_conversions;
 pub mod page;

@@ -27,6 +27,7 @@ fn roundtrip_custom() {
         network_chart_mode: 0,
         network_probe_enabled: true,
         process_quick_filter: 0,
+        global_hotkey_enabled: true,
         win_w: 1920.0,
         win_h: 1080.0,
         cpu_col_widths: None,

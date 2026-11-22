@@ -49,11 +49,6 @@ pub fn sort_header_text(label: &str, active: bool, asc: bool) -> String {
     }
 }
 
-/// Single-line Ctrl+C process row text formatter.
-pub fn format_copy_row(name: &str, pid: u32, cpu_pct: f32, mem_mb: f64) -> String {
-    format!("{name}\t{pid}\t{cpu_pct:.1}\t{mem_mb:.1}")
-}
-
 /// Row selection/highlight background helper.
 pub fn paint_row_highlight(
     ui: &egui::Ui,
@@ -103,11 +98,6 @@ mod tests {
     fn sort_header_active_desc() {
         assert_eq!(sort_header_text("PID", true, false), "PID \u{25BC}");
     }
-    #[test]
-    fn format_copy_row_basic() {
-        assert_eq!(format_copy_row("foo.exe", 123, 4.5, 10.0), "foo.exe\t123\t4.5\t10.0");
-    }
-
     #[test]
     fn usage_bar_fill_color_derives_from_theme() {
         let alert = usage_bar_fill_color(true).to_srgba_unmultiplied();

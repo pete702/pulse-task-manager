@@ -1,5 +1,7 @@
 //! PULSE telemetry core: background worker, system snapshots, communication channels.
 
+pub mod blackbox;
+mod blackbox_export;
 pub mod downsampling;
 pub mod persist;
 pub mod persist_codec;

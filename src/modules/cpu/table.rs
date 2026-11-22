@@ -3,6 +3,7 @@ use crate::modules::cpu::model::{CpuSnapshot, ProcessCpuItem, RawProcessCpuRow};
 use crate::modules::cpu::table_body::render_virtualized_table;
 use crate::modules::cpu::table_menu::{action_button, GroupTarget};
 use crate::modules::cpu::table_state::CpuTableState;
+use crate::modules::cpu::table_tree::CpuViewMode;
 use crate::platform::handle::is_app_elevated;
 use crate::platform::qos::trim_process_working_set;
 use crate::theme::{card_frame, colors};
@@ -84,10 +85,18 @@ fn clear_btn(ui: &mut egui::Ui, state: &mut CpuTableState) {
     }
 }
 fn group_density(ui: &mut egui::Ui, state: &mut CpuTableState) {
-    let mut group = state.group_clones;
-    if ui.checkbox(&mut group, "Group Clones").changed() {
-        state.set_group_clones(group);
+    for (mode, label) in [
+        (CpuViewMode::Flat, "[ Flat ]"),
+        (CpuViewMode::Clones, "[ Clones ]"),
+        (CpuViewMode::Tree, "[ Tree ]"),
+    ] {
+        let active = state.view_mode == mode;
+        let color = if active { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
+        if action_button(ui, true, label, color).clicked() {
+            state.set_view_mode(mode);
+        }
     }
+    super::table_tools::render_pick_button(ui);
     let label = if state.comfort_density { "[ Comfort ]" } else { "[ Compact ]" };
     if action_button(ui, true, label, colors::TEXT_SECONDARY).clicked() {
         state.comfort_density = !state.comfort_density;

@@ -1,18 +1,23 @@
 //! Storage collector: volume metadata plus aggregated process I/O.
 use crate::modules::cpu::model::RawProcessCpuRow;
 use crate::modules::storage::io_agg::{
-    aggregate_io, aggregate_io_by_disk, aggregate_io_by_letter, clamp_rate, volumes_from_disks,
+    aggregate_io, aggregate_io_by_letter, clamp_rate, volumes_from_disks,
 };
 use crate::modules::storage::model::{DiskVolumeInfo, IoSpikeEvent, StorageSnapshot};
 use crate::modules::storage::physical_disk;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use sysinfo::Disks;
 pub const IO_SPIKE_THRESHOLD_MB_S: f64 = 350.0;
 pub const DISK_LIST_REFRESH_TICKS: u64 = 5;
-pub fn should_refresh_disk_list(tick_count: u64, is_empty: bool) -> bool {
-    is_empty || tick_count.is_multiple_of(DISK_LIST_REFRESH_TICKS)
+static FORCE_STORAGE_REFRESH: AtomicBool = AtomicBool::new(false);
+pub fn request_storage_refresh() {
+    FORCE_STORAGE_REFRESH.store(true, Ordering::Release);
+}
+pub fn should_refresh_disk_list(tick_count: u64, is_empty: bool, force: bool) -> bool {
+    force || is_empty || tick_count.is_multiple_of(DISK_LIST_REFRESH_TICKS)
 }
 pub struct StorageCollector {
     disks: Disks,
@@ -22,6 +27,7 @@ pub struct StorageCollector {
     last_scan_id: u64,
     prev_per_disk: HashMap<u32, (i64, i64, Instant)>,
     last_per_disk_rates: HashMap<u32, (f32, f32)>,
+    force_disk_refresh: bool,
 }
 impl StorageCollector {
     pub fn new() -> Self {
@@ -33,15 +39,19 @@ impl StorageCollector {
             last_scan_id: 0,
             prev_per_disk: HashMap::new(),
             last_per_disk_rates: HashMap::new(),
+            force_disk_refresh: false,
         }
     }
     pub fn collect(&mut self, raw_processes: &[RawProcessCpuRow], scan_id: u64) -> StorageSnapshot {
         if self.prev_per_disk.len() > 32 {
             self.prev_per_disk.clear();
         }
-        if should_refresh_disk_list(self.tick_counter as u64, self.cached_volumes.is_empty()) {
+        let force = self.force_disk_refresh || FORCE_STORAGE_REFRESH.swap(false, Ordering::AcqRel);
+        if should_refresh_disk_list(self.tick_counter as u64, self.cached_volumes.is_empty(), force)
+        {
             self.disks.refresh_list();
             self.cached_volumes = Arc::from(volumes_from_disks(&self.disks));
+            self.force_disk_refresh = false;
         }
         let (agg_read, agg_write, top) = aggregate_io(raw_processes);
         let all: Vec<(String, Option<u32>)> = self
@@ -51,7 +61,15 @@ impl StorageCollector {
             .collect();
         let vr = Arc::clone(&self.cached_volumes);
         let (read_total, write_total, per_disk) =
-            self.per_disk_rates(&all, raw_processes, &vr, agg_read, agg_write);
+            crate::modules::storage::collector_io::per_disk_rates(
+                &all,
+                raw_processes,
+                &vr,
+                agg_read,
+                agg_write,
+                &mut self.prev_per_disk,
+                &mut self.last_per_disk_rates,
+            );
         let read_total = clamp_rate(read_total);
         let write_total = clamp_rate(write_total);
         let by_letter = aggregate_io_by_letter(raw_processes);
@@ -121,113 +139,6 @@ impl StorageCollector {
         self.tick_counter = self.tick_counter.wrapping_add(1);
         snapshot
     }
-    fn per_disk_rates(
-        &mut self,
-        all: &[(String, Option<u32>)],
-        raw_processes: &[RawProcessCpuRow],
-        volumes: &[DiskVolumeInfo],
-        agg_read: f32,
-        agg_write: f32,
-    ) -> (f32, f32, HashMap<u32, (f32, f32)>) {
-        let now = Instant::now();
-        let mut per_disk: HashMap<u32, (f32, f32)> = HashMap::new();
-        let mut sums: HashMap<u32, (i64, i64)> = HashMap::new();
-        let mut visited: Vec<u32> = Vec::new();
-        for (mount, disk) in all {
-            let key = match disk {
-                Some(d) => Some(*d),
-                None => physical_disk::drive_letter(mount).map(|ch| 0x8000_0000 | (ch as u32)),
-            };
-            let Some(disk) = key else { continue };
-            if visited.contains(&disk) {
-                continue;
-            }
-            visited.push(disk);
-            let Some((r, w)) = physical_disk::perf_counters_for_mount(mount) else { continue };
-            let e = sums.entry(disk).or_insert((0, 0));
-            e.0 += r;
-            e.1 += w;
-        }
-        let mut any_rate = false;
-        for (disk, (new_r, new_w)) in sums {
-            match self.prev_per_disk.get(&disk).copied() {
-                Some((old_r, old_w, at)) => {
-                    let dt = now.duration_since(at).as_secs_f64();
-                    if dt > 0.0 {
-                        // Rollback guard: counter reset -> emit zero and re-seed baseline.
-                        if new_r < old_r || new_w < old_w {
-                            per_disk.insert(disk, (0.0, 0.0));
-                            self.last_per_disk_rates.insert(disk, (0.0, 0.0));
-                            self.prev_per_disk.insert(disk, (new_r, new_w, now));
-                            any_rate = true;
-                            continue;
-                        }
-                        if dt < 0.35 {
-                            if let Some(prev) = self.last_per_disk_rates.get(&disk).copied() {
-                                per_disk.insert(disk, prev);
-                                any_rate = true;
-                            }
-                            continue;
-                        }
-                        if new_r >= old_r && new_w >= old_w {
-                            let r = ((new_r - old_r) as f64 / dt / 1_048_576.0) as f32;
-                            let w = ((new_w - old_w) as f64 / dt / 1_048_576.0) as f32;
-                            per_disk.insert(disk, (r, w));
-                            self.last_per_disk_rates.insert(disk, (r, w));
-                            any_rate = true;
-                        }
-                        self.prev_per_disk.insert(disk, (new_r, new_w, now));
-                    }
-                }
-                None => {
-                    self.prev_per_disk.insert(disk, (new_r, new_w, now));
-                }
-            }
-        }
-        let fallback = aggregate_io_by_disk(raw_processes, volumes);
-        for (disk, fr_fw) in fallback {
-            let r = clamp_rate(fr_fw.0 as f32);
-            let w = clamp_rate(fr_fw.1 as f32);
-            if r + w <= 0.0 {
-                continue;
-            }
-            let need = match per_disk.get(&disk) {
-                None => true,
-                Some((hr, hw)) => *hr == 0.0 && *hw == 0.0,
-            };
-            if need {
-                per_disk.insert(disk, (r, w));
-            }
-        }
-        let by_letter = aggregate_io_by_letter(raw_processes);
-        for vol in volumes {
-            if vol.physical_disk.is_some() {
-                continue;
-            }
-            if let Some(l) = physical_disk::drive_letter(vol.mount_point.as_ref()) {
-                let key = 0x8000_0000 | (l as u32);
-                let need = match per_disk.get(&key) {
-                    None => true,
-                    Some((hr, hw)) => *hr == 0.0 && *hw == 0.0,
-                };
-                if need {
-                    if let Some((r, w)) = by_letter.get(&l) {
-                        per_disk.insert(key, (clamp_rate(*r as f32), clamp_rate(*w as f32)));
-                    }
-                }
-            }
-        }
-        if any_rate {
-            let (mut sr, mut sw) = (0.0f32, 0.0f32);
-            for (r, w) in per_disk.values() {
-                sr += r;
-                sw += w;
-            }
-            (clamp_rate(sr), clamp_rate(sw), per_disk)
-        } else {
-            (agg_read, agg_write, per_disk)
-        }
-    }
 }
 fn top_rw(raw: &[RawProcessCpuRow], pid: u32) -> (f32, f32) {
     raw.iter()
@@ -252,11 +163,12 @@ mod refresh_tests {
     use super::should_refresh_disk_list;
     #[test]
     fn refresh_at_five_ticks_and_empty() {
-        assert!(should_refresh_disk_list(0, true));
-        assert!(should_refresh_disk_list(5, false));
-        assert!(should_refresh_disk_list(10, false));
-        assert!(!should_refresh_disk_list(1, false));
-        assert!(!should_refresh_disk_list(2, false));
+        assert!(should_refresh_disk_list(0, true, false));
+        assert!(should_refresh_disk_list(5, false, false));
+        assert!(should_refresh_disk_list(10, false, false));
+        assert!(!should_refresh_disk_list(1, false, false));
+        assert!(!should_refresh_disk_list(2, false, false));
+        assert!(should_refresh_disk_list(3, false, true));
     }
 }
 
