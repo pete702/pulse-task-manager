@@ -176,8 +176,16 @@ pub fn update_tray_tooltip(text: &str) {
         h_balloon_icon: 0,
     };
     const NIM_MODIFY: u32 = 1;
-    unsafe {
-        Shell_NotifyIconW(NIM_MODIFY, &nid);
+    const NIM_ADD: u32 = 0;
+    let modified = unsafe { Shell_NotifyIconW(NIM_MODIFY, &nid) } != 0;
+    if !modified {
+        let added = unsafe { Shell_NotifyIconW(NIM_ADD, &nid) } != 0;
+        if !added {
+            crate::app_tray::TRAY_ICON_FAILED.store(true, Ordering::SeqCst);
+            if crate::core::worker_policy::is_tray_hidden() {
+                restore_main_window(MAIN_HWND.load(Ordering::SeqCst));
+            }
+        }
     }
 }
 pub fn start_tray(main_hwnd: isize, ctx: egui::Context) -> (TrayGuard, mpsc::Receiver<TrayAction>) {

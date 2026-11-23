@@ -70,11 +70,13 @@ pub fn group_physical_disks(volumes: &[DiskVolumeInfo]) -> Vec<PhysicalDiskGroup
         }
     }
     for group in &mut groups {
-        if let Some(first) = group.volumes.first().cloned() {
+        // Every volume on one physical disk carries a copy of the disk rate.
+        // Summing partitions would multiply the same reading by the partition count.
+        if let Some(first) = group.volumes.first() {
             group.kind = first.kind;
+            group.read_mb_s = first.read_mb_s;
+            group.write_mb_s = first.write_mb_s;
         }
-        group.read_mb_s = group.volumes.iter().map(|v| v.read_mb_s).sum();
-        group.write_mb_s = group.volumes.iter().map(|v| v.write_mb_s).sum();
     }
     groups
 }
@@ -243,8 +245,31 @@ mod tests {
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].disk_index, Some(0));
         assert_eq!(groups[0].volumes.len(), 2);
-        assert!((groups[0].read_mb_s - 28.4).abs() < 0.5);
-        assert!((groups[0].write_mb_s - 6.2).abs() < 0.5);
+        assert!((groups[0].read_mb_s - 14.2).abs() < 0.5);
+        assert!((groups[0].write_mb_s - 3.1).abs() < 0.5);
         assert_eq!(groups[1].disk_index, Some(1));
+    }
+
+    #[test]
+    fn two_partitions_use_disk_rate_once() {
+        let mk = |mount: &str, read: f32, write: f32| {
+            let mut v = DiskVolumeInfo::new(
+                Arc::from(mount),
+                Arc::from(mount),
+                Arc::from("NTFS"),
+                DiskMediaKind::Ssd,
+                GIB,
+                0,
+            );
+            v.physical_disk = Some(7);
+            v.read_mb_s = read;
+            v.write_mb_s = write;
+            v
+        };
+        let groups = group_physical_disks(&[mk("C:\\", 120.0, 40.0), mk("D:\\", 120.0, 40.0)]);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].volumes.len(), 2);
+        assert!((groups[0].read_mb_s - 120.0).abs() < 0.01);
+        assert!((groups[0].write_mb_s - 40.0).abs() < 0.01);
     }
 }

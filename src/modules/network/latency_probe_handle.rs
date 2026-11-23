@@ -1,4 +1,5 @@
 //! Latency probe handle.
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -6,6 +7,14 @@ use std::time::{Duration, Instant};
 use crate::modules::network::grade::classify_grade;
 use crate::modules::network::latency_probe::ensure_worker;
 use crate::modules::network::latency_probe::{dns_flush_state, probe_enabled, state, Cmd, TX};
+
+type ProbeSnapshot = (
+    Option<f32>,
+    Option<f32>,
+    f32,
+    crate::modules::network::model::ConnectionGrade,
+    crate::modules::network::latency_probe::DnsFlushState,
+);
 
 pub struct LatencyProbe {
     tx: Option<mpsc::Sender<Cmd>>,
@@ -47,13 +56,19 @@ impl Drop for LatencyProbe {
     }
 }
 
-pub fn probe_snapshot() -> (
-    Option<f32>,
-    Option<f32>,
-    f32,
-    crate::modules::network::model::ConnectionGrade,
-    crate::modules::network::latency_probe::DnsFlushState,
-) {
+static PROBE_TRAFFIC_BITS: AtomicU32 = AtomicU32::new(0);
+
+/// Publishes the current rx+tx rate for callers using the no-argument snapshot.
+pub fn set_probe_traffic_mbps(mbps: f32) {
+    PROBE_TRAFFIC_BITS.store(mbps.max(0.0).to_bits(), Ordering::Relaxed);
+}
+
+pub fn probe_snapshot() -> ProbeSnapshot {
+    let mbps = f32::from_bits(PROBE_TRAFFIC_BITS.load(Ordering::Relaxed));
+    probe_snapshot_with_traffic(mbps)
+}
+
+pub fn probe_snapshot_with_traffic(traffic_mbps: f32) -> ProbeSnapshot {
     let (ping, jitter, loss, samples, failures, enabled) = {
         let guard = state().lock().unwrap_or_else(|e| e.into_inner());
         let loss = if guard.recent.is_empty() {
@@ -71,7 +86,7 @@ pub fn probe_snapshot() -> (
             probe_enabled(),
         )
     };
-    let grade = classify_grade(ping, jitter, loss, enabled, 0.0, samples, failures);
+    let grade = classify_grade(ping, jitter, loss, enabled, traffic_mbps, samples, failures);
     let dns = dns_flush_state();
     (ping, jitter, loss, grade, dns)
 }
@@ -111,4 +126,21 @@ pub fn run_flush() {
         };
         g.1 = Some(std::time::Instant::now());
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::network::model::ConnectionGrade;
+
+    #[test]
+    fn active_traffic_with_failed_probes_is_not_offline() {
+        // Failed probes (all samples failed) plus real rx+tx traffic proves the link.
+        let grade = classify_grade(None, None, 100.0, true, 9.0, 20, 5);
+        assert_eq!(grade, ConnectionGrade::Stable);
+        assert_ne!(grade, ConnectionGrade::Offline);
+        assert_ne!(grade, ConnectionGrade::PacketLoss);
+        // The old hardcoded 0.0 traffic still reports a false outage.
+        assert_eq!(classify_grade(None, None, 100.0, true, 0.0, 20, 5), ConnectionGrade::Offline);
+    }
 }

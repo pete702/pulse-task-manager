@@ -16,10 +16,15 @@ fn num(v: f32) -> String {
 
 fn csv_field(v: &str) -> String {
     let clean: String = v.chars().map(|c| if c.is_ascii() { c } else { '?' }).collect();
-    if clean.contains(',') || clean.contains('"') || clean.contains('\n') || clean.contains('\r') {
-        format!("\"{}\"", clean.replace('"', "\"\""))
+    let safe = if clean.starts_with(['=', '+', '-', '@', '\t', '\r', '\n']) {
+        format!("'{clean}")
     } else {
         clean
+    };
+    if safe.contains(',') || safe.contains('"') || safe.contains('\n') || safe.contains('\r') {
+        format!("\"{}\"", safe.replace('"', "\"\""))
+    } else {
+        safe
     }
 }
 
@@ -30,9 +35,7 @@ fn json_str(v: &str) -> String {
         match c {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04X}", c as u32)),
             c if c.is_ascii() => out.push(c),
             _ => out.push('?'),
         }
@@ -166,6 +169,28 @@ mod tests {
         let csv = format_blackbox_csv(&[s]);
         assert!(csv.is_ascii(), "CSV must be Pure ASCII");
         assert!(csv.contains("caf?.exe,?"));
+    }
+
+    #[test]
+    fn csv_field_neutralizes_formula_prefixes() {
+        for prefix in ['=', '+', '-', '@', '\t', '\r', '\n'] {
+            let out = csv_field(&format!("{prefix}cmd|'/c calc'!A0"));
+            assert!(out.contains(&format!("'{prefix}")), "prefix {prefix:?} must be neutralized");
+        }
+        assert!(csv_field("normal.exe").starts_with("normal.exe"));
+        let with_comma = csv_field("=a,b");
+        assert!(with_comma.starts_with("\"'"), "quoted formula stays prefixed");
+    }
+
+    #[test]
+    fn json_str_escapes_all_c0_controls() {
+        let out = json_str("\u{01}\u{1F}\n\t\r");
+        assert!(out.contains("\\u0001"));
+        assert!(out.contains("\\u001F"));
+        assert!(out.contains("\\u000A"));
+        assert!(out.contains("\\u0009"));
+        assert!(out.contains("\\u000D"));
+        assert!(out.is_ascii());
     }
 
     #[test]

@@ -1,3 +1,4 @@
+use crate::core::worker::WorkerControl;
 use crate::core::{
     worker_io::{compute_scheduler_overshoot_ms, publish, PublishResult, Wakeup},
     worker_policy::*,
@@ -13,7 +14,7 @@ use crate::modules::storage::collector::StorageCollector;
 use crate::platform::win32_api::own_working_set_mb;
 use crate::platform::win32_cpu::init_cpu_brand_and_base_mhz;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex, OnceLock};
+use std::sync::{mpsc, Arc, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 use sysinfo::System;
@@ -24,26 +25,21 @@ pub(crate) struct SpawnedWorker {
     pub is_minimized: Arc<AtomicBool>,
     pub shutdown: Arc<AtomicBool>,
     pub handle: Option<thread::JoinHandle<()>>,
+    pub control: Arc<WorkerControl>,
 }
 
-static WORKER_PAUSED: AtomicBool = AtomicBool::new(false);
-static FORCED_UNPARK: AtomicBool = AtomicBool::new(false);
+static PRIMARY_CONTROL: OnceLock<Arc<WorkerControl>> = OnceLock::new();
+fn primary_control() -> &'static Arc<WorkerControl> {
+    PRIMARY_CONTROL.get_or_init(|| Arc::new(WorkerControl::default()))
+}
 
 #[cfg(test)]
 pub fn worker_paused() -> bool {
-    WORKER_PAUSED.load(Ordering::SeqCst)
+    primary_control().is_paused()
 }
 
 pub fn set_worker_paused(paused: bool) {
-    let was_paused = WORKER_PAUSED.swap(paused, Ordering::SeqCst);
-    if was_paused && !paused {
-        if let Some(slot) = WORKER_THREAD.get() {
-            if let Some(t) = slot.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
-                FORCED_UNPARK.store(true, Ordering::Relaxed);
-                t.unpark();
-            }
-        }
-    }
+    primary_control().set_paused(paused);
 }
 
 /// Counts recovered collector panics (global).
@@ -66,14 +62,14 @@ pub fn spawn_worker(
     let shutdown_worker = shutdown.clone();
     let wakeup_worker = wakeup.clone();
     let tab_active_worker = processes_tab_active;
-    WORKER_ALIVE.store(true, Ordering::SeqCst);
+    let control = Arc::new(WorkerControl::default());
+    let _ = PRIMARY_CONTROL.set(Arc::clone(&control));
+    control.alive.store(true, Ordering::SeqCst);
+    let control_worker = Arc::clone(&control);
     let handle =
         match thread::Builder::new().name("pulse-telemetry-worker".into()).spawn(move || {
-            let _exit_guard = WorkerExitGuard;
-            {
-                let slot = WORKER_THREAD.get_or_init(|| Mutex::new(None));
-                *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(thread::current());
-            }
+            let _exit_guard = ControlExitGuard(Arc::clone(&control_worker));
+            control_worker.set_thread(thread::current());
             let start_time = Instant::now();
             let mut sys = System::new();
             warmup_cpu(&mut sys);
@@ -102,8 +98,8 @@ pub fn spawn_worker(
                 if shutdown_worker.load(Ordering::Acquire) {
                     break;
                 }
-                if WORKER_PAUSED.load(Ordering::SeqCst)
-                    && !PROCESS_SCAN_REQUEST.load(Ordering::SeqCst)
+                if control_worker.paused.load(Ordering::SeqCst)
+                    && !control_worker.scan_requested.load(Ordering::SeqCst)
                 {
                     let pause_start = Instant::now();
                     thread::park_timeout(Duration::from_millis(250));
@@ -113,7 +109,7 @@ pub fn spawn_worker(
                 let tick_start = Instant::now();
                 let is_min = minimized_worker.load(Ordering::Relaxed);
                 let wake = was_minimized && !is_min;
-                let force_request = take_process_scan_request();
+                let force_request = control_worker.take_scan_request();
                 was_minimized = is_min;
                 let due = last_cpu_tick.elapsed() >= Duration::from_millis(450);
                 if !due && !force_request && last_cpu.is_some() {
@@ -196,7 +192,7 @@ pub fn spawn_worker(
                         .max(Duration::from_millis(50));
                     let before_sleep = Instant::now();
                     thread::park_timeout(sleep_dur);
-                    let was_forced_unpark = FORCED_UNPARK.swap(false, Ordering::Relaxed);
+                    let was_forced_unpark = control_worker.take_forced_unpark();
                     let elapsed_ms = before_sleep.elapsed().as_millis() as u32;
                     let target_ms = sleep_dur.as_millis() as u32;
                     let os_scheduler_jitter_ms =
@@ -231,45 +227,20 @@ pub fn spawn_worker(
         }) {
             Ok(h) => Some(h),
             Err(_) => {
-                WORKER_ALIVE.store(false, Ordering::SeqCst);
+                control.alive.store(false, Ordering::SeqCst);
                 None
             }
         };
-    SpawnedWorker { rx, latest, is_minimized, shutdown, handle }
+    SpawnedWorker { rx, latest, is_minimized, shutdown, handle, control }
 }
 
 pub fn request_process_scan() -> bool {
-    if !WORKER_ALIVE.load(Ordering::Relaxed) {
-        return false;
-    }
-    PROCESS_SCAN_REQUEST.store(true, Ordering::Relaxed);
-    if let Some(slot) = WORKER_THREAD.get() {
-        let guard = slot.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(thread) = guard.as_ref() {
-            FORCED_UNPARK.store(true, Ordering::Relaxed);
-            thread.unpark();
-            return true;
-        }
-    }
-    false
+    primary_control().request_scan()
 }
-pub(crate) fn take_process_scan_request() -> bool {
-    PROCESS_SCAN_REQUEST.swap(false, Ordering::Relaxed)
-}
-static PROCESS_SCAN_REQUEST: AtomicBool = AtomicBool::new(false);
-static WORKER_THREAD: OnceLock<Mutex<Option<thread::Thread>>> = OnceLock::new();
-static WORKER_ALIVE: AtomicBool = AtomicBool::new(false);
-struct WorkerExitGuard;
-impl Drop for WorkerExitGuard {
+
+struct ControlExitGuard(Arc<WorkerControl>);
+impl Drop for ControlExitGuard {
     fn drop(&mut self) {
-        clear_thread_slot();
-        PROCESS_SCAN_REQUEST.store(false, Ordering::SeqCst);
-        WORKER_ALIVE.store(false, Ordering::SeqCst);
+        self.0.exit_cleanup();
     }
-}
-fn clear_thread_slot() {
-    if let Some(slot) = WORKER_THREAD.get() {
-        *slot.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    }
-    WORKER_ALIVE.store(false, Ordering::Relaxed);
 }

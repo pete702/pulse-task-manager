@@ -143,3 +143,27 @@ fn write_config_file_rejects_tmp_collision() {
     assert!(!path.exists(), "destination must not be written on collision");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn save_worker_join_drains_queued_writes() {
+    let (tx, rx) = std::sync::mpsc::sync_channel::<(PathBuf, String)>(2);
+    let (seen_tx, seen_rx) = std::sync::mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        while let Ok((_p, s)) = rx.recv() {
+            let _ = seen_tx.send(s);
+        }
+    });
+    for i in 0..4 {
+        tx.send((PathBuf::from("state.cfg"), format!("v{i}"))).unwrap();
+    }
+    drop(tx);
+    handle.join().unwrap();
+    let got: Vec<String> = seen_rx.try_iter().collect();
+    assert_eq!(got, vec!["v0", "v1", "v2", "v3"]);
+}
+
+#[test]
+fn join_save_worker_is_idempotent() {
+    join_save_worker();
+    join_save_worker();
+}

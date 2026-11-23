@@ -133,12 +133,51 @@ fn aggregate_keeps_multi_luid_invariants() {
     let snap = aggregate(rows, 7, 0);
     assert_eq!(snap.adapters.len(), 2);
     assert_eq!(snap.epoch, 7);
-    assert_eq!(snap.processes[&11].luid, Some(l1));
-    assert_eq!(snap.processes[&12].luid, Some(l2));
+    assert_eq!(snap.processes[&(11, l1)].luid, Some(l1));
+    assert_eq!(snap.processes[&(12, l2)].luid, Some(l2));
     for proc_row in snap.processes.values() {
         let total = &snap.adapters[&proc_row.luid.unwrap()];
         assert!(total.dedicated_used_bytes >= proc_row.local_bytes);
     }
+}
+
+#[test]
+fn one_pid_on_two_adapters_keeps_spill_on_igpu_only() {
+    let (igpu, dgpu) = (pack_luid(0x100, 0), pack_luid(0x200, 0));
+    let inst = |low: u32| format!("pid_42_luid_0x00000000_0x{low:08X}_eng_0");
+    let rows = CounterRows {
+        non_local: vec![(inst(0x100), 150.0 * MIB as f64), (inst(0x200), 0.0)],
+        engines: vec![(inst(0x200), 80.0)],
+        ..CounterRows::default()
+    };
+    let snap = aggregate(rows, 1, 0);
+    let a = &snap.processes[&(42, igpu)];
+    let b = &snap.processes[&(42, dgpu)];
+    assert_eq!(a.non_local_bytes, 150 * MIB);
+    assert_eq!(b.non_local_bytes, 0);
+    assert_eq!(b.gpu_pct, Some(80.0));
+    assert!(is_vram_spill(a.non_local_bytes));
+    assert!(!is_vram_spill(b.non_local_bytes));
+}
+
+#[test]
+fn engine_without_luid_segment_keeps_gpu_percent() {
+    let inst = "pid_1234_engtype_3D_0";
+    assert_eq!(parse_engine_pid_luid(inst), None);
+    let rows = CounterRows { engines: vec![(inst.to_string(), 42.5)], ..CounterRows::default() };
+    let snap = aggregate(rows, 1, 0);
+    assert_eq!(snap.processes[&(1234, 0)].gpu_pct, Some(42.5));
+
+    let luid = pack_luid(0x100, 0);
+    let adapter = format!("luid_0x00000000_0x{:08X}_phys_0", 0x100u32);
+    let rows = CounterRows {
+        adapter_dedicated: vec![(adapter, 500.0)],
+        engines: vec![(inst.to_string(), 42.5)],
+        ..CounterRows::default()
+    };
+    let snap = aggregate(rows, 2, 0);
+    assert_eq!(snap.processes[&(1234, luid)].gpu_pct, Some(42.5));
+    assert_eq!(snap.processes[&(1234, luid)].luid, Some(luid));
 }
 
 #[test]

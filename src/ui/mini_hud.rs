@@ -44,6 +44,27 @@ pub fn restored_normal_size(saved: Option<egui::Vec2>) -> egui::Vec2 {
     }
 }
 
+/// Maximized full-screen bounds are never the window's normal size.
+fn kept_size(max: bool, new: Option<egui::Vec2>, old: Option<egui::Vec2>) -> Option<egui::Vec2> {
+    if max {
+        old
+    } else {
+        new.or(old)
+    }
+}
+
+fn restore_commands(ctx: &egui::Context, g: &Geometry) {
+    ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(egui::WindowLevel::Normal));
+    ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
+    ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(860.0, 560.0)));
+    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(restored_normal_size(g.normal_size)));
+    if g.was_maximized {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+    } else if let Some(pos) = g.normal_pos {
+        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
+    }
+}
+
 pub fn sync_viewport(ctx: &egui::Context, active: bool) {
     let mut g = geometry().lock().unwrap_or_else(|e| e.into_inner());
     let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
@@ -51,10 +72,10 @@ pub fn sync_viewport(ctx: &egui::Context, active: bool) {
         if active {
             g.was_maximized = maximized;
             let inner = ctx.input(|i| i.viewport().inner_rect.map(|r| r.size()));
-            if let Some(size) = inner {
-                g.normal_size = Some(size);
+            g.normal_size = kept_size(maximized, inner, g.normal_size);
+            if !maximized {
+                g.normal_pos = ctx.input(|i| i.viewport().outer_rect.map(|r| r.left_top()));
             }
-            g.normal_pos = ctx.input(|i| i.viewport().outer_rect.map(|r| r.left_top()));
             // Windows ignores InnerSize while the HWND is maximized.
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
@@ -70,19 +91,7 @@ pub fn sync_viewport(ctx: &egui::Context, active: bool) {
                 MINI_HUD_HEIGHT,
             )));
         } else {
-            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(egui::WindowLevel::Normal));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
-            ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(860.0, 560.0)));
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(restored_normal_size(
-                g.normal_size,
-            )));
-            if let Some(pos) = g.normal_pos {
-                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
-            }
-            if g.was_maximized {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
-            }
-            g.was_maximized = false;
+            restore_commands(ctx, &g);
         }
         g.followup = 2;
     } else if g.followup > 0 {
@@ -93,17 +102,12 @@ pub fn sync_viewport(ctx: &egui::Context, active: bool) {
                 MINI_HUD_HEIGHT,
             )));
         } else {
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(restored_normal_size(
-                g.normal_size,
-            )));
-            if let Some(pos) = g.normal_pos {
-                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
-            }
-            if g.was_maximized {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
-            }
+            restore_commands(ctx, &g);
         }
         g.followup -= 1;
+        if g.followup == 0 {
+            g.was_maximized = false;
+        }
     }
     g.was_active = active;
 }
@@ -224,6 +228,15 @@ mod tests {
         assert!(should_persist_window_size(false, 1180.0, 760.0));
         assert!(!should_persist_window_size(false, f32::NAN, 760.0));
         assert!(!Geometry::default().was_maximized);
+    }
+
+    #[test]
+    fn maximized_entry_keeps_saved_normal_size() {
+        let saved = egui::vec2(1000.0, 640.0);
+        assert_eq!(kept_size(true, Some(egui::vec2(1920.0, 1080.0)), Some(saved)), Some(saved));
+        let new = egui::vec2(11.0, 7.0);
+        assert_eq!(kept_size(false, Some(new), Some(saved)), Some(new));
+        assert_eq!(kept_size(false, None, Some(saved)), Some(saved));
     }
 
     #[test]

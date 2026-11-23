@@ -1,7 +1,7 @@
 //! Windows-only advapi32 FFI for read-only SCM and Run-key enumeration.
 use super::{
-    bytes_to_words, decode_utf16_le, retry_capacity, wide_bytes, StartupEntry, WindowsServiceEntry,
-    ERROR_MORE_DATA,
+    bytes_to_words, classify_enum_step, decode_utf16_le, retry_capacity, run_key_partial,
+    wide_bytes, StartupEntry, WindowsServiceEntry, ERROR_MORE_DATA,
 };
 use std::ptr::{null, null_mut};
 type Svc = WindowsServiceEntry;
@@ -109,8 +109,7 @@ fn call_enum(
     unsafe { f(scm, SC_INFO, SVC_WIN32, SVC_ALL, buffer, size, needed, returned, resume, null()) }
 }
 
-/// Reads a NUL-terminated UTF-16 name from the whole aligned buffer: names
-/// live AFTER the structure array, so bounding by count yields empty names.
+/// Reads a NUL-terminated UTF-16 name from the buffer (names live AFTER the struct array).
 fn read_wide(words: &[u64], cap: usize, ptr: *const u16) -> String {
     let (base, addr) = (words.as_ptr() as usize, ptr as usize);
     if ptr.is_null() || addr < base || addr >= base.saturating_add(cap) {
@@ -161,13 +160,13 @@ pub(super) fn windows_services() -> (Vec<WindowsServiceEntry>, bool) {
     }
     let _scm_guard = ScHandle(scm);
 
-    // An 8-byte probe makes Win32 report the required byte count; keep it in bytes.
     let mut probe = [0u64; 1];
     let (mut needed, mut returned, mut resume) = (0u32, 0u32, 0u32);
     let probe_rc =
         call_enum(scm, probe.as_mut_ptr() as *mut u8, 8, &mut needed, &mut returned, &mut resume);
+    let (probe_ok, _) = classify_enum_step(probe_rc);
     if needed == 0 {
-        return (Vec::new(), probe_rc == 0);
+        return (Vec::new(), !probe_ok);
     }
     resume = 0; // restart from the first service with the full buffer
 
@@ -180,9 +179,8 @@ pub(super) fn windows_services() -> (Vec<WindowsServiceEntry>, bool) {
         let ptr = words.as_mut_ptr() as *mut u8;
         let buf_bytes = words.len() * std::mem::size_of::<u64>();
         let rc = call_enum(scm, ptr, buf_bytes as u32, &mut need, &mut got, &mut resume);
-        // ERROR_MORE_DATA (234) is itself non-zero: test it BEFORE success.
-        let more = rc as u32 == ERROR_MORE_DATA;
-        let ok = rc != 0 && !more;
+        // ERROR_MORE_DATA is a BOOL failure; classify `more` before `ok`.
+        let (ok, more) = classify_enum_step(rc);
         if !ok && !more {
             partial = true;
             break;
@@ -191,10 +189,7 @@ pub(super) fn windows_services() -> (Vec<WindowsServiceEntry>, bool) {
         if !parse_services(&words, structs, buf_bytes, got as usize, &mut entries) {
             partial = true;
         }
-        if ok {
-            break;
-        } // all services collected; keep partial = false
-        if resume == 0 {
+        if ok || resume == 0 {
             break;
         }
         let cap = (need as usize).saturating_mul(MAX_SCM_PAGES).min(MAX_SCM_BYTES);
@@ -231,8 +226,7 @@ fn read_run_key(scope: &'static str, root: isize) -> (Vec<StartupEntry>, bool) {
             data = vec![0u64; bytes_to_words(data_cap)];
             data_len = (data.len() * std::mem::size_of::<u64>()) as u32;
             value_type = 0;
-            let np = name.as_mut_ptr();
-            let dp = data.as_mut_ptr() as *mut u8;
+            let (np, dp) = (name.as_mut_ptr(), data.as_mut_ptr() as *mut u8);
             rc = unsafe {
                 g(key, index, np, &mut name_len, null_mut(), &mut value_type, dp, &mut data_len)
             };
@@ -248,6 +242,9 @@ fn read_run_key(scope: &'static str, root: isize) -> (Vec<StartupEntry>, bool) {
             }
             name_cap = n.unwrap_or(name_cap);
             data_cap = d.unwrap_or(data_cap);
+        }
+        if run_key_partial(rc, skip) {
+            partial = true;
         }
         if skip {
             index += 1;

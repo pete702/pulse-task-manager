@@ -50,6 +50,29 @@ fn more_data_retry_grows_and_caps() {
 
 #[test]
 #[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
+fn enum_step_classifies_bool_failure_before_success() {
+    use windows_sys::Win32::Foundation::SetLastError;
+    unsafe { SetLastError(ERROR_MORE_DATA) };
+    assert_eq!(classify_enum_step(0), (false, true));
+    unsafe { SetLastError(ERROR_MORE_DATA) };
+    assert_eq!(classify_enum_step(1), (true, false)); // success is never MORE_DATA
+    unsafe { SetLastError(5) };
+    assert_eq!(classify_enum_step(0), (false, false)); // real error
+    unsafe { SetLastError(0) };
+}
+
+#[test]
+#[cfg(target_os = "windows")]
+fn run_key_partial_flags_incomplete_reads() {
+    assert!(!run_key_partial(0, false));
+    assert!(run_key_partial(ERROR_MORE_DATA as i32, false)); // retry budget exhausted
+    assert!(run_key_partial(5, false)); // unexpected Win32 error
+    assert!(run_key_partial(ERROR_MORE_DATA as i32, true)); // skipped value at cap
+}
+
+#[test]
+#[cfg(target_os = "windows")]
 fn utf16le_bytes_decode_stops_at_nul() {
     use super::decode_utf16_le;
     let units: [u16; 4] = ['A' as u16, 'B' as u16, 0, 'C' as u16];

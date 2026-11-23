@@ -44,6 +44,11 @@ pub(crate) fn resolve_restore_priority(key: (u32, u64)) -> Result<u32, String> {
     let g = slot.lock().unwrap_or_else(|e| e.into_inner());
     g.0.get(&key).copied().ok_or_else(|| "No saved priority class for this process".to_string())
 }
+/// No saved priority class means the process is already IDLE_PRIORITY_CLASS.
+#[cfg(target_os = "windows")]
+pub(crate) fn restore_priority(saved: Result<u32, String>) -> u32 {
+    saved.unwrap_or(IDLE_PRIORITY_CLASS)
+}
 pub(crate) fn target_for(
     pid: u32,
     name: &str,
@@ -86,7 +91,11 @@ pub fn set_process_eco_qos(
     if orig_prio == 0 {
         return Err("Failed to read process priority class".to_string());
     }
-    let priority = if enable { IDLE_PRIORITY_CLASS } else { resolve_restore_priority((pid, ct))? };
+    let priority = if enable {
+        IDLE_PRIORITY_CLASS
+    } else {
+        restore_priority(resolve_restore_priority((pid, ct)))
+    };
     if unsafe { SetPriorityClass(handle.as_raw(), priority) } == 0 {
         return Err("Failed to update process priority class for EcoQoS".to_string());
     }
@@ -244,7 +253,12 @@ pub fn terminate_process(
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn disable_without_saved_priority_stays_idle() {
+        assert_eq!(restore_priority(Err("none".into())), IDLE_PRIORITY_CLASS);
+        assert_eq!(restore_priority(Ok(0x20)), 0x20);
+    }
     #[test]
     fn pending_eco_fifo_evicts_earliest_at_cap() {
         let slot = PENDING_ECO.get_or_init(|| Mutex::new((HashMap::new(), VecDeque::new())));

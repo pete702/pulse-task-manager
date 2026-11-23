@@ -7,9 +7,15 @@ use std::time::Instant;
 use sysinfo::Networks;
 
 use crate::modules::network::latency_probe::{maybe_trigger_probe, probe_enabled, probe_snapshot};
+use crate::modules::network::latency_probe_handle::set_probe_traffic_mbps;
 use crate::modules::network::model::{NetworkAdapterInfo, NetworkSnapshot};
 
 const GIB_BYTES: f64 = 1_073_741_824.0;
+
+/// Combined live throughput handed to the probe grade classifier.
+fn probe_traffic_mbps(rx_mbps: f32, tx_mbps: f32) -> f32 {
+    rx_mbps.max(0.0) + tx_mbps.max(0.0)
+}
 
 /// True for virtual/loopback pseudo-interfaces that must not be shown.
 fn is_virtual(name: &str) -> bool {
@@ -114,6 +120,7 @@ impl NetworkCollector {
                 (arc, rx_mbps, tx_mbps, rx_total, tx_total)
             }
         };
+        set_probe_traffic_mbps(probe_traffic_mbps(rx_mbps, tx_mbps));
         let (ping_ms, jitter_ms, packet_loss_pct, grade, _) = probe_snapshot();
         let enabled = probe_enabled();
         NetworkSnapshot {
@@ -181,6 +188,12 @@ impl Default for NetworkCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn probe_traffic_combines_rx_and_tx() {
+        assert!((probe_traffic_mbps(6.0, 3.0) - 9.0).abs() < 0.001);
+        assert_eq!(probe_traffic_mbps(-1.0, 2.0), 2.0);
+    }
 
     #[test]
     fn virtual_interface_filter() {

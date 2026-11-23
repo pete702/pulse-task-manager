@@ -247,11 +247,13 @@ pub fn sample_gpu_history() -> GpuHistoryRing {
 }
 #[cfg(target_os = "windows")]
 pub fn sample_process_gpu_memory() -> HashMap<u32, (u64, u64)> {
-    windows_sample()
-        .processes
-        .into_values()
-        .map(|p| (p.pid, (p.local_bytes, p.non_local_bytes)))
-        .collect()
+    let mut out: HashMap<u32, (u64, u64)> = HashMap::new();
+    for p in windows_sample().processes.into_values() {
+        let entry = out.entry(p.pid).or_insert((0, 0));
+        entry.0 = entry.0.saturating_add(p.local_bytes);
+        entry.1 = entry.1.saturating_add(p.non_local_bytes);
+    }
+    out
 }
 #[cfg(not(target_os = "windows"))]
 pub fn sample_process_gpu_memory() -> HashMap<u32, (u64, u64)> {

@@ -173,7 +173,7 @@ impl eframe::App for PulseApp {
             ctx.request_repaint();
         }
         self.worker.set_fast_process_cadence(should_use_fast_process_cadence(self.active_tab));
-        crate::core::worker_loop::set_worker_paused(self.telemetry_paused);
+        self.worker.set_paused(self.telemetry_paused);
         crate::modules::network::latency_probe::set_fast_probe_mode(
             self.active_tab == crate::app_tabs::ActiveTab::Network && !self.telemetry_paused,
         );
@@ -248,8 +248,7 @@ impl eframe::App for PulseApp {
         }));
     }
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        self.save_state_if_needed(true);
-        crate::core::persist::flush_staged_state();
+        self.save_state_on_exit();
         let (resumed, failed) = crate::platform::suspend::resume_all_suspended();
         if failed > 0 {
             eprintln!("pulse: exit resume (resumed={resumed}, failed={failed})");

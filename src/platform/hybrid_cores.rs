@@ -72,6 +72,9 @@ fn parse_core_records(words: &[u64], used: usize) -> (Vec<(u8, usize)>, bool) {
         }
         offset += size;
     }
+    if offset < len {
+        bad = true; // non-empty trailing bytes are a truncated record
+    }
     (cores, bad)
 }
 
@@ -111,7 +114,10 @@ fn windows_detect() -> Option<(usize, usize)> {
     if unsafe { GetLogicalProcessorInformationEx(REL, ptr, &mut length) } == 0 {
         return None;
     }
-    let (cores, _) = parse_core_records(&buffer, length as usize);
+    let (cores, bad) = parse_core_records(&buffer, length as usize);
+    if bad {
+        return None; // fail closed: never build affinity masks from partial records
+    }
     let total: usize = cores.iter().map(|(_, mask)| mask.count_ones() as usize).sum();
     compute_hybrid_masks(&cores, total)
 }

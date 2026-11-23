@@ -125,3 +125,31 @@ fn network_verdict_never_borrows_the_cpu_culprit() {
     assert_eq!(kind, Some(VerdictKind::Network));
     assert_eq!(culprit_for_verdict(kind, "disk.exe", "chrome.exe", "game.exe"), "");
 }
+
+#[test]
+fn restarted_worker_sample_at_id_one_is_accepted() {
+    {
+        let mut bb = state().lock().unwrap_or_else(|e| e.into_inner());
+        bb.samples.clear();
+        bb.last_key = 0;
+        bb.last_verdict = None;
+    }
+    let snap = |uptime, id| {
+        SystemSnapshot::new_with_jitter(
+            uptime,
+            1.0,
+            Some(crate::modules::memory::model::MemorySnapshot {
+                snapshot_id: id,
+                ..Default::default()
+            }),
+            None,
+            0,
+        )
+    };
+    let first = snap(100, 1);
+    observe(Some(&first));
+    assert_eq!(sample_count(), 1);
+    let restarted = snap(200, 1);
+    observe(Some(&restarted));
+    assert_eq!(sample_count(), 2);
+}

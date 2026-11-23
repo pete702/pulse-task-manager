@@ -74,19 +74,36 @@ pub(crate) fn probe_hosts() -> Vec<String> {
     ]
 }
 
-static CACHED_PROBE_TARGETS: OnceLock<Mutex<Vec<std::net::SocketAddr>>> = OnceLock::new();
+const PROBE_CACHE_TTL: Duration = Duration::from_secs(60);
+
+#[derive(Default)]
+struct ProbeTargetCache {
+    addrs: Vec<std::net::SocketAddr>,
+    hosts_key: String,
+    resolved_at: Option<Instant>,
+}
+
+static CACHED_PROBE_TARGETS: OnceLock<Mutex<ProbeTargetCache>> = OnceLock::new();
+
+fn target_cache() -> &'static Mutex<ProbeTargetCache> {
+    CACHED_PROBE_TARGETS.get_or_init(|| Mutex::new(ProbeTargetCache::default()))
+}
+
+fn cache_is_fresh(cache: &ProbeTargetCache, hosts_key: &str, now: Instant) -> bool {
+    !cache.addrs.is_empty()
+        && cache.hosts_key == hosts_key
+        && cache.resolved_at.is_some_and(|t| now.duration_since(t) < PROBE_CACHE_TTL)
+}
 
 pub(crate) fn resolve_probe_targets() -> Vec<std::net::SocketAddr> {
-    let cache = CACHED_PROBE_TARGETS.get_or_init(|| Mutex::new(Vec::new()));
-    let cached = {
-        let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-        guard.clone()
-    };
-    if !cached.is_empty() {
-        return cached;
+    let hosts = probe_hosts();
+    let hosts_key = hosts.join(",");
+    let mut guard = target_cache().lock().unwrap_or_else(|e| e.into_inner());
+    if cache_is_fresh(&guard, &hosts_key, Instant::now()) {
+        return guard.addrs.clone();
     }
     let mut resolved = Vec::new();
-    for host in probe_hosts() {
+    for host in &hosts {
         if let Some(addr) = host.to_socket_addrs().ok().and_then(|mut i| i.next()) {
             resolved.push(addr);
         }
@@ -98,11 +115,15 @@ pub(crate) fn resolve_probe_targets() -> Vec<std::net::SocketAddr> {
             }
         }
     }
-    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
-    if guard.is_empty() {
-        *guard = resolved.clone();
-    }
-    guard.clone()
+    let now = Instant::now();
+    *guard = ProbeTargetCache { addrs: resolved.clone(), hosts_key, resolved_at: Some(now) };
+    resolved
+}
+
+/// Forces re-resolution after every probe target failed.
+pub(crate) fn invalidate_probe_targets() {
+    let mut guard = target_cache().lock().unwrap_or_else(|e| e.into_inner());
+    guard.resolved_at = None;
 }
 
 pub(crate) fn tcp_rtt_ms() -> Option<f32> {
@@ -115,5 +136,25 @@ pub(crate) fn tcp_rtt_ms() -> Option<f32> {
             return Some(start.elapsed().as_secs_f32() * 1000.0);
         }
     }
+    invalidate_probe_targets();
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+    #[test]
+    fn probe_cache_refreshes_on_expiry_and_host_change() {
+        let now = Instant::now();
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), 53);
+        let cache =
+            ProbeTargetCache { addrs: vec![addr], hosts_key: "a".into(), resolved_at: Some(now) };
+        assert!(cache_is_fresh(&cache, "a", now));
+        assert!(!cache_is_fresh(&cache, "b", now));
+        assert!(!cache_is_fresh(&cache, "a", now + PROBE_CACHE_TTL));
+        let stale = ProbeTargetCache { addrs: vec![], ..ProbeTargetCache::default() };
+        assert!(!cache_is_fresh(&stale, "a", now));
+    }
 }

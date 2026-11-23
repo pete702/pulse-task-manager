@@ -1,6 +1,8 @@
 //! Read-only Windows Services (SCM) and Autostart registry enumeration.
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::GetLastError;
 
 #[cfg(target_os = "windows")]
 #[path = "services_startup_win.rs"]
@@ -10,6 +12,24 @@ const REFRESH: Duration = Duration::from_secs(5);
 
 #[cfg(target_os = "windows")]
 pub(crate) const ERROR_MORE_DATA: u32 = 234;
+
+/// Classifies one EnumServicesStatusExW step: `(success, need_more_data)`.
+/// ERROR_MORE_DATA (234) is reported only after a BOOL failure (`rc == 0`).
+#[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
+pub(crate) fn classify_enum_step(rc: i32) -> (bool, bool) {
+    let more = rc == 0 && unsafe { GetLastError() } == ERROR_MORE_DATA;
+    let ok = rc != 0 && !more;
+    (ok, more)
+}
+
+/// A Run-key read is incomplete on any non-zero final status (including
+/// ERROR_MORE_DATA after the retry budget) or when a value had to be skipped.
+#[cfg(target_os = "windows")]
+pub(crate) fn run_key_partial(rc: i32, skipped: bool) -> bool {
+    rc != 0 || skipped
+}
+
 #[cfg(target_os = "windows")]
 static SERVICES_PARTIAL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 #[cfg(target_os = "windows")]
@@ -159,7 +179,7 @@ pub fn query_windows_services(force_refresh: bool) -> Vec<WindowsServiceEntry> {
         {
             let (entries, partial) = win::windows_services();
             SERVICES_PARTIAL.store(partial, std::sync::atomic::Ordering::Relaxed);
-            if !entries.is_empty() || guard.entries.is_empty() {
+            if !partial || !entries.is_empty() || guard.entries.is_empty() {
                 guard.entries = entries;
             }
         }
@@ -186,7 +206,7 @@ pub fn query_startup_entries(force_refresh: bool) -> Vec<StartupEntry> {
         {
             let (entries, partial) = win::windows_startup();
             STARTUP_PARTIAL.store(partial, std::sync::atomic::Ordering::Relaxed);
-            if !entries.is_empty() || guard.entries.is_empty() {
+            if !partial || !entries.is_empty() || guard.entries.is_empty() {
                 guard.entries = entries;
             }
         }

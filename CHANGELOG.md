@@ -1,5 +1,16 @@
 # Changelog
 All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
+## [0.5.42] - 2026-11-23
+- **pdh/storage**: LUID-less engine %, real probe traffic, disk rate once, CSV/UI/instance fixes.
+## [0.5.41] - 2026-11-23
+- **core**: drain async save on exit; per-worker controls, probe TTL, rate prune, blackbox restart fix.
+## [0.5.40] - 2026-11-23
+- **platform/pdh-gpu**: per-process telemetry keyed by (PID, LUID) so iGPU and dGPU usage never overwrite each other; per-PID counter fallback replaces silent zero.
+- **ui/System GPU**: Spill Risk badge uses only the adapter's own Non-Local bytes; unavailable counters render as --.
+## [0.5.39] - 2026-11-23
+- **platform/win32**: ERROR_MORE_DATA is a BOOL failure in SCM/Run-key reads; clean empty lists refresh cache, incomplete keys are never cached silently; Restart Manager keys use 33 WCHARs.
+- **platform/tray/hybrid**: tray modify falls back to add and restores a stranded hidden window; truncated CPU records fail closed.
+- **app_tray/mini-hud/qos**: viewport hide fallback, primary-hotkey-only registration, preserved Mini-HUD geometry and clean EcoQoS disable.
 ## [0.5.38] - 2026-11-22
 - **platform/pdh-gpu**: headless adapter totals of zero no longer fail the live smoke test; adapter-dominates-process invariant moved to a deterministic fixture test.
 - **app_tray**: local Ctrl+Shift+F9 fallback yields to the registered global hotkey, eliminating rare double-toggle across tray and UI threads.
@@ -78,21 +89,4 @@ All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGEL
 - **cpu/table**: Flat/Clones/Tree view modes with cycle-safe hierarchy, lazy CommandLine/User metadata and extended Ctrl+C row copy.
 ## [0.5.6] - 2026-11-19
 - **cpu/background**: persistent exe-path and menu-action workers; explicit resolve/denied states.
-## [0.5.5] - 2026-11-19
-- **mini-hud**: 330x104 frameless always-on-top strip with Alt+F9, safe viewport restore.
-## [0.5.4] - 2026-11-19
-- **hotkey**: Alt+F9 global Mini-HUD toggle; bare F9 stays local when focused.
-## [0.5.3] - 2026-11-19
-- **exit/ux**: tray on X toggle, header tray/exit buttons, Ctrl+Q, instant tray exit.
-- **instance/latency**: trim window titles, SW_RESTORE, bounded shutdown joins, storage refresh.
-## [0.5.2] - 2026-11-19
-- **instance/tray**: fail-open single-instance guard; restore window via SW_RESTORE.
-## [0.5.1] - 2026-11-19
-- **tray**: system tray daemon with hide-to-tray and sleep flag.
-## [0.5.0] - 2026-11-19
-- **instance**: single-instance guard wakes existing PULSE window to foreground.
-## [0.4.163] - 2026-04-12
-- **network/status**: split latency probe net helpers; expose dropped snapshots in status bar.
-## [0.4.162] - 2026-04-12
-- **storage**: 5s disk refresh, 350 MB/s spike threshold, 300s handle cache TTL eviction.
 

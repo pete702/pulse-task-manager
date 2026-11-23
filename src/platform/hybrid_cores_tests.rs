@@ -55,6 +55,33 @@ fn zero_start_time_is_rejected_fail_closed() {
 #[test]
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
+fn truncated_trailing_record_fails_closed() {
+    let need = std::mem::size_of::<LogicalProcessorInfoEx>();
+    let used = need + 3;
+    let mut words = vec![0u64; used.div_ceil(8)];
+    let record = LogicalProcessorInfoEx {
+        relationship: REL,
+        size: need as u32,
+        processor: ProcessorRelationship {
+            flags: 0,
+            efficiency_class: 1,
+            reserved: [0; 20],
+            group_count: 1,
+            group_mask: [GroupAffinity { mask: 0xFF, group: 0, reserved: [0; 3] }],
+        },
+    };
+    unsafe {
+        let at = words.as_mut_ptr() as *mut LogicalProcessorInfoEx;
+        std::ptr::write_unaligned(at, record);
+    }
+    let (cores, bad) = parse_core_records(&words, used);
+    assert!(bad);
+    assert_eq!(cores, vec![(1u8, 0xFFusize)]);
+}
+
+#[test]
+#[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
 fn unaligned_record_parsing_checks_bounds() {
     let need = std::mem::size_of::<LogicalProcessorInfoEx>();
     let mut words = vec![0u64; (need + 8).div_ceil(8)];

@@ -129,13 +129,12 @@ fn state() -> &'static Mutex<Blackbox> {
 }
 
 fn key_for(snap: &SystemSnapshot) -> u64 {
-    if let Some(mem) = &snap.memory {
-        if mem.snapshot_id != 0 {
-            return mem.snapshot_id;
-        }
-    }
-    let total = snap.cpu.as_ref().map(|c| c.total_pct).unwrap_or(0.0);
-    snap.uptime_secs.wrapping_mul(1000).wrapping_add((total * 10.0) as u64)
+    // Uptime is monotonic across a worker restart; snapshot_id resets to 1.
+    let low = match snap.memory.as_ref().map(|m| m.snapshot_id).unwrap_or(0) {
+        0 => (snap.cpu.as_ref().map(|c| c.total_pct).unwrap_or(0.0) * 10.0) as u64 & 0xFFFF,
+        id => id & 0xFFFF,
+    };
+    (snap.uptime_secs << 16) | low
 }
 
 fn top_cpu_culprit(snap: &SystemSnapshot) -> String {
@@ -215,8 +214,7 @@ fn sample_from(snap: &SystemSnapshot) -> BlackboxSample {
     }
 }
 
-fn push_sample(mut sample: BlackboxSample) {
-    let mut bb = state().lock().unwrap_or_else(|e| e.into_inner());
+fn push_sample_locked(bb: &mut Blackbox, mut sample: BlackboxSample) {
     sample.seq = bb.next_seq;
     bb.next_seq = bb.next_seq.wrapping_add(1);
     if let Some(verdict) = &sample.verdict {
@@ -228,18 +226,23 @@ fn push_sample(mut sample: BlackboxSample) {
     }
 }
 
+#[cfg(test)]
+fn push_sample(sample: BlackboxSample) {
+    let mut bb = state().lock().unwrap_or_else(|e| e.into_inner());
+    push_sample_locked(&mut bb, sample);
+}
+
 /// Records one new telemetry snapshot (deduplicated by snapshot identity).
 pub fn observe(snap: Option<&SystemSnapshot>) {
     let Some(snap) = snap else { return };
     let key = key_for(snap);
-    {
-        let bb = state().lock().unwrap_or_else(|e| e.into_inner());
-        if bb.last_key == key {
-            return;
-        }
+    let mut bb = state().lock().unwrap_or_else(|e| e.into_inner());
+    if bb.last_key == key {
+        return;
     }
-    state().lock().unwrap_or_else(|e| e.into_inner()).last_key = key;
-    push_sample(sample_from(snap));
+    bb.last_key = key;
+    let sample = sample_from(snap);
+    push_sample_locked(&mut bb, sample);
 }
 
 /// Most recent freeze verdict, only while its originating sample is in the 60 s ring.

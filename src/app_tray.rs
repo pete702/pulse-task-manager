@@ -13,30 +13,44 @@ use std::time::{Duration, Instant};
 pub static TRAY_ICON_FAILED: AtomicBool = AtomicBool::new(false);
 /// Set when an elevated restart cannot restore single-instance ownership.
 static ADMIN_RESTART_FAILED: AtomicBool = AtomicBool::new(false);
-
+/// Deferred viewport hide when no main HWND was available for ShowWindow.
+#[cfg(target_os = "windows")]
+static PENDING_VIEWPORT_HIDE: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
+fn main_window_visible(hwnd: isize) -> bool {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible;
+    hwnd != 0 && unsafe { IsWindowVisible(hwnd as HWND) } != 0
+}
+/// A restored-but-still-hidden flag must be cleared once the window is visible.
+#[cfg(any(target_os = "windows", test))]
+pub(crate) fn should_clear_tray_hidden(hidden: bool, visible: bool) -> bool {
+    hidden && visible
+}
 pub fn tray_icon_failed() -> bool {
     TRAY_ICON_FAILED.load(Ordering::SeqCst)
 }
-
 pub fn admin_restart_failed() -> bool {
     ADMIN_RESTART_FAILED.load(Ordering::SeqCst)
 }
-
 #[cfg(target_os = "windows")]
 pub fn mark_admin_restart_failed() {
     ADMIN_RESTART_FAILED.store(true, Ordering::SeqCst);
 }
-
-fn hide_window_to_tray(app: &mut PulseApp) {
+fn hide_window_to_tray(app: &PulseApp) {
     #[cfg(target_os = "windows")]
     let hidden = tray::hide_main_window(app.main_hwnd);
     #[cfg(not(target_os = "windows"))]
-    let _ = app;
-    #[cfg(not(target_os = "windows"))]
-    let hidden = false;
-    if hidden {
-        worker_policy::set_tray_hidden(true);
+    let hidden = {
+        let _ = app;
+        false
+    };
+    if !hidden {
+        #[cfg(target_os = "windows")]
+        PENDING_VIEWPORT_HIDE.store(true, Ordering::SeqCst);
     }
+    worker_policy::set_tray_hidden(true);
     tray::set_allow_real_close(false);
 }
 
@@ -45,9 +59,7 @@ impl PulseApp {
     pub fn apply_command(&mut self, cmd: AppCommand) {
         match cmd {
             AppCommand::SetTab(tab) => self.active_tab = tab,
-            AppCommand::TogglePause => {
-                self.telemetry_paused = !self.telemetry_paused;
-            }
+            AppCommand::TogglePause => self.telemetry_paused = !self.telemetry_paused,
             AppCommand::RequestProcessScan => {
                 self.worker.request_process_scan();
             }
@@ -63,6 +75,13 @@ impl PulseApp {
 
 pub(crate) fn should_use_fast_process_cadence(tab: crate::app_tabs::ActiveTab) -> bool {
     matches!(tab, crate::app_tabs::ActiveTab::Cpu | crate::app_tabs::ActiveTab::Processes)
+}
+
+/// Only a registered PRIMARY Ctrl+Shift+F9 suppresses the local UI fallback.
+/// A fallback hotkey (Alt+Shift+F9 / Ctrl+Shift+F10) or Busy state leaves it active.
+#[cfg(any(target_os = "windows", test))]
+pub(crate) fn primary_hotkey_registered(enabled: bool, label: &str) -> bool {
+    enabled && label == "Ctrl+Shift+F9"
 }
 
 /// Bare F9 always works; Ctrl+Shift+F9 is a fallback only when no global hotkey
@@ -82,17 +101,25 @@ pub(crate) fn local_toggle_pressed(
 
 pub fn update(app: &mut PulseApp, ctx: &egui::Context) {
     #[cfg(target_os = "windows")]
+    if should_clear_tray_hidden(worker_policy::is_tray_hidden(), main_window_visible(app.main_hwnd))
     {
-        if app.main_hwnd == 0 {
-            let hwnd = crate::platform::sys_metrics::get_hwnd(ctx);
-            if hwnd != 0 {
-                app.main_hwnd = hwnd;
-                let _ = crate::platform::sys_metrics::set_dark_title_bar(hwnd);
-                let (guard, rx) = tray::start_tray(hwnd, ctx.clone());
-                app.tray = Some(guard);
-                app.tray_rx = Some(rx);
-                app.tray_tooltip_last = Instant::now();
-            }
+        worker_policy::set_tray_hidden(false);
+        app.worker.request_process_scan();
+    }
+    #[cfg(target_os = "windows")]
+    if PENDING_VIEWPORT_HIDE.swap(false, Ordering::SeqCst) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+    }
+    #[cfg(target_os = "windows")]
+    if app.main_hwnd == 0 {
+        let hwnd = crate::platform::sys_metrics::get_hwnd(ctx);
+        if hwnd != 0 {
+            app.main_hwnd = hwnd;
+            let _ = crate::platform::sys_metrics::set_dark_title_bar(hwnd);
+            let (guard, rx) = tray::start_tray(hwnd, ctx.clone());
+            app.tray = Some(guard);
+            app.tray_rx = Some(rx);
+            app.tray_tooltip_last = Instant::now();
         }
     }
     #[cfg(not(target_os = "windows"))]
@@ -124,8 +151,10 @@ pub fn update(app: &mut PulseApp, ctx: &egui::Context) {
         }
     }
     #[cfg(target_os = "windows")]
-    let global_registered =
-        hotkey::is_global_hotkey_enabled() && hotkey::hotkey_status_label() != "Busy";
+    let global_registered = primary_hotkey_registered(
+        hotkey::is_global_hotkey_enabled(),
+        hotkey::hotkey_status_label(),
+    );
     #[cfg(not(target_os = "windows"))]
     let global_registered = false;
     if hotkey::take_mini_hud_toggle_request()
@@ -154,12 +183,8 @@ pub fn update(app: &mut PulseApp, ctx: &egui::Context) {
         if let Some(snap) = &app.latest_snapshot {
             let cpu = snap.cpu.as_ref().map(|c| c.total_pct as u32).unwrap_or(0);
             let ram = snap.memory.as_ref().map(|m| m.ram_usage_percent() as u32).unwrap_or(0);
-            let _tip = format!(
-                "PULSE | CPU {}% | RAM {}% | HK {}",
-                cpu,
-                ram,
-                hotkey::hotkey_status_label()
-            );
+            let _tip =
+                format!("PULSE | CPU {cpu}% | RAM {ram}% | HK {}", hotkey::hotkey_status_label());
             #[cfg(target_os = "windows")]
             tray::update_tray_tooltip(&_tip);
             app.tray_tooltip_last = Instant::now();
@@ -173,7 +198,10 @@ pub(crate) fn should_hide_on_close(close_to_tray: bool, allow_real_close: bool) 
 
 #[cfg(test)]
 mod tests {
-    use super::{local_toggle_pressed, should_hide_on_close};
+    use super::{
+        local_toggle_pressed, primary_hotkey_registered, should_clear_tray_hidden,
+        should_hide_on_close,
+    };
 
     #[test]
     fn local_f9_and_ctrl_shift_f9_toggle() {
@@ -184,23 +212,31 @@ mod tests {
         assert!(!local_toggle_pressed(true, true, true, false, false));
         assert!(!local_toggle_pressed(true, false, false, false, false));
     }
-
     #[test]
     fn local_ctrl_shift_f9_yields_to_active_global_hotkey() {
         assert!(!local_toggle_pressed(true, true, true, true, true));
         assert!(local_toggle_pressed(true, true, true, true, false));
         assert!(local_toggle_pressed(true, true, false, false, true));
     }
-
     #[test]
-    fn close_to_tray_true_hides_when_close_not_allowed() {
-        assert!(should_hide_on_close(true, false));
+    fn local_toggle_falls_back_when_hotkey_label_is_alt_shift_f9() {
+        assert!(!primary_hotkey_registered(true, "Alt+Shift+F9"));
+        assert!(!primary_hotkey_registered(true, "Ctrl+Shift+F10"));
+        assert!(!primary_hotkey_registered(true, "Busy"));
+        assert!(!primary_hotkey_registered(false, "Ctrl+Shift+F9"));
+        assert!(primary_hotkey_registered(true, "Ctrl+Shift+F9"));
+        let registered = primary_hotkey_registered(true, "Alt+Shift+F9");
+        assert!(local_toggle_pressed(true, true, true, true, registered));
     }
 
     #[test]
-    fn close_to_tray_false_or_allowed_closes() {
+    fn close_to_tray_hide_rules() {
+        assert!(should_hide_on_close(true, false));
         assert!(!should_hide_on_close(false, false));
         assert!(!should_hide_on_close(true, true));
+        assert!(should_clear_tray_hidden(true, true));
+        assert!(!should_clear_tray_hidden(true, false));
+        assert!(!should_clear_tray_hidden(false, true));
     }
 
     #[cfg(target_os = "windows")]

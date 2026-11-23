@@ -10,7 +10,50 @@ use std::thread;
 
 pub const MIN_WINDOW_WIDTH: f32 = 860.0;
 static STAGED_STATE: OnceLock<Mutex<Option<PersistedState>>> = OnceLock::new();
-static SAVE_TX: OnceLock<SyncSender<(PathBuf, String)>> = OnceLock::new();
+static SAVE_WORKER: OnceLock<Mutex<Option<SaveWorker>>> = OnceLock::new();
+
+/// Owns the async config-save channel and the thread that drains it.
+pub struct SaveWorker {
+    tx: SyncSender<(PathBuf, String)>,
+    handle: Option<thread::JoinHandle<()>>,
+}
+
+impl SaveWorker {
+    fn spawn() -> Self {
+        let (tx, rx) = sync_channel::<(PathBuf, String)>(2);
+        let handle = thread::Builder::new()
+            .name("pulse_cfg_save".into())
+            .spawn(move || {
+                while let Ok((p, s)) = rx.recv() {
+                    let failed = write_config_file(&p, &s).is_err();
+                    WRITE_FAILED.store(failed, Ordering::Relaxed);
+                }
+            })
+            .ok();
+        Self { tx, handle }
+    }
+}
+
+fn save_worker() -> &'static Mutex<Option<SaveWorker>> {
+    SAVE_WORKER.get_or_init(|| Mutex::new(None))
+}
+
+fn save_sender() -> SyncSender<(PathBuf, String)> {
+    let mut guard = save_worker().lock().unwrap_or_else(|e| e.into_inner());
+    guard.get_or_insert_with(SaveWorker::spawn).tx.clone()
+}
+
+/// Drains queued writes and joins the save thread before the final sync save.
+pub fn join_save_worker() {
+    if let Some(SaveWorker { tx, handle }) =
+        save_worker().lock().unwrap_or_else(|e| e.into_inner()).take()
+    {
+        drop(tx);
+        if let Some(handle) = handle {
+            let _ = handle.join();
+        }
+    }
+}
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
 static WRITE_FAILED: AtomicBool = AtomicBool::new(false);
 static PORTABLE_MODE: AtomicBool = AtomicBool::new(false);
@@ -41,21 +84,6 @@ pub fn is_portable_mode() -> bool {
     PORTABLE_MODE.load(Ordering::SeqCst)
 }
 
-fn save_sender() -> &'static SyncSender<(PathBuf, String)> {
-    SAVE_TX.get_or_init(|| {
-        let (tx, rx) = sync_channel::<(PathBuf, String)>(2);
-        let _ = thread::Builder::new().name("pulse_cfg_save".into()).spawn(move || {
-            while let Ok((p, s)) = rx.recv() {
-                if write_config_file(&p, &s).is_err() {
-                    WRITE_FAILED.store(true, Ordering::Relaxed);
-                } else {
-                    WRITE_FAILED.store(false, Ordering::Relaxed);
-                }
-            }
-        });
-        tx
-    })
-}
 fn with_staged<T>(f: impl FnOnce(&mut Option<PersistedState>) -> T) -> T {
     f(&mut STAGED_STATE.get_or_init(|| Mutex::new(None)).lock().unwrap_or_else(|e| e.into_inner()))
 }

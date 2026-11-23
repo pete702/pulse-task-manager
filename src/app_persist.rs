@@ -55,6 +55,13 @@ impl PulseApp {
         }
     }
 
+    /// Drains the async writer first so a queued old write cannot win on exit.
+    pub(crate) fn save_state_on_exit(&mut self) {
+        persist::join_save_worker();
+        persist::flush_staged_state();
+        self.save_state_if_needed(true);
+    }
+
     pub(crate) fn save_state_if_needed(&mut self, force: bool) {
         if !force && self.pointer_down {
             return;

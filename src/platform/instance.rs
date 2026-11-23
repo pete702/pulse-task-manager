@@ -75,9 +75,13 @@ pub(crate) fn reacquire_ok(handle: isize, last_error: u32) -> bool {
 pub fn reacquire_single_instance_mutex() -> bool {
     #[cfg(target_os = "windows")]
     {
-        use windows_sys::Win32::Foundation::GetLastError;
+        use windows_sys::Win32::Foundation::{GetLastError, SetLastError};
         use windows_sys::Win32::System::Threading::CreateMutexW;
         let name: Vec<u16> = "Local\\PulseTaskManagerSingleInstance\0".encode_utf16().collect();
+        #[allow(unsafe_code)]
+        unsafe {
+            SetLastError(0);
+        }
         #[allow(unsafe_code)]
         let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) } as isize;
         #[allow(unsafe_code)]
@@ -94,6 +98,13 @@ pub fn reacquire_single_instance_mutex() -> bool {
         INSTANCE_MUTEX_HANDLE.store(1, Ordering::SeqCst);
         true
     }
+}
+
+/// Failed elevated relaunch without ownership: drop any stale handle and mark failure.
+#[cfg(target_os = "windows")]
+fn admin_restart_teardown() {
+    close_mutex_handle(INSTANCE_MUTEX_HANDLE.swap(0, Ordering::SeqCst));
+    crate::app_tray::mark_admin_restart_failed();
 }
 
 /// Restart arguments for the elevated relaunch (empty means no arguments).
@@ -120,7 +131,7 @@ pub fn restart_as_admin(portable: bool) -> bool {
             Ok(p) => p,
             Err(_) => {
                 if !reacquire_single_instance_mutex() {
-                    crate::app_tray::mark_admin_restart_failed();
+                    admin_restart_teardown();
                 }
                 return false;
             }
@@ -138,7 +149,7 @@ pub fn restart_as_admin(portable: bool) -> bool {
             true
         } else {
             if !reacquire_single_instance_mutex() {
-                crate::app_tray::mark_admin_restart_failed();
+                admin_restart_teardown();
             }
             false
         }

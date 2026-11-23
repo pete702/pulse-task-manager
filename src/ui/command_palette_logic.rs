@@ -6,11 +6,11 @@ const MAX_PROCESS_ROWS: usize = 12;
 
 /// Case-insensitive token match: every whitespace token must appear in the label.
 pub fn matches_palette_query(query: &str, label: &str) -> bool {
-    let q = query.trim().to_ascii_lowercase();
+    let q = query.trim().to_lowercase();
     if q.is_empty() {
         return true;
     }
-    let lower = label.to_ascii_lowercase();
+    let lower = label.to_lowercase();
     q.split_whitespace().all(|token| lower.contains(token))
 }
 
@@ -66,7 +66,7 @@ pub fn build_items(processes: &[RawProcessCpuRow], query: &str) -> Vec<PaletteIt
         .iter()
         .map(|(label, action)| PaletteItem { label: (*label).to_owned(), action: *action })
         .collect();
-    let q = query.trim().to_ascii_lowercase();
+    let q = query.trim().to_lowercase();
     // Filter every live process first; only an empty query defaults to top-12 CPU.
     let mut top: Vec<&RawProcessCpuRow> = processes
         .iter()
@@ -100,6 +100,15 @@ mod tests {
         assert!(matches_palette_query("exit pulse", "Action: Exit PULSE"));
         assert!(!matches_palette_query("storage", "Tab: [02] Memory"));
         assert!(!matches_palette_query("mem storage", "Tab: [02] Memory"));
+    }
+
+    #[test]
+    fn cyrillic_query_matches_case_insensitively() {
+        let upper = "\u{041F}\u{0420}\u{041E}\u{0426}\u{0415}\u{0421}";
+        let lower = "\u{043F}\u{0440}\u{043E}\u{0446}\u{0435}\u{0441}";
+        assert!(matches_palette_query(lower, upper));
+        assert!(matches_palette_query(upper, lower));
+        assert!(matches_palette_query(upper, &format!("Process: {lower} (PID 42)")));
     }
 
     #[test]

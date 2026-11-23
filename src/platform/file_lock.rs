@@ -2,6 +2,10 @@
 use std::path::PathBuf;
 
 pub const MAX_LOCK_FILES: usize = 64;
+#[cfg(any(target_os = "windows", test))]
+const CCH_RM_SESSION_KEY: usize = 32;
+#[cfg(any(target_os = "windows", test))]
+pub(crate) const RM_SESSION_KEY_CAP: usize = CCH_RM_SESSION_KEY + 1;
 #[cfg(target_os = "windows")]
 const ERROR_MORE_DATA: u32 = 234;
 const CWD_NOTE: &str = "Note: Restart Manager detects open file/DLL handles; folder cwd locks held by a shell are not reported by RM.";
@@ -139,7 +143,7 @@ unsafe fn windows_find_locks(files: &[PathBuf], had_directory: bool) -> FileLock
     use std::os::windows::ffi::OsStrExt;
 
     let mut session = 0u32;
-    let mut key = [0u16; 32];
+    let mut key = [0u16; RM_SESSION_KEY_CAP];
     if RmStartSession(&mut session, 0, key.as_mut_ptr()) != 0 {
         return FileLockReport::new(Vec::new(), had_directory);
     }
@@ -201,6 +205,12 @@ mod tests {
 
     fn paths(n: usize) -> Vec<PathBuf> {
         (0..n).map(|i| PathBuf::from(format!("C:\\data\\file{i}.bin"))).collect()
+    }
+
+    #[test]
+    fn restart_manager_session_key_buffer_is_33_wchars() {
+        assert_eq!(RM_SESSION_KEY_CAP, 33);
+        assert_eq!(RM_SESSION_KEY_CAP, CCH_RM_SESSION_KEY + 1);
     }
 
     #[test]

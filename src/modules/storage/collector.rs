@@ -43,9 +43,7 @@ impl StorageCollector {
         }
     }
     pub fn collect(&mut self, raw_processes: &[RawProcessCpuRow], scan_id: u64) -> StorageSnapshot {
-        if self.prev_per_disk.len() > 32 {
-            self.prev_per_disk.clear();
-        }
+        prune_per_disk_maps(&mut self.prev_per_disk, &mut self.last_per_disk_rates);
         let force = self.force_disk_refresh || FORCE_STORAGE_REFRESH.swap(false, Ordering::AcqRel);
         if should_refresh_disk_list(self.tick_counter as u64, self.cached_volumes.is_empty(), force)
         {
@@ -140,6 +138,15 @@ impl StorageCollector {
         snapshot
     }
 }
+fn prune_per_disk_maps(
+    prev: &mut HashMap<u32, (i64, i64, Instant)>,
+    rates: &mut HashMap<u32, (f32, f32)>,
+) {
+    if prev.len() > 32 {
+        prev.clear();
+        rates.clear();
+    }
+}
 fn top_rw(raw: &[RawProcessCpuRow], pid: u32) -> (f32, f32) {
     raw.iter()
         .find(|r| r.pid == pid)
@@ -160,7 +167,7 @@ impl Default for StorageCollector {
 }
 #[cfg(test)]
 mod refresh_tests {
-    use super::should_refresh_disk_list;
+    use super::*;
     #[test]
     fn refresh_at_five_ticks_and_empty() {
         assert!(should_refresh_disk_list(0, true, false));
@@ -169,6 +176,19 @@ mod refresh_tests {
         assert!(!should_refresh_disk_list(1, false, false));
         assert!(!should_refresh_disk_list(2, false, false));
         assert!(should_refresh_disk_list(3, false, true));
+    }
+
+    #[test]
+    fn prune_rates_with_prev() {
+        let mut prev = HashMap::new();
+        let mut rates = HashMap::new();
+        for i in 0..33 {
+            prev.insert(i, (0, 0, Instant::now()));
+            rates.insert(i, (1.0, 2.0));
+        }
+        prune_per_disk_maps(&mut prev, &mut rates);
+        assert!(prev.is_empty());
+        assert!(rates.is_empty());
     }
 }
 

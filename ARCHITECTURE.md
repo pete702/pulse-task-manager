@@ -1,6 +1,6 @@
 # PULSE Architecture & Engineering Rules
 
-PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.88"`) using `eframe` / `egui` (`0.27.2`). Current release: **v0.5.32**.
+PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and process manager written in Rust (`Edition 2021`, `rust-version = "1.88"`) using `eframe` / `egui` (`0.27.2`). Current release: **0.5.40**.
 
 ## 1. Core Architectural Principles
 
@@ -13,7 +13,7 @@ PULSE (`pulse_manager`) is a native Windows 10/11 hardware telemetry HUD and pro
 
 ## 2. Hard Modularity & Hygiene Guards
 
-- **Source File Limit** (`MAX_RS_LINES = 280` in `tests/docs_guard.rs`): enforced by `selftest_tests.rs` and `docs_guard.rs`.
+- **Source File Limit** (`MAX_RS_LINES = 280`): enforced by `tests/docs_guard.rs`.
 - **Submodule Test Architecture**: unit tests in sibling `*_tests.rs`.
 - **Language & Documentation Guards**: zero Cyrillic, zero `Lang::Uk`; docs at most 120 lines / 8192 bytes, strict ASCII.
 - **Persisted State** (`persist.rs`): atomic write to `state.cfg.tmp` then rename.

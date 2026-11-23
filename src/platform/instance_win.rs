@@ -14,7 +14,13 @@ extern "system" {
     fn AllowSetForegroundWindow(dwprocessid: u32) -> i32;
     fn ShowWindow(hwnd: isize, ncmdshow: i32) -> i32;
     fn SetForegroundWindow(hwnd: isize) -> i32;
+    fn IsWindowVisible(hwnd: isize) -> i32;
+    fn GetClassNameW(hwnd: isize, lpclass: *mut u16, nmax: i32) -> i32;
+    fn PostMessageW(hwnd: isize, msg: u32, wparam: usize, lparam: isize) -> i32;
 }
+
+/// Wake posted to the existing instance's tray host (PulseTrayHost message window).
+const WM_APP_PULSE_WAKE: u32 = 0x0400 + 202;
 
 #[link(name = "kernel32")]
 extern "system" {
@@ -43,6 +49,33 @@ pub(crate) fn acquire() -> AcquireOutcome {
     } else {
         AcquireOutcome::Primary(SingleInstanceGuard)
     }
+}
+
+#[allow(unsafe_code)]
+fn wake_tray_host(hwnds: &[isize], owner_pid: u32, current_pid: u32) -> bool {
+    for &hwnd in hwnds {
+        let mut pid: u32 = 0;
+        if unsafe { GetWindowThreadProcessId(hwnd, &mut pid) } == 0
+            || pid == 0
+            || pid == current_pid
+            || pid != owner_pid
+        {
+            continue;
+        }
+        let mut buf = [0u16; 64];
+        let n = unsafe { GetClassNameW(hwnd, buf.as_mut_ptr(), buf.len() as i32) };
+        if n <= 0 {
+            continue;
+        }
+        let class = String::from_utf16_lossy(&buf[..n as usize]);
+        if class.eq_ignore_ascii_case("PulseTrayClass") {
+            unsafe {
+                PostMessageW(hwnd, WM_APP_PULSE_WAKE, 0, 0);
+            }
+            return true;
+        }
+    }
+    false
 }
 
 #[allow(unsafe_code)]
@@ -96,9 +129,13 @@ fn wake_existing_pulse_window() -> bool {
             continue;
         }
         use windows_sys::Win32::UI::WindowsAndMessaging::SW_RESTORE;
+        let visible = unsafe { IsWindowVisible(hwnd) } != 0;
+        let woke_tray = wake_tray_host(&hwnds, pid, current_pid);
         unsafe {
             AllowSetForegroundWindow(pid);
-            ShowWindow(hwnd, SW_RESTORE);
+            if !woke_tray || !visible {
+                ShowWindow(hwnd, SW_RESTORE);
+            }
             SetForegroundWindow(hwnd);
         }
         return true;
