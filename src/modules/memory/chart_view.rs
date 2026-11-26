@@ -63,7 +63,6 @@ pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemoryS
                 (None, Some(leak)) => Some(leak),
                 (None, None) => None,
             };
-            // Pass spike and leak indicators to the chart header.
             render_header(ui, &mut selected, ram, commit, swap, has_commit, note.as_deref());
             ui.add_space(6.0);
             h.chart_window = selected;
@@ -102,7 +101,7 @@ pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemoryS
             };
 
             // Compute plot height AFTER header so bottom labels fit.
-            let plot_height = ui.available_height().max(220.0);
+            let plot_height = ui.available_height().clamp(240.0, 360.0);
             let plot_width = ui.available_width().max(120.0);
 
             // Read toggle states BEFORE plot.show() for conditional series rendering
@@ -117,6 +116,7 @@ pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemoryS
             let plot_response = Plot::new("memory_load_plot")
                 .width(plot_width)
                 .height(plot_height)
+                .show_background(false)
                 .show_axes([false, false])
                 .show_grid([true, true])
                 .show_x(false)
@@ -180,13 +180,7 @@ pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemoryS
             draw_y_axis_hud_labels(ui, plot_rect);
             draw_x_axis_hud_labels(ui, plot_rect, selected);
 
-            // Draw interactive horizontal legend on top of the plot (using actual plot rect)
-            // Use previous frame's legend rect for interaction (stored in ctx.data), fallback to current plot_rect
-            let legend_rect_id = egui::Id::new("mem_chart_legend_rect");
-            let prev_legend_rect: Option<egui::Rect> =
-                ui.ctx().data(|d| d.get_temp(legend_rect_id));
-            let interaction_rect = prev_legend_rect.unwrap_or(plot_rect);
-
+            // Draw interactive horizontal legend on top of the plot using the live plot rect.
             draw_hud_scanner(
                 ui,
                 plot_rect,
@@ -197,10 +191,7 @@ pub fn render_memory_chart(ui: &mut egui::Ui, h: &mut MemoryHistory, s: &MemoryS
                 show_commit,
                 has_commit,
             );
-            let (new_show_ram, new_show_commit) = draw_hud_legend(ui, interaction_rect, has_commit);
-
-            // Store current legend rect for next frame's interaction
-            ui.ctx().data_mut(|d| d.insert_temp(legend_rect_id, plot_rect));
+            let (new_show_ram, new_show_commit) = draw_hud_legend(ui, plot_rect, has_commit);
 
             // Persist toggle states if changed
             if new_show_ram != show_ram {

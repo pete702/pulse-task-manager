@@ -71,6 +71,28 @@ fn test_configure_theme_disables_selectable_labels() {
     let ctx = egui::Context::default();
     theme::apply_obsidian_theme(&ctx);
     assert!(!ctx.style().interaction.selectable_labels);
+    let style = ctx.style();
+    assert_eq!(style.text_styles[&egui::TextStyle::Button].family, egui::FontFamily::Proportional);
+    assert_eq!(style.text_styles[&egui::TextStyle::Button].size, 12.0);
+    for widget in [
+        &style.visuals.widgets.inactive,
+        &style.visuals.widgets.hovered,
+        &style.visuals.widgets.active,
+    ] {
+        assert_eq!(widget.bg_stroke.width, 1.0_f32);
+    }
+    assert_eq!(style.visuals.widgets.hovered.fg_stroke.color, egui::Color32::WHITE);
+    assert_eq!(style.visuals.widgets.active.fg_stroke.color, egui::Color32::WHITE);
+}
+
+#[test]
+fn test_interaction_fill_colors_are_distinct() {
+    assert_ne!(colors::ELEVATED, colors::HOVER);
+    assert_ne!(colors::HOVER, colors::ACTIVE);
+    assert_ne!(colors::ELEVATED, colors::ACTIVE);
+    assert_ne!(colors::BG_CARD, colors::ELEVATED);
+    assert_eq!(colors::ACCENT_CYAN, egui::Color32::from_rgb(0x21, 0xD2, 0xEE));
+    assert_eq!(colors::ACCENT_RED, egui::Color32::from_rgb(0xEE, 0x43, 0x43));
 }
 
 #[test]

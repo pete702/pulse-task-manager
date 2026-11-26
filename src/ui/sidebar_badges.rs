@@ -95,19 +95,37 @@ pub(super) fn draw_badge_text(
     size: f32,
     color: eframe::egui::Color32,
 ) {
-    let pos = eframe::egui::pos2(rect.right() - 12.0, rect.center().y);
-    ui.painter().text(
-        pos,
-        eframe::egui::Align2::RIGHT_CENTER,
+    use crate::theme::colors;
+    let w = 64.0_f32.min(rect.width() * 0.42);
+    let pill = eframe::egui::Rect::from_min_max(
+        eframe::egui::pos2(rect.right() - 10.0 - w, rect.center().y - 9.0),
+        eframe::egui::pos2(rect.right() - 10.0, rect.center().y + 9.0),
+    );
+    let painter = ui.painter();
+    let radius = eframe::egui::Rounding::same(colors::BADGE_RADIUS);
+    painter.rect_filled(pill, radius, colors::ELEVATED);
+    painter.rect_stroke(pill, radius, eframe::egui::Stroke::new(1.0_f32, colors::BORDER));
+    painter.text(
+        pill.center(),
+        eframe::egui::Align2::CENTER_CENTER,
         text,
         eframe::egui::FontId::monospace(size),
         color,
     );
 }
 
-/// Live GPU/VRAM badge for tab [05]; never the old "v0.5" placeholder.
+/// Badge text matches the GPU % sparkline: same metric, honest `--` when missing.
+fn system_badge_text() -> String {
+    let tail = crate::ui::system_gpu_tab::system_gpu_chart::recent_gpu_series(1);
+    match tail.first().copied().flatten() {
+        Some(v) if v.is_finite() => format!("GPU {}%", v.round() as u32),
+        _ => "GPU --".to_owned(),
+    }
+}
+
+/// Live GPU engine badge for tab [05]; never the old "v0.5" placeholder.
 pub(crate) fn draw_system_badge(ui: &eframe::egui::Ui, rect: eframe::egui::Rect) {
-    let text = crate::ui::system_gpu_tab::gpu_badge();
+    let text = system_badge_text();
     draw_badge_text(ui, rect, &text, 12.0, crate::theme::colors::ACCENT_CYAN);
 }
 
@@ -153,9 +171,8 @@ pub(super) fn draw_tab_badge(
         T::Storage => {
             let t = snap.storage.read_mb_s + snap.storage.write_mb_s;
             let t = if t.is_finite() { t.max(0.0) } else { 0.0 };
-            let scope = snap
-                .storage
-                .volumes
+            let vols = &snap.storage.volumes;
+            let scope = vols
                 .iter()
                 .fold(0u64, |a, v| a.wrapping_mul(31).wrapping_add(v.mount_point.len() as u64));
             let col = if hysteresis_active(storage_latch, scope, t) {
@@ -168,9 +185,8 @@ pub(super) fn draw_tab_badge(
         T::Network => {
             let t = snap.network.rx_mbps + snap.network.tx_mbps;
             let t = if t.is_finite() { t.max(0.0) } else { 0.0 };
-            let scope = snap
-                .network
-                .adapters
+            let adapters = &snap.network.adapters;
+            let scope = adapters
                 .iter()
                 .fold(0u64, |a, v| a.wrapping_mul(31).wrapping_add(v.name.len() as u64));
             let col = if hysteresis_active(network_latch, scope, t) {
@@ -198,6 +214,11 @@ mod tests {
         let mut st = false;
         assert!(!badge_active(f32::NAN, &mut st));
         assert!(!badge_active(f32::INFINITY, &mut st));
+    }
+
+    #[test]
+    fn system_badge_text_always_labels_gpu_metric() {
+        assert!(system_badge_text().starts_with("GPU"));
     }
 
     #[test]

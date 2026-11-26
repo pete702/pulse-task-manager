@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::modules::cpu::model::CpuSnapshot;
 use crate::theme::{card_frame, colors};
-use crate::ui::primitives::{cyber_accent, draw_cyber_corner_brackets};
+use crate::ui::primitives::{cyber_accent, draw_cyber_corner_brackets, pill_badge};
 use eframe::egui;
 
 fn cached_hottest(pct: f32) -> Arc<str> {
@@ -52,11 +52,11 @@ fn cached_delta(delta: f32) -> Arc<str> {
 
 pub(crate) fn classify_bottleneck_badge(hottest_pct: f32, is_bottleneck: bool) -> &'static str {
     if is_bottleneck {
-        "[!] SINGLE-THREAD BOUND"
+        "High Load"
     } else if hottest_pct < 5.0 {
-        "[--] IDLE / BALANCED"
+        "Awaiting"
     } else {
-        "[OK] BALANCED"
+        "Balanced"
     }
 }
 
@@ -70,16 +70,14 @@ pub fn render_bottleneck_card(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
                     ui.label(
-                        egui::RichText::new("PEAK THREAD LOAD")
-                            .monospace()
-                            .size(13.0)
+                        egui::RichText::new("Peak Thread Load")
+                            .font(egui::FontId::proportional(13.5))
                             .color(colors::TEXT_PRIMARY),
                     );
                     ui.add(
                         egui::Label::new(
                             egui::RichText::new("Logical thread bottleneck detector")
-                                .monospace()
-                                .size(10.0)
+                                .font(egui::FontId::proportional(10.0))
                                 .color(colors::TEXT_SECONDARY),
                         )
                         .wrap(false),
@@ -94,15 +92,10 @@ pub fn render_bottleneck_card(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
                     } else {
                         egui::Color32::from_rgb(0, 229, 255)
                     };
-                    ui.label(
-                        egui::RichText::new(badge_text)
-                            .monospace()
-                            .size(10.0)
-                            .color(badge_color),
-                    );
+                    pill_badge(ui, badge_text, badge_color);
                 });
             });
-            ui.add_space(8.0);
+            ui.add_space(6.0);
 
             // Primary metric: Hottest thread % + precision bar
             let color = if is_bottleneck {
@@ -137,7 +130,7 @@ pub fn render_bottleneck_card(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
                 "Highest single logical thread utilization. >= 85% indicates a single-thread bottleneck limiting overall throughput.",
             );
             super::top_cards::draw_precision_bar_with_threshold(ui, rect, hottest_pct / 100.0, color, 0.85);
-            ui.add_space(12.0);
+            ui.add_space(8.0);
 
             // Bottom row: 3 single-line metric cells via Grid (no wrapping).
             let delta = hottest_pct - cpu.total_pct;
@@ -151,23 +144,23 @@ pub fn render_bottleneck_card(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
 
             egui::Grid::new("cpu_peak_grid")
                 .num_columns(3)
-                .spacing([20.0, 6.0])
+                .spacing([16.0, 4.0])
                 .show(ui, |ui| {
                     metric_cell(
                         ui,
-                        "HOTTEST THREAD",
+                        "Hottest Thread",
                         cached_thread(cpu.hottest_core_idx).as_ref(),
                         color,
                     );
                     metric_cell(
                         ui,
-                        "LOAD SPREAD",
+                        "Load Spread",
                         cached_delta(delta).as_ref(),
                         if delta > 20.0 { colors::ACCENT_RED } else { colors::TEXT_PRIMARY },
                     );
                     metric_cell(
                         ui,
-                        "DIAGNOSTIC",
+                        "Diagnostic",
                         diag_text,
                         if is_bottleneck { colors::ACCENT_RED } else { colors::TEXT_PRIMARY },
                     );
@@ -183,7 +176,9 @@ fn metric_cell(ui: &mut egui::Ui, caption: &str, value: &str, value_color: egui:
     ui.vertical(|ui| {
         ui.add(
             egui::Label::new(
-                egui::RichText::new(caption).monospace().size(10.0).color(colors::TEXT_SECONDARY),
+                egui::RichText::new(caption)
+                    .font(egui::FontId::proportional(11.0))
+                    .color(colors::TEXT_SECONDARY),
             )
             .wrap(false),
         );
@@ -211,8 +206,8 @@ mod tests {
 
     #[test]
     fn classify_bottleneck_badge_states() {
-        assert_eq!(classify_bottleneck_badge(90.0, true), "[!] SINGLE-THREAD BOUND");
-        assert_eq!(classify_bottleneck_badge(1.0, false), "[--] IDLE / BALANCED");
-        assert_eq!(classify_bottleneck_badge(20.0, false), "[OK] BALANCED");
+        assert_eq!(classify_bottleneck_badge(90.0, true), "High Load");
+        assert_eq!(classify_bottleneck_badge(1.0, false), "Awaiting");
+        assert_eq!(classify_bottleneck_badge(20.0, false), "Balanced");
     }
 }

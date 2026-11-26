@@ -116,7 +116,7 @@ pub(crate) fn draw_plot(
         ui.add_space(52.0);
         Plot::new(("network_io_plot", latency))
             .width(ui.available_width().max(200.0))
-            .height(220.0)
+            .height((ui.available_height() * 0.44).clamp(140.0, 220.0))
             .show_axes([false, false])
             .show_grid([true, true])
             .show_x(false)

@@ -33,6 +33,23 @@ impl ActiveTab {
         ]
     }
 
+    /// All six tabs in display order (used by the compact tab bar).
+    pub fn all_ordered() -> Vec<ActiveTab> {
+        std::iter::once(ActiveTab::Processes).chain(Self::all().iter().copied()).collect()
+    }
+
+    /// Clean ASCII label without navigation brackets.
+    pub fn short_label(self) -> &'static str {
+        match self {
+            ActiveTab::Processes => "Processes",
+            ActiveTab::Memory => "Memory",
+            ActiveTab::Cpu => "CPU",
+            ActiveTab::Storage => "Storage",
+            ActiveTab::Network => "Network",
+            ActiveTab::System => "System & GPU",
+        }
+    }
+
     /// Button label for the tab (localized).
     pub fn label(self) -> &'static str {
         match self {
@@ -146,6 +163,39 @@ pub fn handle_global_hotkeys(
             ctx.request_repaint();
             handled = true;
         }
+    }
+    handled
+}
+
+/// Ctrl+B toggles the sidebar; Ctrl+Tab / Ctrl+Shift+Tab cycle tabs.
+/// Ignored while a text field wants keyboard input.
+pub fn handle_navigation_hotkeys(
+    ctx: &egui::Context,
+    active_tab: &mut ActiveTab,
+    sidebar_hidden: &mut bool,
+) -> bool {
+    if ctx.wants_keyboard_input() {
+        return false;
+    }
+    let (ctrl, shift, toggle, tab_key) = ctx.input(|i| {
+        (
+            i.modifiers.ctrl,
+            i.modifiers.shift,
+            i.key_pressed(egui::Key::B),
+            i.key_pressed(egui::Key::Tab),
+        )
+    });
+    let mut handled = false;
+    if ctrl && toggle {
+        *sidebar_hidden = !*sidebar_hidden;
+        handled = true;
+    }
+    if ctrl && tab_key {
+        let order = ActiveTab::all_ordered();
+        let idx = order.iter().position(|t| *t == *active_tab).unwrap_or(0);
+        let step = if shift { order.len() - 1 } else { 1 };
+        *active_tab = order[(idx + step) % order.len()];
+        handled = true;
     }
     handled
 }

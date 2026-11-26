@@ -4,8 +4,7 @@ use crate::modules::storage::collector::IO_SPIKE_THRESHOLD_MB_S;
 use crate::modules::storage::view_helpers::truncate;
 use crate::theme::colors;
 use crate::ui::chart_scale::x_grid_spacer;
-#[allow(unused_imports)]
-pub(crate) use crate::ui::chart_scale::{clean_4_axis_max, format_y_tick, lock_time_chart_bounds};
+pub(crate) use crate::ui::chart_scale::{clean_4_axis_max, lock_time_chart_bounds};
 use crate::ui::primitives::{cyber_accent, draw_cyber_corner_brackets};
 use eframe::egui;
 use egui_plot::{GridMark, HLine, Line, LineStyle, Plot, PlotPoints};

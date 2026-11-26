@@ -14,9 +14,8 @@ pub fn render_total_load_card(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
             // Xeon strings never collide with the title on narrow windows.
             ui.add(
                 egui::Label::new(
-                    egui::RichText::new("TOTAL PROCESSOR LOAD")
-                        .monospace()
-                        .size(13.0)
+                    egui::RichText::new("Total Processor Load")
+                        .font(egui::FontId::proportional(13.5))
                         .color(colors::TEXT_PRIMARY),
                 )
                 .wrap(false),
@@ -25,15 +24,14 @@ pub fn render_total_load_card(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
                 ui.add(
                     egui::Label::new(
                         egui::RichText::new(cpu.brand.as_ref())
-                            .monospace()
-                            .size(10.0)
+                            .font(egui::FontId::proportional(10.0))
                             .color(colors::TEXT_SECONDARY),
                     )
                     .wrap(false)
                     .truncate(true),
                 );
             }
-            ui.add_space(8.0);
+            ui.add_space(6.0);
 
             // Primary metric: Total CPU % + precision bar
             let total_pct = cpu.total_pct;
@@ -53,20 +51,19 @@ pub fn render_total_load_card(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
             let (rect, resp) = ui.allocate_exact_size(egui::vec2(bar_w, 16.0), egui::Sense::hover());
             resp.on_hover_text("Total system CPU utilization across all logical threads. 100% = all threads saturated.");
             draw_segmented_led_bar(ui, rect, total_pct / 100.0, 28, colors::ACCENT_CYAN);
-            ui.add_space(12.0);
+            ui.add_space(8.0);
 
             // Bottom row: 3 mini-tiles via Grid with no-wrap labels
             egui::Grid::new("cpu_total_grid")
                 .num_columns(3)
-                .spacing([20.0, 6.0])
+                .spacing([16.0, 4.0])
                 .show(ui, |ui| {
                     // LIVE CLOCK
                     ui.vertical(|ui| {
                         ui.add(
                             egui::Label::new(
-                                egui::RichText::new("LIVE CLOCK")
-                                    .monospace()
-                                    .size(10.0)
+                                egui::RichText::new("Live Clock")
+                                    .font(egui::FontId::proportional(11.0))
                                     .color(colors::TEXT_SECONDARY),
                             )
                             .wrap(false),
@@ -87,9 +84,8 @@ pub fn render_total_load_card(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
                     ui.vertical(|ui| {
                         ui.add(
                             egui::Label::new(
-                                egui::RichText::new("BASE CLOCK")
-                                    .monospace()
-                                    .size(10.0)
+                                egui::RichText::new("Base Clock")
+                                    .font(egui::FontId::proportional(11.0))
                                     .color(colors::TEXT_SECONDARY),
                             )
                             .wrap(false),
@@ -110,9 +106,8 @@ pub fn render_total_load_card(ui: &mut egui::Ui, cpu: &CpuSnapshot) {
                     ui.vertical(|ui| {
                         ui.add(
                             egui::Label::new(
-                                egui::RichText::new("LOGICAL CORES / PROCS")
-                                    .monospace()
-                                    .size(10.0)
+                                egui::RichText::new("Logical Cores / Procs")
+                                    .font(egui::FontId::proportional(11.0))
                                     .color(colors::TEXT_SECONDARY),
                             )
                             .wrap(false),

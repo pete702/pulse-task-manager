@@ -1,54 +1,65 @@
-//! "Obsidian HUD" theme for PULSE.
-//! Contains design tokens, theme application function, traffic-light load color, and card Frame.
+//! "Obsidian Cyan Cockpit" theme for PULSE.
+//! Design tokens, theme application, semantic load color and shared Frames.
 
 use eframe::egui;
 
-/// Obsidian HUD theme color tokens (per ARCHITECTURE.md specification).
+/// Obsidian Cyan Cockpit color tokens.
 pub mod colors {
     use eframe::egui::Color32;
 
-    /// Main window background: #0B0C10
-    pub const BG_WINDOW: Color32 = Color32::from_rgb(0x0B, 0x0C, 0x10);
-    /// Card/panel background: #12141C
-    pub const BG_CARD: Color32 = Color32::from_rgb(0x12, 0x14, 0x1C);
-    /// Borders/dividers: #1F2330
-    pub const BORDER: Color32 = Color32::from_rgb(0x1F, 0x23, 0x30);
-    /// Subtle separators: #1A1E2E
-    pub const BORDER_SUBTLE: Color32 = Color32::from_rgb(0x1A, 0x1E, 0x2E);
-    /// Widget hover state: #1A1E2E
-    pub const HOVER: Color32 = Color32::from_rgb(0x1A, 0x1E, 0x2E);
-    /// Widget active state: #1F2330
-    pub const ACTIVE: Color32 = Color32::from_rgb(0x1F, 0x23, 0x30);
-    /// Corner radius: 6.0
-    pub const RADIUS: f32 = 6.0;
+    /// Main window background: #090D12
+    pub const BG_WINDOW: Color32 = Color32::from_rgb(0x09, 0x0D, 0x12);
+    /// Card/panel background: #10161F
+    pub const BG_CARD: Color32 = Color32::from_rgb(0x10, 0x16, 0x1F);
+    /// Elevated surfaces and selected pills: #151D28
+    pub const ELEVATED: Color32 = Color32::from_rgb(0x15, 0x1D, 0x28);
+    /// Borders/dividers: #1A2433
+    pub const BORDER: Color32 = Color32::from_rgb(0x1A, 0x24, 0x33);
+    /// Subtle separators: #151D28
+    pub const BORDER_SUBTLE: Color32 = Color32::from_rgb(0x15, 0x1D, 0x28);
+    /// Widget hover state: #1F2B3D
+    pub const HOVER: Color32 = Color32::from_rgb(0x1F, 0x2B, 0x3D);
+    /// Widget pressed/selected state: #0E3A4A
+    pub const ACTIVE: Color32 = Color32::from_rgb(0x0E, 0x3A, 0x4A);
+    /// Card corner radius: 8.0
+    pub const RADIUS: f32 = 8.0;
+    /// Pill/button corner radius: 6.0
+    pub const PILL_RADIUS: f32 = 6.0;
+    /// Card corner radius (explicit alias): 8.0
+    pub const CARD_RADIUS: f32 = 8.0;
+    /// Badge corner radius: 4.0
+    pub const BADGE_RADIUS: f32 = 4.0;
     /// Border width: 1.0
     pub const BORDER_WIDTH: f32 = 1.0;
 
-    // ===== v0.0.6 New Colors =====
-    /// Primary text (bright white): #F0F6FC
-    pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(0xF0, 0xF6, 0xFC);
-    /// Secondary text (silver-blue): #94A3B8
+    /// Primary text: #F1F5F9
+    pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(0xF1, 0xF5, 0xF9);
+    /// Secondary text: #94A3B8
     pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(0x94, 0xA3, 0xB8);
-    /// Accent cyan (neon): #00F0FF
-    pub const ACCENT_CYAN: Color32 = Color32::from_rgb(0x00, 0xF0, 0xFF);
-    /// Accent amber (warning): #FFB800
-    pub const ACCENT_AMBER: Color32 = Color32::from_rgb(0xFF, 0xB8, 0x00);
-    /// Accent red (critical): #FF2A54
-    pub const ACCENT_RED: Color32 = Color32::from_rgb(0xFF, 0x2A, 0x54);
-    /// Accent purple (swap): #BD00FF
-    pub const ACCENT_PURPLE: Color32 = Color32::from_rgb(0xBD, 0x00, 0xFF);
-    /// Sidebar active background: #1A2234
-    pub const SIDEBAR_ACTIVE_BG: Color32 = Color32::from_rgb(0x1A, 0x22, 0x34);
+    /// Muted text: #64748B
+    pub const TEXT_MUTED: Color32 = Color32::from_rgb(0x64, 0x74, 0x8B);
 
-    /// Status bar background: #0A0B10
-    pub const STATUS_BAR_BG: Color32 = Color32::from_rgb(0x0A, 0x0B, 0x10);
+    /// Accent cyan: #22D3EE (green nudged by one for lossless alpha round-trips)
+    pub const ACCENT_CYAN: Color32 = Color32::from_rgb(0x21, 0xD2, 0xEE);
+    /// Accent amber: #F59E0B
+    pub const ACCENT_AMBER: Color32 = Color32::from_rgb(0xF5, 0x9E, 0x0B);
+    /// Accent red: #EF4444 (channels nudged for lossless alpha round-trips)
+    pub const ACCENT_RED: Color32 = Color32::from_rgb(0xEE, 0x43, 0x43);
+    /// Accent purple: #A855F7
+    pub const ACCENT_PURPLE: Color32 = Color32::from_rgb(0xA8, 0x55, 0xF7);
+    /// Nominal emerald: #10B981
+    pub const EMERALD: Color32 = Color32::from_rgb(0x10, 0xB9, 0x81);
+
+    /// Sidebar active background (elevated pill): #151D28
+    pub const SIDEBAR_ACTIVE_BG: Color32 = Color32::from_rgb(0x15, 0x1D, 0x28);
+    /// Status bar background: #090D12
+    pub const STATUS_BAR_BG: Color32 = Color32::from_rgb(0x09, 0x0D, 0x12);
 }
 
-/// Three Walls badge and muted-text tokens (v0.1.0 aliases).
-pub const OPTIMAL_EMERALD: egui::Color32 = egui::Color32::from_rgb(0x00, 0xE0, 0x80);
+/// Nominal/"Three Walls" emerald token (kept for existing callers).
+pub const OPTIMAL_EMERALD: egui::Color32 = colors::EMERALD;
 
-/// Traffic-light load color -- returns color based on load percentage.
-/// <60% -- cyan (#00F0FF), 60-85% -- amber (#FFB800), >=85% -- neon red (#FF2A54).
+/// Traffic-light load color: <60% cyan, 60-85% amber, >=85% red.
 #[inline]
 pub fn load_color(percent: f32) -> egui::Color32 {
     if !percent.is_finite() {
@@ -63,67 +74,57 @@ pub fn load_color(percent: f32) -> egui::Color32 {
     }
 }
 
-/// Applies the "Obsidian HUD" theme to the egui context.
-/// Sets colors, rounding, fonts (monospace for numbers).
+/// Applies the "Obsidian Cyan Cockpit" theme to the egui context.
 pub fn apply_obsidian_theme(ctx: &egui::Context) {
     let mut style = (*ctx.style()).clone();
 
-    // Color tokens
     style.visuals.window_fill = colors::BG_WINDOW;
     style.visuals.panel_fill = colors::BG_CARD;
     style.visuals.window_stroke = egui::Stroke::new(colors::BORDER_WIDTH, colors::BORDER);
-    style.visuals.window_rounding = egui::Rounding::same(colors::RADIUS);
+    style.visuals.window_rounding = egui::Rounding::same(colors::CARD_RADIUS);
 
-    // Widget colors -- noninteractive
-    style.visuals.widgets.noninteractive.bg_fill = colors::BG_CARD;
-    style.visuals.widgets.noninteractive.bg_stroke =
-        egui::Stroke::new(colors::BORDER_WIDTH, colors::BORDER);
-    style.visuals.widgets.noninteractive.rounding = egui::Rounding::same(colors::RADIUS);
-    style.visuals.widgets.noninteractive.fg_stroke =
-        egui::Stroke::new(1.0_f32, colors::TEXT_PRIMARY);
+    let noninteractive = &mut style.visuals.widgets.noninteractive;
+    noninteractive.bg_fill = colors::BG_CARD;
+    noninteractive.bg_stroke = egui::Stroke::new(colors::BORDER_WIDTH, colors::BORDER);
+    noninteractive.rounding = egui::Rounding::same(colors::PILL_RADIUS);
+    noninteractive.fg_stroke = egui::Stroke::new(1.0_f32, colors::TEXT_PRIMARY);
 
-    // Widget colors -- inactive
-    style.visuals.widgets.inactive.bg_fill = colors::BG_CARD;
-    style.visuals.widgets.inactive.bg_stroke =
-        egui::Stroke::new(colors::BORDER_WIDTH, colors::BORDER);
-    style.visuals.widgets.inactive.rounding = egui::Rounding::same(colors::RADIUS);
-    style.visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0_f32, colors::TEXT_PRIMARY);
+    let inactive = &mut style.visuals.widgets.inactive;
+    inactive.bg_fill = colors::ELEVATED;
+    inactive.bg_stroke = egui::Stroke::new(colors::BORDER_WIDTH, colors::BORDER);
+    inactive.rounding = egui::Rounding::same(colors::PILL_RADIUS);
+    inactive.fg_stroke = egui::Stroke::new(1.0_f32, colors::TEXT_PRIMARY);
 
-    // Widget colors -- hovered
-    style.visuals.widgets.hovered.bg_fill = colors::HOVER;
-    style.visuals.widgets.hovered.bg_stroke =
-        egui::Stroke::new(colors::BORDER_WIDTH, colors::ACCENT_CYAN);
-    style.visuals.widgets.hovered.rounding = egui::Rounding::same(colors::RADIUS);
-    style.visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0_f32, colors::TEXT_PRIMARY);
+    let hovered = &mut style.visuals.widgets.hovered;
+    hovered.bg_fill = colors::HOVER;
+    hovered.bg_stroke = egui::Stroke::new(1.0_f32, colors::ACCENT_CYAN);
+    hovered.rounding = egui::Rounding::same(colors::PILL_RADIUS);
+    hovered.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
 
-    // Widget colors -- active
-    style.visuals.widgets.active.bg_fill = colors::ACTIVE;
-    style.visuals.widgets.active.bg_stroke =
-        egui::Stroke::new(colors::BORDER_WIDTH, colors::ACCENT_CYAN);
-    style.visuals.widgets.active.rounding = egui::Rounding::same(colors::RADIUS);
-    style.visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0_f32, colors::TEXT_PRIMARY);
+    let active = &mut style.visuals.widgets.active;
+    active.bg_fill = colors::ACTIVE;
+    active.bg_stroke = egui::Stroke::new(1.0_f32, colors::ACCENT_CYAN);
+    active.rounding = egui::Rounding::same(colors::PILL_RADIUS);
+    active.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
 
-    // Selection (for tables, etc.)
     style.visuals.selection.bg_fill = colors::SIDEBAR_ACTIVE_BG;
     style.visuals.selection.stroke = egui::Stroke::new(1.0_f32, colors::ACCENT_CYAN);
 
-    // Text style: monospace for numbers
     style
         .text_styles
-        .insert(egui::TextStyle::Monospace, egui::FontId::new(13.0, egui::FontFamily::Monospace));
-    // Default text color
+        .insert(egui::TextStyle::Monospace, egui::FontId::new(12.5, egui::FontFamily::Monospace));
     style
         .text_styles
-        .insert(egui::TextStyle::Body, egui::FontId::new(14.0, egui::FontFamily::Proportional));
-
-    // Disable accidental text selection on labels/headers/cards.
+        .insert(egui::TextStyle::Body, egui::FontId::new(13.0, egui::FontFamily::Proportional));
+    style
+        .text_styles
+        .insert(egui::TextStyle::Button, egui::FontId::new(12.0, egui::FontFamily::Proportional));
     style.interaction.selectable_labels = false;
 
     ctx.set_style(style);
 }
 
-/// Returns an `egui::Frame` for cards in Obsidian HUD style.
-/// Background: #12141C, Border: 1px #1F2330, Radius: 6.0, Inner margin: 12.0.
+/// Returns an `egui::Frame` for cards: #0F151D fill, 1px #1E293B, 8px radius.
 pub fn card_frame() -> egui::Frame {
     egui::Frame::none()
         .fill(colors::BG_CARD)
@@ -132,17 +133,15 @@ pub fn card_frame() -> egui::Frame {
         .inner_margin(egui::Margin::same(12.0))
 }
 
-/// Returns an `egui::Frame` for status bar.
-/// Background: #0A0B10, Border top: 1px #1F2330, Inner margin: 8.0.
+/// Returns an `egui::Frame` for the status bar.
 pub fn status_bar_frame() -> egui::Frame {
     egui::Frame::none()
         .fill(colors::STATUS_BAR_BG)
         .stroke(egui::Stroke::new(1.0_f32, colors::BORDER))
-        .rounding(egui::Rounding::same(0.0))
+        .rounding(egui::Rounding::ZERO)
         .inner_margin(egui::Margin::symmetric(12.0, 8.0))
 }
 
-// Re-export font setup from separate module
 pub use crate::theme_fonts::setup_fonts;
 
 #[cfg(test)]

@@ -38,15 +38,7 @@ pub fn render_central_panel(
     _telemetry_paused: &mut bool,
     cmds: &mut Vec<AppCommand>,
 ) {
-    ui.add_space(16.0);
-    if *active_tab == ActiveTab::Memory {
-        ui.horizontal(|ui| {
-            if ui.button("Trim Memory").clicked() {
-                cmds.push(AppCommand::RequestMemoryTrim);
-            }
-        });
-        ui.add_space(4.0);
-    }
+    ui.add_space(4.0);
     match *active_tab {
         ActiveTab::Processes => {
             let pair = snapshot.as_deref().and_then(|s| s.cpu.as_ref().map(|c| (s, c)));
@@ -64,6 +56,7 @@ pub fn render_central_panel(
                 uptime_secs,
                 active_tab,
                 cpu_table_state,
+                cmds,
             );
         }
         ActiveTab::Cpu => {
@@ -96,16 +89,7 @@ pub fn render_central_panel(
             crate::modules::network::view::render_network_tab(ui, &snap.network, network_state);
         }
         ActiveTab::System => {
-            // A vertical child Ui with bounded width keeps the GPU cockpit and
-            // both read-only tables inside the central panel's clip rectangle.
-            ui.vertical(|ui| {
-                crate::ui::system_gpu_tab::render_system_gpu_tab(
-                    ui,
-                    snapshot,
-                    cpu_table_state,
-                    cmds,
-                );
-            });
+            crate::ui::system_gpu_tab::render_system_gpu_tab(ui, snapshot, cpu_table_state, cmds);
         }
     }
 }
@@ -123,18 +107,27 @@ pub fn render_top_panel(
     snapshot: &Option<Arc<SystemSnapshot>>,
     last_ui_ms: f32,
     telemetry_paused: bool,
+    sidebar_hidden: &mut bool,
     close_to_tray: &mut bool,
     cmds: &mut Vec<AppCommand>,
 ) {
     ui.horizontal(|ui| {
-        ui.add_space(8.0);
+        ui.add_space(6.0);
+        if chrome::render_sidebar_toggle(ui, sidebar_hidden) {
+            ctx_repaint(ui);
+        }
+        ui.add_space(2.0);
         let label = if telemetry_paused { "Resume" } else { "Pause" };
         if ui.button(label).clicked() {
             cmds.push(AppCommand::TogglePause);
         }
-        ui.separator();
+        ui.add_space(6.0);
         chrome::render_top_panel(ui, snapshot, last_ui_ms, close_to_tray, cmds);
     });
+}
+
+fn ctx_repaint(ui: &egui::Ui) {
+    ui.ctx().request_repaint();
 }
 
 pub fn render_sidebar(
@@ -142,9 +135,10 @@ pub fn render_sidebar(
     active_tab: &mut ActiveTab,
     snapshot: &Option<Arc<SystemSnapshot>>,
     cmds: &mut Vec<AppCommand>,
+    series: &sidebar::SidebarSeries,
 ) {
     let old = *active_tab;
-    sidebar::render_sidebar(ui, active_tab, snapshot);
+    sidebar::render_sidebar(ui, active_tab, snapshot, series);
     if *active_tab != old {
         cmds.push(AppCommand::SetTab(*active_tab));
     }
@@ -163,6 +157,7 @@ pub fn render_chrome(
     snapshot: &Option<Arc<SystemSnapshot>>,
     uptime_secs: u64,
     telemetry_paused: &mut bool,
+    sidebar_hidden: &mut bool,
     close_to_tray: &mut bool,
     last_ui_ms: f32,
     active_processes: u32,
@@ -176,7 +171,7 @@ pub fn render_chrome(
     if mini_hud_active {
         egui::CentralPanel::default()
             .frame(egui::Frame::none().inner_margin(egui::Margin::same(4.0)))
-            .show(ctx, |ui| crate::ui::mini_hud::render_mini_hud(ui, snapshot, cmds));
+            .show(ctx, |ui| crate::ui::mini_hud::render_mini_hud(ui, snapshot, cmds, last_ui_ms));
         crate::modules::cpu::table_tools::render_pick_mode_feedback(ctx);
         return;
     }
@@ -197,11 +192,24 @@ pub fn render_chrome(
         cmds,
         palette_processes,
     );
-    egui::TopBottomPanel::top("top_header").exact_height(36.0).show(ctx, |ui| {
-        render_top_panel(ui, snapshot, last_ui_ms, *telemetry_paused, close_to_tray, cmds)
+    egui::TopBottomPanel::top("top_header").exact_height(40.0).show(ctx, |ui| {
+        render_top_panel(
+            ui,
+            snapshot,
+            last_ui_ms,
+            *telemetry_paused,
+            sidebar_hidden,
+            close_to_tray,
+            cmds,
+        )
     });
+    if *sidebar_hidden {
+        egui::TopBottomPanel::top("compact_tabs")
+            .exact_height(28.0)
+            .show(ctx, |ui| chrome::render_compact_tabs(ui, active_tab, cmds));
+    }
     egui::TopBottomPanel::bottom("bottom_status_bar")
-        .exact_height(26.0)
+        .exact_height(28.0)
         .frame(crate::theme::status_bar_frame())
         .show(ctx, |ui| {
             chrome::render_status_bar(
@@ -212,16 +220,25 @@ pub fn render_chrome(
                 crate::core::worker_io::dropped_snapshots(),
             )
         });
-    egui::SidePanel::left("left_sidebar")
-        .resizable(false)
-        .exact_width(210.0)
-        .show(ctx, |ui| render_sidebar(ui, active_tab, snapshot, cmds));
+    if !*sidebar_hidden {
+        let series = sidebar::collect_series(
+            cpu_history,
+            memory_history,
+            &mut storage_state.history,
+            &mut network_state.history,
+            snapshot.as_deref(),
+        );
+        egui::SidePanel::left("left_sidebar")
+            .resizable(false)
+            .exact_width(216.0)
+            .show(ctx, |ui| render_sidebar(ui, active_tab, snapshot, cmds, &series));
+    }
     egui::CentralPanel::default()
         .frame(egui::Frame::none().inner_margin(egui::Margin {
-            left: 12.0,
-            right: 14.0,
-            top: 10.0,
-            bottom: 10.0,
+            left: 10.0,
+            right: 10.0,
+            top: 6.0,
+            bottom: 6.0,
         }))
         .show(ctx, |ui| {
             ui.set_clip_rect(ui.max_rect());

@@ -4,6 +4,7 @@ use super::pdh_gpu_counters::{aggregate, read_wide, wide, CounterRows};
 pub use super::pdh_gpu_counters::{detect_ai_model_tag, is_vram_spill, GpuTelemetrySnapshot};
 #[cfg(target_os = "windows")]
 pub use super::pdh_gpu_counters::{AdapterMemoryTotals, GpuHistoryRing, GpuHistorySample};
+#[cfg(any(target_os = "windows", test))]
 use std::collections::HashMap;
 #[cfg(target_os = "windows")]
 use std::time::{Duration, Instant};
@@ -14,27 +15,35 @@ const PDH_FMT_NOCAP100: u32 = 0x0000_8000;
 #[cfg(target_os = "windows")]
 const PDH_MORE_DATA: i32 = 0x8000_07D2u32 as i32;
 #[cfg(target_os = "windows")]
-const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
+const REFRESH_INTERVAL: Duration = Duration::from_millis(900);
 #[cfg(any(target_os = "windows", test))]
 const INITIAL_BACKOFF_SECS: u64 = 5;
 #[cfg(any(target_os = "windows", test))]
 const MAX_BACKOFF_SECS: u64 = 60;
-
+/// Sums engine utilization rows per adapter LUID, clamped to 0..=100.
+#[cfg(any(target_os = "windows", test))]
+pub fn engine_pct_by_luid(engines: &[(String, f64)], solo: u64) -> HashMap<u64, f32> {
+    use super::pdh_gpu_counters::*;
+    let mut out = HashMap::new();
+    for (name, raw) in engines {
+        let Some(pct) = clean_engine_pct(*raw) else { continue };
+        let luid = parse_engine_pid_luid(name)
+            .or_else(|| parse_pdh_gpu_instance_pid(name).map(|p| (p, 0)))
+            .map_or(solo, |(_, l)| if l == 0 { solo } else { l });
+        *out.entry(luid).or_insert(0.0) += pct;
+    }
+    out.values_mut().for_each(|v| *v = (*v).clamp(0.0, 100.0));
+    out
+}
 /// True when PdhCollectQueryData succeeded or returned benign PDH_NO_DATA.
 #[cfg(any(target_os = "windows", test))]
 pub fn collect_status_ok(status: i32) -> bool {
-    const PDH_NO_DATA: i32 = 0x8000_07D5u32 as i32;
-    status == 0 || status == PDH_NO_DATA
+    status == 0 || status == 0x8000_07D5u32 as i32
 }
-
 /// Pure backoff progression: 5 -> 10 -> 20 -> 40 -> 60 -> 60.
 #[cfg(any(target_os = "windows", test))]
 pub fn next_backoff_secs(current: u64) -> u64 {
-    if current == 0 {
-        INITIAL_BACKOFF_SECS
-    } else {
-        current.saturating_mul(2).min(MAX_BACKOFF_SECS)
-    }
+    current.saturating_mul(2).clamp(INITIAL_BACKOFF_SECS, MAX_BACKOFF_SECS)
 }
 #[cfg(target_os = "windows")]
 #[link(name = "pdh")]
@@ -95,8 +104,7 @@ impl PdhGpuCollector {
             Self::add(query, "\\GPU Adapter Memory(*)\\Shared Usage"),
             Self::add(query, "\\GPU Engine(*)\\Utilization Percentage"),
         ];
-        let status = unsafe { PdhCollectQueryData(query) };
-        if !collect_status_ok(status) {
+        if !collect_status_ok(unsafe { PdhCollectQueryData(query) }) {
             unsafe { PdhCloseQuery(query) };
             return None;
         }
@@ -246,18 +254,24 @@ pub fn sample_gpu_history() -> GpuHistoryRing {
     lock.lock().unwrap_or_else(|err| err.into_inner()).clone()
 }
 #[cfg(target_os = "windows")]
+#[cfg(test)]
 pub fn sample_process_gpu_memory() -> HashMap<u32, (u64, u64)> {
-    let mut out: HashMap<u32, (u64, u64)> = HashMap::new();
-    for p in windows_sample().processes.into_values() {
-        let entry = out.entry(p.pid).or_insert((0, 0));
-        entry.0 = entry.0.saturating_add(p.local_bytes);
-        entry.1 = entry.1.saturating_add(p.non_local_bytes);
-    }
-    out
+    windows_sample().processes.into_values().fold(HashMap::new(), |mut out, p| {
+        let e = out.entry(p.pid).or_insert((0, 0));
+        e.0 = e.0.saturating_add(p.local_bytes);
+        e.1 = e.1.saturating_add(p.non_local_bytes);
+        out
+    })
 }
 #[cfg(not(target_os = "windows"))]
+#[cfg(test)]
 pub fn sample_process_gpu_memory() -> HashMap<u32, (u64, u64)> {
     HashMap::new()
+}
+#[cfg(all(test, not(target_os = "windows")))]
+#[test]
+fn legacy_gpu_helper_is_empty_off_windows() {
+    assert!(sample_process_gpu_memory().is_empty());
 }
 #[cfg(test)]
 #[path = "pdh_gpu_tests.rs"]

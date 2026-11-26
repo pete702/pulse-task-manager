@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::app::PulseApp;
 use crate::core::SystemSnapshot;
+use crate::ui::system_gpu_tab::system_gpu_chart as gpu_chart;
 
 impl PulseApp {
     pub(crate) fn ingest_snapshot(&mut self, snap: &Arc<SystemSnapshot>) -> bool {
@@ -25,6 +26,16 @@ impl PulseApp {
         }
         crate::modules::storage::view::ingest_storage_snapshot(&mut self.storage_view_state, snap);
         crate::modules::network::view::ingest_network_snapshot(&mut self.network_view_state, snap);
+        let adapters = crate::ui::system_gpu_tab::background_adapters();
+        // DXGI VRAM is recorded independently of PDH engine counters: a failed
+        // GPU engine query yields `None` there, never a dropped VRAM sample.
+        let vram_pct = adapters
+            .iter()
+            .any(|a| a.dedicated_limit_bytes > 0)
+            .then(|| gpu_chart::vram_usage_percent(&adapters));
+        let gpu_pct = snap.gpu.as_ref().and_then(|g| gpu_chart::total_gpu_pct(g, &adapters));
+        let snapshot_id = snap.memory.as_ref().map_or(0, |m| m.snapshot_id);
+        gpu_chart::push_sample(snap.uptime_secs, snapshot_id, gpu_pct, vram_pct);
         self.latest_snapshot = Some(Arc::clone(snap));
         true
     }

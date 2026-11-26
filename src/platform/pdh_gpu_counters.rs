@@ -29,11 +29,13 @@ pub struct AdapterMemoryTotals {
     pub shared_is_spill: bool,
 }
 /// Cached snapshot of all GPU telemetry for one successful collection tick.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct GpuTelemetrySnapshot {
     #[cfg(any(target_os = "windows", test))]
     pub adapters: HashMap<u64, AdapterMemoryTotals>,
     pub processes: HashMap<(u32, u64), ProcessGpuTelemetry>,
+    /// Total GPU engine utilization per adapter LUID, summed from raw engine rows.
+    pub engine_pct_by_luid: HashMap<u64, f32>,
     pub epoch: u64,
 }
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -78,23 +80,28 @@ pub struct CounterRows {
     pub engines: Vec<(String, f64)>,
 }
 #[cfg(target_os = "windows")]
+macro_rules! all_empty {
+    ($($v:expr),+) => { true $(&& $v.is_empty())+ };
+}
+#[cfg(target_os = "windows")]
 impl CounterRows {
     pub fn is_empty(&self) -> bool {
-        self.local.is_empty()
-            && self.non_local.is_empty()
-            && self.committed.is_empty()
-            && self.proc_dedicated.is_empty()
-            && self.proc_shared.is_empty()
-            && self.adapter_dedicated.is_empty()
-            && self.adapter_shared.is_empty()
-            && self.engines.is_empty()
+        all_empty!(
+            self.local,
+            self.non_local,
+            self.committed,
+            self.proc_dedicated,
+            self.proc_shared,
+            self.adapter_dedicated,
+            self.adapter_shared,
+            self.engines
+        )
     }
 }
 /// Parses `luid_0x00000000_0x0000E9B0_phys_0` into a packed u64 LUID.
 #[cfg(any(target_os = "windows", test))]
 pub fn parse_adapter_luid(instance: &str) -> Option<u64> {
-    let tail = instance.strip_prefix("luid_0x")?;
-    let (high_s, rest) = tail.split_once('_')?;
+    let (high_s, rest) = instance.strip_prefix("luid_0x")?.split_once('_')?;
     let low_s = rest.split('_').next()?.trim_start_matches("0x");
     let (high, low) = (u32::from_str_radix(high_s, 16).ok()?, u32::from_str_radix(low_s, 16).ok()?);
     Some(pack_luid(low, high as i32))
@@ -109,8 +116,7 @@ pub fn parse_engine_pid_luid(instance: &str) -> Option<(u32, u64)> {
 }
 #[cfg(any(target_os = "windows", test))]
 pub fn parse_pdh_gpu_instance_pid(instance_name: &str) -> Option<u32> {
-    let rest = instance_name.strip_prefix("pid_")?;
-    rest[..rest.find('_').unwrap_or(rest.len())].parse::<u32>().ok()
+    instance_name.strip_prefix("pid_")?.split('_').next()?.parse().ok()
 }
 /// More than 128 MiB of Non-Local usage means VRAM spilled into system RAM.
 pub fn is_vram_spill(non_local_bytes: u64) -> bool {
@@ -121,7 +127,6 @@ pub fn is_vram_spill(non_local_bytes: u64) -> bool {
 pub fn clean_engine_pct(raw: f64) -> Option<f32> {
     (raw.is_finite() && (0.0..=1000.0).contains(&raw)).then_some((raw as f32).clamp(0.0, 100.0))
 }
-/// Paged pool estimate: committed minus locally and non-locally resident bytes.
 #[cfg(any(target_os = "windows", test))]
 pub fn paged_estimate(total_committed: u64, local: u64, non_local: u64) -> u64 {
     total_committed.saturating_sub(local.saturating_add(non_local))
@@ -129,15 +134,15 @@ pub fn paged_estimate(total_committed: u64, local: u64, non_local: u64) -> u64 {
 /// Extracts `org/repo` from a Hugging Face `models--org--repo` cache path.
 pub fn hf_model_repo(cmdline: &str) -> Option<String> {
     for word in cmdline.split(|c: char| c.is_whitespace() || matches!(c, '"' | '\'')) {
-        if let Some(at) = word.find("models--") {
-            let rest = &word[at + 8..];
-            let end = rest.find(['\\', '/', '"', '\'']).unwrap_or(rest.len());
-            let mut it = rest[..end].split("--");
-            let (org, repo) = (it.next()?, it.next()?);
-            if !org.is_empty() && !repo.is_empty() {
-                return Some(format!("{org}/{repo}"));
-            }
+        let Some(at) = word.find("models--") else { continue };
+        let rest = &word[at + 8..];
+        let end = rest.find(['\\', '/', '"', '\'']).unwrap_or(rest.len());
+        let mut it = rest[..end].split("--");
+        let (org, repo) = (it.next()?, it.next()?);
+        if org.is_empty() || repo.is_empty() {
+            continue;
         }
+        return Some(format!("{org}/{repo}"));
     }
     None
 }
@@ -157,13 +162,11 @@ pub fn detect_ai_model_tag(process_name: &str, cmdline: &str) -> Option<String> 
 fn extract_model_token(cmd: &str) -> Option<String> {
     let lower = cmd.to_ascii_lowercase();
     for marker in ["--model=", "--model ", "-m=", "-m ", " run "] {
-        if let Some(pos) = lower.find(marker) {
-            if let Some(word) = cmd[pos + marker.len()..].split_whitespace().next() {
-                let token = word.trim().trim_matches('"').trim_matches('\'');
-                if !token.is_empty() {
-                    return Some(token.to_string());
-                }
-            }
+        let word =
+            lower.find(marker).and_then(|p| cmd[p + marker.len()..].split_whitespace().next());
+        let token = word.map(|w| w.trim().trim_matches('"').trim_matches('\''));
+        if token.is_some_and(|t| !t.is_empty()) {
+            return token.map(str::to_string);
         }
     }
     cmd.split_whitespace()
@@ -176,11 +179,7 @@ fn extract_model_token(cmd: &str) -> Option<String> {
 }
 #[cfg(any(target_os = "windows", test))]
 fn positive(value: f64) -> u64 {
-    if value.is_finite() && value > 0.0 {
-        value as u64
-    } else {
-        0
-    }
+    value.max(0.0) as u64
 }
 #[cfg(any(target_os = "windows", test))]
 fn pid_key(name: &str) -> Option<(u32, u64)> {
@@ -198,8 +197,7 @@ fn accumulate_pid<F: Fn(&mut ProcessGpuTelemetry, u64)>(
 ) {
     for (name, value) in rows {
         if let Some(key) = pid_key(&name) {
-            let row = processes.entry(key).or_default();
-            set(row, positive(value));
+            set(processes.entry(key).or_default(), positive(value));
         }
     }
 }
@@ -248,6 +246,7 @@ pub fn aggregate(rows: CounterRows, epoch: u64, _history_len: usize) -> GpuTelem
         }
     }
     let solo_luid = if adapters.len() == 1 { *adapters.keys().next().unwrap_or(&0) } else { 0 };
+    let engine_pct_by_luid = crate::platform::pdh_gpu::engine_pct_by_luid(&rows.engines, solo_luid);
     for (name, value) in rows.engines {
         if let Some((pid, raw_luid)) = pid_key(&name) {
             let luid = if raw_luid == 0 { solo_luid } else { raw_luid };
@@ -263,7 +262,7 @@ pub fn aggregate(rows: CounterRows, epoch: u64, _history_len: usize) -> GpuTelem
         row.paged_est_bytes =
             paged_estimate(row.total_committed_bytes, row.local_bytes, row.non_local_bytes);
     }
-    GpuTelemetrySnapshot { adapters, processes, epoch }
+    GpuTelemetrySnapshot { adapters, processes, engine_pct_by_luid, epoch }
 }
 #[cfg(target_os = "windows")]
 pub(crate) fn wide(text: &str) -> Vec<u16> {

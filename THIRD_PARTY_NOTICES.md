@@ -113,14 +113,34 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
    accept such obligations.
 ```
 
-## System Fonts
+## Bundled Fonts (SIL Open Font License 1.1)
 
-PULSE loads the following Windows system fonts at runtime from the OS font directory
-(`C:\Windows\Fonts\`). These fonts are **never redistributed** with the application:
+PULSE embeds two open-source typefaces in the executable for a consistent UI on every
+platform. Both are distributed under the SIL Open Font License, Version 1.1.
 
-- `segoeui.ttf` (Segoe UI) — primary UI font, proportional and monospace
-- `consola.ttf` (Consolas) — monospace fallback for code/data display
+| Font | File | Reserved Name | Copyright | License |
+|------|------|---------------|-----------|---------|
+| Inter | `assets/fonts/Inter-Regular.ttf` | Inter | Copyright 2016-2020 The Inter Project Authors (https://github.com/rsms/inter) | SIL OFL 1.1 |
+| JetBrains Mono | `assets/fonts/JetBrainsMono-Regular.ttf` | JetBrains Mono | Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono) | SIL OFL 1.1 |
 
-These fonts are proprietary Microsoft fonts included with Windows 10/11.
-The application only references them by filename at runtime; no font files are bundled,
-copied, or distributed in any form.
+The complete license text for both fonts is bundled verbatim as
+`assets/fonts/Inter-JetBrainsMono-OFL.txt` and embedded into the binary at build time.
+
+### SIL Open Font License 1.1 - summary of terms
+
+- The fonts and derivative works may be used, studied, modified and redistributed freely,
+  including commercially, subject to the conditions below.
+- Modified versions must not use the Reserved Font Names (Inter, JetBrains Mono) without
+  explicit written permission from the respective copyright holders.
+- The fonts may be bundled, embedded and/or redistributed with software, provided that
+  this license and the copyright notices accompany every copy.
+- The fonts are provided "AS IS", without warranty of any kind.
+- The full legal text is authoritative and is included in the OFL file named above.
+
+These fonts are licensed, not sold. No proprietary Microsoft font files are bundled.
+
+## System Font Fallback
+
+If an embedded font payload ever fails validation, PULSE falls back to Windows system
+fonts (`segoeui.ttf` and `consola.ttf`) referenced by filename at runtime. Those are
+proprietary Microsoft fonts and are never bundled or redistributed.

@@ -35,6 +35,7 @@ pub struct PulseApp {
     pub(crate) startup_frames: u8,
     pub(crate) telemetry_paused: bool,
     pub(crate) close_to_tray: bool,
+    pub(crate) sidebar_hidden: bool,
     pub(crate) paused_pending_snapshot: Option<Arc<SystemSnapshot>>,
     pub(crate) worker: crate::core::TelemetryWorker,
     pub(crate) last_viewport_size: Option<egui::Vec2>,
@@ -76,6 +77,7 @@ impl PulseApp {
             startup_frames: 0,
             telemetry_paused: false,
             close_to_tray: false,
+            sidebar_hidden: false,
             paused_pending_snapshot: None,
             worker,
             last_viewport_size: None,
@@ -136,6 +138,10 @@ impl eframe::App for PulseApp {
             &mut self.active_tab,
             &mut self.cpu_table_state,
             &mut self.telemetry_paused,
+        ) || crate::app_tabs::handle_navigation_hotkeys(
+            ctx,
+            &mut self.active_tab,
+            &mut self.sidebar_hidden,
         ) {
             ctx.request_repaint();
         }
@@ -229,6 +235,7 @@ impl eframe::App for PulseApp {
             &latest_snapshot,
             uptime,
             &mut self.telemetry_paused,
+            &mut self.sidebar_hidden,
             &mut self.close_to_tray,
             self.last_ui_ms,
             active_processes,

@@ -11,6 +11,7 @@ use crate::modules::memory::delta_tracker::ProcessDeltaTracker;
 use crate::modules::memory::model::RawProcessRow;
 use crate::modules::network::collector::NetworkCollector;
 use crate::modules::storage::collector::StorageCollector;
+use crate::platform::pdh_gpu::GpuTelemetrySnapshot;
 use crate::platform::win32_api::own_working_set_mb;
 use crate::platform::win32_cpu::init_cpu_brand_and_base_mhz;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -80,6 +81,7 @@ pub fn spawn_worker(
             let mut cpu_collector = CpuCollector::new();
             let mut storage_collector = StorageCollector::new();
             let mut network_collector = NetworkCollector::new();
+            let mut last_gpu: Option<GpuTelemetrySnapshot> = None;
             let mut last_processes: Arc<Vec<RawProcessRow>> = Arc::new(Vec::new());
             let mut last_cpu_raw_rows: Arc<[RawProcessCpuRow]> = Arc::from(Vec::new());
             let mut last_heavy = false;
@@ -186,6 +188,11 @@ pub fn spawn_worker(
                     memory.channel_overflows = latest_worker.overflow_count();
                     let storage = storage_collector.collect(&cpu.raw_processes, process_scan_id);
                     let network = network_collector.collect();
+                    // GPU is sampled every foreground 1 Hz tick. Repeated PDH epochs are
+                    // harmless: ingestion dedups by (uptime, snapshot_id), not by PDH epoch.
+                    if !is_min && !is_tray_hidden() {
+                        last_gpu = Some(crate::platform::pdh_gpu::sample_gpu_telemetry());
+                    }
                     let elapsed = tick_start.elapsed();
                     let sleep_dur = worker_tick_interval(is_min)
                         .saturating_sub(elapsed)
@@ -206,6 +213,7 @@ pub fn spawn_worker(
                     );
                     snapshot_obj.storage = storage;
                     snapshot_obj.network = network;
+                    snapshot_obj.gpu = last_gpu.clone();
                     let snapshot = Arc::new(snapshot_obj);
                     match publish(&tx, &latest_worker, snapshot, &wakeup_worker, is_min) {
                         PublishResult::Disconnected => {

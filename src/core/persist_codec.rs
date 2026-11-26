@@ -32,11 +32,11 @@ pub fn serialize(s: &crate::core::persist::PersistedState) -> String {
         .clamp(crate::core::persist::MIN_WINDOW_WIDTH, 3840.0);
     let wh = if s.win_h.is_finite() { s.win_h } else { 760.0 }.clamp(560.0, 2160.0);
     let mut out = format!(
-        "version=1\nactive_tab={}\ngroup_clones={}\ncompact_rows={}\nsort_col={}\nsort_asc={}\ncpu_show_grid={}\nmem_window_secs={}\ncpu_window_secs={}\nstorage_window_secs={}\nnetwork_window_secs={}\nnetwork_chart_mode={}\nnetwork_probe_enabled={}\nprocess_quick_filter={}\nwin_w={:.1}\nwin_h={:.1}\n",
+        "version=1\nactive_tab={}\ngroup_clones={}\ncompact_rows={}\nsort_col={}\nsort_asc={}\ncpu_show_grid={}\nmem_window_secs={}\ncpu_window_secs={}\nstorage_window_secs={}\nnetwork_window_secs={}\nnetwork_chart_mode={}\nnetwork_probe_enabled={}\nprocess_quick_filter={}\nsidebar_hidden={}\nwin_w={:.1}\nwin_h={:.1}\n",
         s.active_tab.min(5), b(s.group_clones), b(s.compact_rows), sort_col_str(s.sort_col),
         b(s.sort_asc), b(s.cpu_show_grid), s.mem_window_secs, s.cpu_window_secs,
         s.storage_window_secs, s.network_window_secs, s.network_chart_mode.min(2),
-        b(s.network_probe_enabled), s.process_quick_filter.min(3), ww, wh,
+        b(s.network_probe_enabled), s.process_quick_filter.min(3), b(s.sidebar_hidden), ww, wh,
     );
     if let Some(w) = s.cpu_col_widths {
         out.push_str(&format!(
@@ -84,6 +84,7 @@ pub(crate) fn parse_kv(
         "network_chart_mode" => s.network_chart_mode = clamp_u8(v, 2, i),
         "network_probe_enabled" => s.network_probe_enabled = parse_bool(v),
         "process_quick_filter" => s.process_quick_filter = clamp_u8(v, 3, i),
+        "sidebar_hidden" => s.sidebar_hidden = parse_bool(v),
         "win_w" => {
             s.win_w = parse_f32(v, 1180.0, crate::core::persist::MIN_WINDOW_WIDTH, 3840.0, i)
         }
@@ -146,6 +147,18 @@ fn sort_col_from_str(v: &str) -> CpuSortCol {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sidebar_hidden_key_roundtrips_and_defaults() {
+        let text = serialize(&crate::core::persist::PersistedState::default());
+        assert!(text.contains("sidebar_hidden=0"));
+        assert!(!parse(&text).sidebar_hidden);
+        let hidden =
+            crate::core::persist::PersistedState { sidebar_hidden: true, ..Default::default() };
+        let text = serialize(&hidden);
+        assert!(text.contains("sidebar_hidden=1"));
+        assert!(parse(&text).sidebar_hidden);
+    }
 
     #[test]
     fn global_hotkey_enabled_key_roundtrips_and_defaults() {

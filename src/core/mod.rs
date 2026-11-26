@@ -22,6 +22,7 @@ use crate::modules::cpu::model::CpuSnapshot;
 use crate::modules::memory::model::MemorySnapshot as MemSnapshot;
 use crate::modules::network::model::NetworkSnapshot;
 use crate::modules::storage::model::StorageSnapshot;
+use crate::platform::pdh_gpu_counters::GpuTelemetrySnapshot;
 
 /// System state snapshot sent from background thread to UI.
 #[derive(Debug, Clone, PartialEq)]
@@ -38,6 +39,8 @@ pub struct SystemSnapshot {
     pub storage: StorageSnapshot,
     /// OS-level network snapshot (adapters, rates, esports grade).
     pub network: NetworkSnapshot,
+    /// GPU telemetry sampled once per epoch by the 1 Hz worker.
+    pub gpu: Option<GpuTelemetrySnapshot>,
     /// OS scheduler jitter in milliseconds (how much the 1000ms sleep overshot).
     pub os_scheduler_jitter_ms: u32,
 }
@@ -53,6 +56,7 @@ impl SystemSnapshot {
             cpu: None,
             storage: StorageSnapshot::default(),
             network: NetworkSnapshot::default(),
+            gpu: None,
             os_scheduler_jitter_ms: 0,
         }
     }
@@ -72,6 +76,7 @@ impl SystemSnapshot {
             cpu,
             storage: StorageSnapshot::default(),
             network: NetworkSnapshot::default(),
+            gpu: None,
             os_scheduler_jitter_ms: jitter_ms,
         }
     }

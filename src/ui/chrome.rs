@@ -1,8 +1,11 @@
-//! UI Chrome: Top bar for PULSE.
+//! UI Chrome: Obsidian Cyan top bar, sidebar toggle and compact tab bar.
+use crate::app_cmd::AppCommand;
+use crate::app_tabs::ActiveTab;
 use crate::core::SystemSnapshot;
 use crate::i18n::{os_locale_short, Key};
 use crate::platform::hotkey;
 use crate::theme::colors;
+use crate::ui::primitives::{pill_badge, pill_button, pill_button_colored, pill_toggle};
 pub use crate::ui::status_bar::render_status_bar;
 use crate::util::format_uptime;
 use eframe::egui;
@@ -16,7 +19,6 @@ fn cached_version() -> &'static str {
         .as_str()
 }
 
-/// Persisted self-RAM cache (x10 for atomic): keeps last value across ticks/tabs.
 static LAST_SELF_RAM_X10: AtomicU32 = AtomicU32::new(426);
 
 fn cached_self_ram_mb(fresh: Option<f32>) -> f32 {
@@ -29,8 +31,6 @@ fn cached_self_ram_mb(fresh: Option<f32>) -> f32 {
     LAST_SELF_RAM_X10.load(Ordering::Relaxed) as f32 / 10.0
 }
 
-/// Cached uptime formatter: allocates only when uptime_secs changes (1 Hz).
-/// Stores Arc<str> so idle frames clone the pointer, not the string bytes.
 fn cached_format_uptime(uptime_secs: u64) -> Arc<str> {
     static CACHE: OnceLock<Mutex<(u64, Arc<str>)>> = OnceLock::new();
     let mut cache = CACHE
@@ -44,204 +44,192 @@ fn cached_format_uptime(uptime_secs: u64) -> Arc<str> {
     Arc::clone(&cache.1)
 }
 
-/// Renders the top panel with title, version, live system telemetry, and health pill.
+/// Far-left 28 px `<<` / `>>` toggle pill drawn before the Pause control.
+pub fn render_sidebar_toggle(ui: &mut egui::Ui, sidebar_hidden: &mut bool) -> bool {
+    let label = if *sidebar_hidden { ">>" } else { "<<" };
+    let button = egui::Button::new(
+        egui::RichText::new(label)
+            .font(egui::FontId::proportional(12.0))
+            .color(colors::ACCENT_CYAN),
+    )
+    .rounding(egui::Rounding::same(colors::PILL_RADIUS))
+    .min_size(egui::vec2(28.0_f32, 18.0_f32));
+    let response = ui
+        .add(button)
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("Toggle sidebar (Ctrl+B)");
+    if response.clicked() {
+        *sidebar_hidden = !*sidebar_hidden;
+        return true;
+    }
+    false
+}
+
+/// Renders the 40 px top panel as a row of rounded pills.
 pub fn render_top_panel(
     ui: &mut egui::Ui,
     latest_snapshot: &Option<Arc<SystemSnapshot>>,
     last_ui_ms: f32,
     close_to_tray: &mut bool,
-    cmds: &mut Vec<crate::app_cmd::AppCommand>,
+    cmds: &mut Vec<AppCommand>,
 ) {
     let bar_w = ui.available_width();
-    let row = ui.horizontal(|ui| {
-        let title = if bar_w < 920.0 {
-            "PULSE"
-        } else {
-            Key::AppTitle.t()
-        };
-        ui.heading(
-            egui::RichText::new(title).monospace().size(18.0).color(colors::TEXT_PRIMARY),
-        );
-        ui.separator();
-        ui.label(
-            egui::RichText::new(cached_version())
-                .monospace()
-                .size(14.0)
-                .color(colors::TEXT_SECONDARY),
-        );
-        ui.separator();
-        let uptime_str = latest_snapshot
-            .as_ref()
-            .map(|s| cached_format_uptime(s.uptime_secs))
-            .unwrap_or_else(|| Arc::from("--"));
-        if bar_w >= 1040.0 {
-            ui.label(
-                egui::RichText::new(format!("UPTIME: {}", uptime_str))
-                    .monospace()
-                    .size(12.0)
-                    .color(colors::TEXT_PRIMARY),
-            );
-            ui.separator();
-        }
-        let ram_mb = cached_self_ram_mb(latest_snapshot.as_ref().map(|s| s.pulse_ram_mb));
-        let telemetry = match latest_snapshot.as_ref() {
-            Some(s) => match (&s.cpu, &s.memory) {
-                (Some(cpu), Some(mem)) => {
-                    let cpu_pct = if cpu.total_pct.is_finite() { cpu.total_pct.clamp(0.0, 100.0) } else { 0.0 };
-                    let ram_pct = mem.ram_usage_percent();
-                    let ram_pct = if ram_pct.is_finite() { ram_pct.clamp(0.0, 100.0) } else { 0.0 };
-                    if bar_w < 960.0 {
-                        format!("[ CPU: {:.0}% | RAM: {:.0}% ]", cpu_pct, ram_pct)
-                    } else {
-                        format!(
-                            "[ CPU: {:.1}% | RAM: {:.1} / {:.1} GiB ({:.0}%) ]",
-                            cpu_pct,
-                            mem.ram_used_gib(),
-                            mem.ram_total_gib(),
-                            ram_pct
-                        )
-                    }
-                }
-                _ => "[ CPU: --% | RAM: -- ]".to_owned(),
-            },
-            None => "[ CPU: --% | RAM: -- ]".to_owned(),
-        };
-        ui.add(
-            egui::Label::new(egui::RichText::new(telemetry).monospace().size(12.0).color(colors::ACCENT_CYAN))
-                .wrap(false),
-        )
-        .on_hover_text(format!(
-            "PULSE: {ram_mb:.1} MB | UI: {last_ui_ms:.2} ms | OS: {} | {}: {uptime_str}",
-            os_locale_short(),
-            crate::i18n::Key::UptimeLabel.t()
-        ));
+    let title = Key::AppTitle.t();
+    let title = title.split(" //").next().unwrap_or(title);
+    ui.heading(
+        egui::RichText::new(title)
+            .font(egui::FontId::proportional(16.0))
+            .color(colors::TEXT_PRIMARY),
+    );
+    ui.add_space(4.0);
+    pill_badge(ui, cached_version(), colors::TEXT_SECONDARY);
 
-        ui.separator();
-        ui.checkbox(close_to_tray, "Tray on X");
-        if ui
-            .button("[ Ctrl+K ]")
-            .on_hover_text("Open Command Palette (Ctrl+K)")
-            .clicked()
-        {
-            crate::ui::command_palette::toggle();
+    let uptime_str = latest_snapshot
+        .as_ref()
+        .map(|s| cached_format_uptime(s.uptime_secs))
+        .unwrap_or_else(|| Arc::from("--"));
+    let (cpu_pct, ram_pct) = match latest_snapshot.as_ref().and_then(|s| {
+        s.cpu.as_ref().map(|c| (c.total_pct, s.memory.as_ref().map(|m| m.ram_usage_percent())))
+    }) {
+        Some((cpu, Some(ram))) => {
+            let cpu = if cpu.is_finite() { cpu.clamp(0.0, 100.0) } else { 0.0 };
+            let ram = if ram.is_finite() { ram.clamp(0.0, 100.0) } else { 0.0 };
+            (cpu, ram)
         }
-        if ui.button("[ TRAY ]").clicked() {
-            cmds.push(crate::app_cmd::AppCommand::HideToTray);
+        _ => (0.0, 0.0),
+    };
+    let ram_mb = cached_self_ram_mb(latest_snapshot.as_ref().map(|s| s.pulse_ram_mb));
+    let slot_w = if bar_w >= 1280.0 { 310.0 } else { 186.0 };
+    if bar_w >= 1080.0 {
+        let readout = if bar_w >= 1280.0 {
+            format!("Uptime {} | CPU {:>3.0}% | RAM {:>3.0}%", uptime_str, cpu_pct, ram_pct)
+        } else {
+            format!("CPU {:>3.0}% | RAM {:>3.0}%", cpu_pct, ram_pct)
+        };
+        ui.allocate_ui_with_layout(
+            egui::vec2(slot_w, 22.0),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                let label = egui::Label::new(
+                    egui::RichText::new(readout)
+                        .font(egui::FontId::monospace(12.0))
+                        .color(colors::ACCENT_CYAN),
+                )
+                .wrap(false)
+                .truncate(true);
+                ui.add(label).on_hover_text(format!(
+                    "PULSE: {ram_mb:.1} MB | UI: {last_ui_ms:.2} ms | OS: {} | {}: {uptime_str}",
+                    os_locale_short(),
+                    Key::UptimeLabel.t()
+                ));
+            },
+        );
+    }
+
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        if bar_w >= 720.0 {
+            ui.allocate_ui_with_layout(
+                egui::vec2(130.0, 22.0),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| render_health_pill(ui, latest_snapshot),
+            );
+        }
+        if pill_button(ui, "Exit").clicked() {
+            crate::platform::tray::set_allow_real_close(true);
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        let mut hud_on = hotkey::is_mini_hud_active();
+        if pill_toggle(ui, "Mini-HUD", &mut hud_on).clicked() {
+            hotkey::set_mini_hud_active(hud_on);
+            ui.ctx().request_repaint();
         }
         let mut hk_on = hotkey::is_global_hotkey_enabled();
         let hk_label = format!("HK: {}", hotkey::hotkey_status_label());
-        if ui
-            .checkbox(&mut hk_on, hk_label)
-            .on_hover_text(hotkey::HOTKEY_TOOLTIP)
-            .changed()
-        {
+        if pill_toggle(ui, &hk_label, &mut hk_on).on_hover_text(hotkey::HOTKEY_TOOLTIP).clicked() {
             hotkey::set_global_hotkey_enabled(hk_on);
             crate::core::persist::save_hotkey_enabled(hk_on);
             hotkey::request_rebind();
             ui.ctx().request_repaint();
         }
-        if ui.button("Mini-HUD").on_hover_text(hotkey::HOTKEY_TOOLTIP).clicked() {
-            hotkey::set_mini_hud_active(!hotkey::is_mini_hud_active());
-            ui.ctx().request_repaint();
+        if pill_button(ui, "Tray").clicked() {
+            cmds.push(AppCommand::HideToTray);
         }
-        if ui.button("[ EXIT ]").clicked() {
-            crate::platform::tray::set_allow_real_close(true);
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        if pill_button(ui, "Ctrl+K").on_hover_text("Open Command Palette (Ctrl+K)").clicked() {
+            crate::ui::command_palette::toggle();
         }
-
-        // Right-aligned single System Health Pill (wide windows only).
-        if bar_w >= 720.0 {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if let Some(ref snapshot) = latest_snapshot {
-                let wall = crate::ui::three_walls::evaluate(snapshot);
-                let bottleneck = snapshot
-                    .cpu
-                    .as_ref()
-                    .is_some_and(|cpu| cpu.single_thread_bottleneck());
-                let (storage_low, storage_summary) =
-                    crate::modules::storage::model::low_space_alert(&snapshot.storage.volumes);
-                let net_bad = matches!(
-                    snapshot.network.grade,
-                    crate::modules::network::model::ConnectionGrade::Offline
-                        | crate::modules::network::model::ConnectionGrade::PacketLoss
-                );
-                let (pill_text, pill_color) = match wall {
-                    crate::ui::three_walls::WallState::MemoryWall => {
-                        ("[ ! MEMORY WALL ]", colors::ACCENT_RED)
-                    }
-                    _ if storage_low => ("[ ! STORAGE LOW ]", colors::ACCENT_RED),
-                    _ if net_bad => ("[ ! NO NETWORK ]", colors::ACCENT_RED),
-                    crate::ui::three_walls::WallState::Elevated => {
-                        ("[ HEALTH: ELEVATED ]", colors::ACCENT_AMBER)
-                    }
-                    crate::ui::three_walls::WallState::Unconfirmed => {
-                        ("[ HEALTH: INIT ]", colors::TEXT_SECONDARY)
-                    }
-                    crate::ui::three_walls::WallState::Optimal if bottleneck => {
-                        ("[ ! BOTTLENECK ]", colors::ACCENT_AMBER)
-                    }
-                    crate::ui::three_walls::WallState::Optimal => {
-                        ("[ HEALTH: NOMINAL ]", crate::theme::OPTIMAL_EMERALD)
-                    }
-                };
-                let resp = ui.label(
-                    egui::RichText::new(pill_text)
-                        .monospace()
-                        .size(11.0)
-                        .strong()
-                        .color(pill_color),
-                );
-                if resp.hovered() {
-                    // Tooltip built only on hover - avoids per-frame alloc.
-                    let mut tooltip = match snapshot.memory.as_ref() {
-                        Some(m) => {
-                            let cpu_raw = snapshot.cpu.as_ref().map_or(0.0, |c| c.total_pct);
-                            let cpu_pct = if cpu_raw.is_finite() { cpu_raw.clamp(0.0, 100.0) } else { 0.0 };
-                            let hot_raw = snapshot.cpu.as_ref().map_or(0.0, |c| c.hottest_core_pct);
-                            let hot = if hot_raw.is_finite() { hot_raw.clamp(0.0, 100.0) } else { 0.0 };
-                            format!(
-                                "Three Walls: {}\nRAM: {:.1}% Commit: {:.1}%\nCPU: {:.1}% Hottest: {:.1}%",
-                                wall.label(),
-                                m.ram_usage_percent(),
-                                m.commit_charge_pct(),
-                                cpu_pct,
-                                hot
-                            )
-                        }
-                        None => "Awaiting memory telemetry".to_owned(),
-                    };
-                    if storage_low && !storage_summary.is_empty() {
-                        tooltip.push('\n');
-                        tooltip.push_str(&storage_summary);
-                    }
-                    resp.on_hover_text(tooltip);
-                }
-            }
-            });
-        }
+        let _ = pill_toggle(ui, "Tray on X", close_to_tray);
     });
-    let row_rect = row.response.rect;
-    ui.add_space(5.0);
-    draw_top_scanline(ui, row_rect);
 }
 
-/// Dual-tone neon scanline along the bottom edge of the top bar.
-fn draw_top_scanline(ui: &egui::Ui, rect: egui::Rect) {
-    if rect.width() <= 0.0 || !rect.width().is_finite() {
-        return;
+fn render_health_pill(ui: &mut egui::Ui, snapshot: &Option<Arc<SystemSnapshot>>) {
+    let Some(snapshot) = snapshot else { return };
+    use crate::ui::three_walls::WallState;
+    let wall = crate::ui::three_walls::evaluate(snapshot);
+    let bottleneck = snapshot.cpu.as_ref().is_some_and(|c| c.single_thread_bottleneck());
+    let (storage_low, storage_summary) =
+        crate::modules::storage::model::low_space_alert(&snapshot.storage.volumes);
+    let net_bad = matches!(
+        snapshot.network.grade,
+        crate::modules::network::model::ConnectionGrade::Offline
+            | crate::modules::network::model::ConnectionGrade::PacketLoss
+    );
+    let (text, color) = match wall {
+        WallState::MemoryWall => ("MEMORY WALL", colors::ACCENT_RED),
+        _ if storage_low => ("STORAGE LOW", colors::ACCENT_RED),
+        _ if net_bad => ("NO NETWORK", colors::ACCENT_RED),
+        WallState::Elevated => ("HEALTH: ELEVATED", colors::ACCENT_AMBER),
+        WallState::Unconfirmed => ("HEALTH: INIT", colors::TEXT_SECONDARY),
+        WallState::Optimal if bottleneck => ("BOTTLENECK", colors::ACCENT_AMBER),
+        WallState::Optimal => ("HEALTH: NOMINAL", colors::EMERALD),
+    };
+    let response = pill_badge(ui, text, color);
+    if response.hovered() {
+        let mut tooltip = snapshot.memory.as_ref().map_or_else(
+            || "Awaiting memory telemetry".to_owned(),
+            |m| {
+                let cpu = snapshot.cpu.as_ref().map_or(0.0, |c| c.total_pct);
+                let cpu = if cpu.is_finite() { cpu.clamp(0.0, 100.0) } else { 0.0 };
+                let hot = snapshot.cpu.as_ref().map_or(0.0, |c| c.hottest_core_pct);
+                let hot = if hot.is_finite() { hot.clamp(0.0, 100.0) } else { 0.0 };
+                format!(
+                    "Three Walls: {}\nRAM: {:.1}% Commit: {:.1}%\nCPU: {:.1}% Hottest: {:.1}%",
+                    wall.label(),
+                    m.ram_usage_percent(),
+                    m.commit_charge_pct(),
+                    cpu,
+                    hot
+                )
+            },
+        );
+        if storage_low && !storage_summary.is_empty() {
+            tooltip.push('\n');
+            tooltip.push_str(&storage_summary);
+        }
+        response.on_hover_text(tooltip);
     }
-    let y = rect.max.y + 4.0;
-    let painter = ui.painter();
-    let base = egui::Color32::from_rgba_unmultiplied(51, 65, 85, 180);
-    let glow = egui::Color32::from_rgba_unmultiplied(0, 240, 255, 220);
-    painter.line_segment(
-        [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
-        egui::Stroke::new(1.0_f32, base),
-    );
-    painter.line_segment(
-        [egui::pos2(rect.left() + 4.0, y), egui::pos2((rect.left() + 144.0).min(rect.right()), y)],
-        egui::Stroke::new(2.0_f32, glow),
-    );
+}
+
+/// Compact 28 px pill bar shown when the left sidebar is hidden.
+pub fn render_compact_tabs(
+    ui: &mut egui::Ui,
+    active_tab: &mut ActiveTab,
+    cmds: &mut Vec<AppCommand>,
+) {
+    let old = *active_tab;
+    ui.horizontal(|ui| {
+        ui.add_space(8.0);
+        for tab in ActiveTab::all_ordered() {
+            let label = tab.short_label();
+            let color =
+                if *active_tab == tab { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
+            if pill_button_colored(ui, label, color).on_hover_text(label).clicked() {
+                *active_tab = tab;
+            }
+        }
+    });
+    if *active_tab != old {
+        cmds.push(AppCommand::SetTab(*active_tab));
+    }
 }
 
 #[cfg(test)]

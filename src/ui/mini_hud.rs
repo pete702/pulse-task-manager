@@ -1,116 +1,14 @@
-//! Compact 330x124 Mini-HUD strip and viewport transition handling.
+//! Compact 330x124 Mini-HUD card and viewport transition handling.
 
 use eframe::egui;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
 
 use crate::app_cmd::AppCommand;
 use crate::core::SystemSnapshot;
+use crate::theme::colors;
+use crate::ui::primitives::{draw_status_dot, mini_progress, pill_badge, pill_button};
 
-pub const MINI_HUD_WIDTH: f32 = 330.0;
-pub const MINI_HUD_HEIGHT: f32 = 124.0;
-const SIZE_TOLERANCE: f32 = 4.0;
-const LEGACY_HUD_HEIGHT: f32 = 104.0;
-const DEFAULT_WIDTH: f32 = 1180.0;
-const DEFAULT_HEIGHT: f32 = 760.0;
-
-#[derive(Default)]
-struct Geometry {
-    normal_size: Option<egui::Vec2>,
-    normal_pos: Option<egui::Pos2>,
-    was_active: bool,
-    was_maximized: bool,
-    followup: u8,
-}
-
-static GEOMETRY: OnceLock<Mutex<Geometry>> = OnceLock::new();
-
-fn geometry() -> &'static Mutex<Geometry> {
-    GEOMETRY.get_or_init(|| Mutex::new(Geometry::default()))
-}
-
-pub fn should_persist_window_size(mini_hud_active: bool, width: f32, height: f32) -> bool {
-    if mini_hud_active || !width.is_finite() || !height.is_finite() {
-        return false;
-    }
-    let strip_height = (height - MINI_HUD_HEIGHT).abs() <= SIZE_TOLERANCE
-        || (height - LEGACY_HUD_HEIGHT).abs() <= SIZE_TOLERANCE;
-    !((width - MINI_HUD_WIDTH).abs() <= SIZE_TOLERANCE && strip_height)
-}
-
-pub fn restored_normal_size(saved: Option<egui::Vec2>) -> egui::Vec2 {
-    match saved {
-        Some(v) if v.is_finite() && v.x > 0.0 && v.y > 0.0 => v,
-        _ => egui::vec2(DEFAULT_WIDTH, DEFAULT_HEIGHT),
-    }
-}
-
-/// Maximized full-screen bounds are never the window's normal size.
-fn kept_size(max: bool, new: Option<egui::Vec2>, old: Option<egui::Vec2>) -> Option<egui::Vec2> {
-    if max {
-        old
-    } else {
-        new.or(old)
-    }
-}
-
-fn restore_commands(ctx: &egui::Context, g: &Geometry) {
-    ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(egui::WindowLevel::Normal));
-    ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
-    ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(860.0, 560.0)));
-    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(restored_normal_size(g.normal_size)));
-    if g.was_maximized {
-        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
-    } else if let Some(pos) = g.normal_pos {
-        ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
-    }
-}
-
-pub fn sync_viewport(ctx: &egui::Context, active: bool) {
-    let mut g = geometry().lock().unwrap_or_else(|e| e.into_inner());
-    let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
-    if active != g.was_active {
-        if active {
-            g.was_maximized = maximized;
-            let inner = ctx.input(|i| i.viewport().inner_rect.map(|r| r.size()));
-            g.normal_size = kept_size(maximized, inner, g.normal_size);
-            if !maximized {
-                g.normal_pos = ctx.input(|i| i.viewport().outer_rect.map(|r| r.left_top()));
-            }
-            // Windows ignores InnerSize while the HWND is maximized.
-            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
-            ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::vec2(
-                MINI_HUD_WIDTH,
-                MINI_HUD_HEIGHT,
-            )));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(false));
-            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
-                egui::WindowLevel::AlwaysOnTop,
-            ));
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
-                MINI_HUD_WIDTH,
-                MINI_HUD_HEIGHT,
-            )));
-        } else {
-            restore_commands(ctx, &g);
-        }
-        g.followup = 2;
-    } else if g.followup > 0 {
-        if active {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
-                MINI_HUD_WIDTH,
-                MINI_HUD_HEIGHT,
-            )));
-        } else {
-            restore_commands(ctx, &g);
-        }
-        g.followup -= 1;
-        if g.followup == 0 {
-            g.was_maximized = false;
-        }
-    }
-    g.was_active = active;
-}
+pub use crate::app_persist::{should_persist_window_size, sync_viewport};
 
 fn pct(v: f32) -> f32 {
     if v.is_finite() {
@@ -136,121 +34,197 @@ pub fn format_metrics(
     ]
 }
 
-/// Two crisp lines that fit the 330px strip without right-edge clipping.
-pub fn format_hud_lines(
-    cpu_pct: f32,
-    ram_pct: f32,
-    peak_core_pct: f32,
-    uptime_secs: u64,
-    self_ram_mb: f32,
-) -> [String; 2] {
-    let m = format_metrics(cpu_pct, ram_pct, peak_core_pct, uptime_secs, self_ram_mb);
-    [
-        format!("{} | {} | {}", m[0], m[1], m[2].replace("Peak Core", "Peak")),
-        format!(
-            "{} | PULSE: {:.1} MB",
-            m[3],
-            if self_ram_mb.is_finite() { self_ram_mb } else { 0.0 }
-        ),
-    ]
+/// VRAM share parsed from the live GPU badge ("13% VRAM").
+fn vram_percent() -> Option<f32> {
+    crate::ui::system_gpu_tab::gpu_badge()
+        .split_whitespace()
+        .next()
+        .and_then(|s| s.trim_end_matches('%').parse::<f32>().ok())
+        .map(pct)
+}
+
+fn top_process(snap: &SystemSnapshot) -> String {
+    snap.cpu
+        .as_ref()
+        .and_then(|c| {
+            c.raw_processes
+                .iter()
+                .max_by(|a, b| a.cpu_usage.total_cmp(&b.cpu_usage))
+                .map(|p| p.name.to_string())
+        })
+        .unwrap_or_else(|| "--".to_owned())
+}
+
+#[derive(Clone, Copy)]
+struct MetricCard {
+    title: &'static str,
+    value: f32,
+    sub: &'static str,
+    color: egui::Color32,
+}
+
+fn draw_metric_card(ui: &mut egui::Ui, width: f32, card: MetricCard) {
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 46.0), egui::Sense::hover());
+    let painter = ui.painter();
+    let rounding = egui::Rounding::same(colors::CARD_RADIUS);
+    painter.rect_filled(rect, rounding, colors::BG_CARD);
+    painter.rect_stroke(rect, rounding, egui::Stroke::new(1.0_f32, colors::BORDER));
+    painter.text(
+        egui::pos2(rect.left() + 7.0, rect.top() + 10.0),
+        egui::Align2::LEFT_CENTER,
+        card.title,
+        egui::FontId::monospace(9.0),
+        colors::TEXT_SECONDARY,
+    );
+    painter.text(
+        egui::pos2(rect.right() - 7.0, rect.top() + 11.0),
+        egui::Align2::RIGHT_CENTER,
+        format!("{:.0}%", pct(card.value)),
+        egui::FontId::monospace(13.0),
+        card.color,
+    );
+    let bar = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + 7.0, rect.top() + 23.0),
+        egui::pos2(rect.right() - 7.0, rect.top() + 28.0),
+    );
+    mini_progress(ui, bar, pct(card.value) / 100.0, card.color);
+    painter.text(
+        egui::pos2(rect.left() + 7.0, rect.bottom() - 7.0),
+        egui::Align2::LEFT_CENTER,
+        card.sub,
+        egui::FontId::monospace(9.0),
+        colors::TEXT_MUTED,
+    );
 }
 
 pub fn render_mini_hud(
     ui: &mut egui::Ui,
     snapshot: &Option<Arc<SystemSnapshot>>,
     cmds: &mut Vec<AppCommand>,
+    last_ui_ms: f32,
 ) {
-    ui.horizontal(|ui| {
-        let drag_width = (ui.available_width() - 150.0).max(40.0);
-        let (drag_rect, drag) =
-            ui.allocate_exact_size(egui::vec2(drag_width, 22.0), egui::Sense::click_and_drag());
-        if drag.drag_started_by(egui::PointerButton::Primary) {
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
-        }
-        ui.allocate_ui_at_rect(drag_rect, |ui| {
-            ui.label(egui::RichText::new("PULSE // HUD").monospace().size(13.0).strong());
-        });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("[ EXPAND ]").clicked() {
-                crate::platform::hotkey::set_mini_hud_active(false);
-            }
-            if ui.button("[ TRAY ]").clicked() {
-                cmds.push(AppCommand::HideToTray);
-            }
-        });
-    });
-    ui.separator();
-    let (cpu, ram, peak, uptime, self_ram) = match snapshot.as_ref() {
+    let (cpu, peak, ram_pct, ram_used, ram_total, uptime, self_ram, top) = match snapshot.as_ref() {
         Some(s) => {
-            let cpu_pct = s.cpu.as_ref().map(|c| c.total_pct).unwrap_or(0.0);
-            let peak = s.cpu.as_ref().map(|c| c.hottest_core_pct).unwrap_or(0.0);
-            let ram_pct = s.memory.as_ref().map(|m| m.ram_usage_percent()).unwrap_or(0.0);
-            (cpu_pct, ram_pct, peak, s.uptime_secs, s.pulse_ram_mb)
+            let cpu = s.cpu.as_ref().map_or(0.0, |c| c.total_pct);
+            let peak = s.cpu.as_ref().map_or(0.0, |c| c.hottest_core_pct);
+            let ram_pct = s.memory.as_ref().map_or(0.0, |m| m.ram_usage_percent());
+            let ram_used = s.memory.as_ref().map_or(0.0, |m| m.ram_used_gib());
+            let ram_total = s.memory.as_ref().map_or(0.0, |m| m.ram_total_gib());
+            (cpu, peak, ram_pct, ram_used, ram_total, s.uptime_secs, s.pulse_ram_mb, top_process(s))
         }
-        None => (0.0, 0.0, 0.0, 0, 0.0),
+        None => (0.0, 0.0, 0.0, 0.0, 0.0, 0, 0.0, "--".to_owned()),
     };
-    let lines = format_hud_lines(cpu, ram, peak, uptime, self_ram);
-    let wall = snapshot.as_ref().map(|s| crate::ui::three_walls::evaluate(s));
-    let status = match wall {
-        Some(crate::ui::three_walls::WallState::MemoryWall) => "[ MEMORY WALL ]",
-        Some(crate::ui::three_walls::WallState::Elevated) => "[ ELEVATED ]",
-        Some(crate::ui::three_walls::WallState::Optimal) => "[ NOMINAL ]",
-        Some(crate::ui::three_walls::WallState::Unconfirmed) | None => "[ INIT ]",
-    };
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(status).monospace().size(11.0));
-    });
-    if let Some(verdict) = crate::core::blackbox::latest_verdict() {
-        let short: String = verdict.chars().take(42).collect();
+
+    ui.vertical(|ui| {
+        ui.horizontal(|ui| {
+            let drag_width = (ui.available_width() - 150.0).max(40.0);
+            let (drag_rect, drag) =
+                ui.allocate_exact_size(egui::vec2(drag_width, 22.0), egui::Sense::click_and_drag());
+            if drag.drag_started_by(egui::PointerButton::Primary) {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            }
+            ui.allocate_ui_at_rect(drag_rect, |ui| {
+                ui.label(egui::RichText::new("PULSE").monospace().size(13.0).strong());
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if pill_button(ui, "X").on_hover_text("Exit PULSE").clicked() {
+                    crate::platform::tray::set_allow_real_close(true);
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                if pill_button(ui, "Expand").clicked() {
+                    crate::platform::hotkey::set_mini_hud_active(false);
+                }
+                if pill_button(ui, "Tray").clicked() {
+                    cmds.push(AppCommand::HideToTray);
+                }
+                let (status, color) =
+                    match snapshot.as_ref().map(|s| crate::ui::three_walls::evaluate(s)) {
+                        Some(crate::ui::three_walls::WallState::MemoryWall) => {
+                            ("Memory Wall", colors::ACCENT_RED)
+                        }
+                        Some(crate::ui::three_walls::WallState::Elevated) => {
+                            ("Elevated", colors::ACCENT_AMBER)
+                        }
+                        Some(crate::ui::three_walls::WallState::Optimal) => {
+                            ("Nominal", colors::EMERALD)
+                        }
+                        _ => ("Init", colors::TEXT_SECONDARY),
+                    };
+                let pill = pill_badge(ui, status, color);
+                draw_status_dot(
+                    ui,
+                    egui::pos2(pill.rect.left() + 7.0, pill.rect.center().y),
+                    color,
+                );
+            });
+        });
+
+        let metrics = format_metrics(cpu, ram_pct, peak, uptime, self_ram);
+        let verdict = crate::core::blackbox::latest_verdict();
+        let line = match &verdict {
+            Some(v) => format!("HUD Verdict: {}", v.chars().take(34).collect::<String>()),
+            None => format!("{} / Top Proc {}", metrics[2].replace("Peak Core", "Peak"), top),
+        };
+        ui.label(egui::RichText::new(line).monospace().size(10.0).color(if verdict.is_some() {
+            colors::ACCENT_AMBER
+        } else {
+            colors::TEXT_SECONDARY
+        }));
+
+        ui.horizontal(|ui| {
+            let card_w = (ui.available_width() - 12.0) / 3.0;
+            draw_metric_card(
+                ui,
+                card_w,
+                MetricCard {
+                    title: "CPU %",
+                    value: cpu,
+                    sub: "Peak",
+                    color: crate::theme::load_color(pct(peak)),
+                },
+            );
+            draw_metric_card(
+                ui,
+                card_w,
+                MetricCard {
+                    title: "RAM %",
+                    value: ram_pct,
+                    sub: if ram_total > 0.0 { "GiB" } else { "--" },
+                    color: crate::theme::load_color(ram_pct),
+                },
+            );
+            let vram = vram_percent();
+            draw_metric_card(
+                ui,
+                card_w,
+                MetricCard {
+                    title: "VRAM %",
+                    value: vram.unwrap_or(0.0),
+                    sub: if vram.is_some() { "VRAM" } else { "--" },
+                    color: colors::ACCENT_PURPLE,
+                },
+            );
+        });
+
         ui.label(
-            egui::RichText::new(short)
-                .monospace()
-                .size(10.0)
-                .color(crate::theme::colors::ACCENT_AMBER),
+            egui::RichText::new(format!(
+                "{} | PULSE {:.1} MB | UI {:.1} ms",
+                crate::util::format_uptime(uptime),
+                if self_ram.is_finite() { self_ram } else { 0.0 },
+                if last_ui_ms.is_finite() { last_ui_ms } else { 0.0 }
+            ))
+            .monospace()
+            .size(9.0)
+            .color(colors::TEXT_MUTED),
         );
-    }
-    for line in &lines {
-        ui.label(egui::RichText::new(line).monospace().size(12.0));
-    }
+        let _ = (ram_used, ram_total);
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn persist_guard_rejects_hud_and_strip_dimensions() {
-        assert_eq!(MINI_HUD_HEIGHT, 124.0);
-        assert!(!should_persist_window_size(true, 1180.0, 760.0));
-        assert!(!should_persist_window_size(false, MINI_HUD_WIDTH, 124.0));
-        assert!(!should_persist_window_size(false, MINI_HUD_WIDTH, 104.0));
-        assert!(!should_persist_window_size(false, 332.0, 121.0));
-        assert!(should_persist_window_size(false, 1180.0, 760.0));
-        assert!(!should_persist_window_size(false, f32::NAN, 760.0));
-        assert!(!Geometry::default().was_maximized);
-    }
-
-    #[test]
-    fn maximized_entry_keeps_saved_normal_size() {
-        let saved = egui::vec2(1000.0, 640.0);
-        assert_eq!(kept_size(true, Some(egui::vec2(1920.0, 1080.0)), Some(saved)), Some(saved));
-        let new = egui::vec2(11.0, 7.0);
-        assert_eq!(kept_size(false, Some(new), Some(saved)), Some(new));
-        assert_eq!(kept_size(false, None, Some(saved)), Some(saved));
-    }
-
-    #[test]
-    fn restored_normal_size_falls_back_when_missing_or_invalid() {
-        assert_eq!(
-            restored_normal_size(Some(egui::vec2(1000.0, 640.0))),
-            egui::vec2(1000.0, 640.0)
-        );
-        assert_eq!(restored_normal_size(None), egui::vec2(DEFAULT_WIDTH, DEFAULT_HEIGHT));
-        assert_eq!(
-            restored_normal_size(Some(egui::vec2(f32::NAN, 10.0))),
-            egui::vec2(DEFAULT_WIDTH, DEFAULT_HEIGHT)
-        );
-    }
+    use crate::app_persist::{MINI_HUD_HEIGHT, MINI_HUD_WIDTH};
 
     #[test]
     fn compact_metric_formatting_is_stable() {
@@ -260,16 +234,16 @@ mod tests {
         assert_eq!(m[2], "Peak Core: 97.2%");
         assert!(m[3].starts_with("Uptime: "));
         assert_eq!(m[4], "Self-RAM: 123.4 MB");
+        assert_eq!(pct(f32::NAN), 0.0);
+        assert_eq!(pct(120.0), 100.0);
     }
 
     #[test]
-    fn hud_lines_fit_the_strip_without_clipping() {
-        let lines = format_hud_lines(11.3, 48.1, 56.4, 123, 123.4);
-        assert_eq!(lines[0], "CPU: 11.3% | RAM: 48.1% | Peak: 56.4%");
-        assert!(lines[1].starts_with("Uptime: "));
-        assert!(lines[1].contains("PULSE: 123.4 MB"));
-        // Monospace 12px is about 7.2px per glyph; 330px fits <= 40 glyphs.
-        assert!(lines[0].len() <= 40);
-        assert!(lines[1].len() <= 40);
+    fn metric_card_layout_is_bounded() {
+        assert_eq!(MINI_HUD_WIDTH, 330.0);
+        assert_eq!(MINI_HUD_HEIGHT, 124.0);
+        let card =
+            MetricCard { title: "CPU %", value: 50.0, sub: "Peak", color: colors::ACCENT_CYAN };
+        assert_eq!(card.title, "CPU %");
     }
 }

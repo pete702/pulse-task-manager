@@ -1,5 +1,21 @@
 # Changelog
 All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGELOG_ARCHIVE.md.
+## [0.6.7] - 2026-11-25
+- **ui/honesty**: 60s sparklines, fixed scales, gap-safe GPU tail, no fake Processes line; bounded charts and Ctrl+K SelectProcess fix.
+## [0.6.6] - 2026-11-25
+- **gpu-telemetry**: real 1 Hz PDH cadence, adapter-wide engine load, independent VRAM recording and interactive chart HUD.
+## [0.6.5] - 2026-11-24
+- **ui/space**: tighter shell margins, inline Trim Memory, honest RAM composition, clean CPU cards and GPU legend.
+## [0.6.4] - 2026-11-24
+- **ui/gpu**: GPU telemetry in the 1 Hz worker, unified chart HUD, compact System bar and clickable GPU table.
+## [0.6.3] - 2026-11-24
+- **ui/memory**: fixed empty chart, single mono-readout header, clean Inter typography.
+## [0.6.2] - 2026-11-24
+- **ui-2.0**: distinct interaction colors, Inter labels, stable header/status layout, clean chassis pills.
+## [0.6.1] - 2026-11-23
+- **ui-2.0**: 1 Hz sidebar sparklines, compact header/status, restyled GPU/Memory/CPU cockpits.
+## [0.6.0] - 2026-11-23
+- **ui-2.0**: embedded fonts, Obsidian Cyan cockpit, collapsible sidebar/sparklines, Mini-HUD/Ctrl+K.
 ## [0.5.42] - 2026-11-23
 - **pdh/storage**: LUID-less engine %, real probe traffic, disk rate once, CSV/UI/instance fixes.
 ## [0.5.41] - 2026-11-23
@@ -73,20 +89,4 @@ All notable PULSE changes are in this file. Earlier 0.1.x entries are in CHANGEL
 ## [0.5.16] - 2026-11-20
 - **cpu/collector**: cache formatted CommandLine/User per (pid, start_time) in the bounded FIFO and reuse strings across ticks.
 - **maintainability**: extract pure helpers from cpu table and storage collector for line-count headroom.
-## [0.5.15] - 2026-11-20
-- **hotkey/worker**: single Ctrl+Shift+F9 hotkey with silent fallback, persisted toggle and panic-safe menu jobs.
-## [0.5.12] - 2026-11-20
-- **tray/hud**: tray-thread restore wakes hidden window, icon visibility verified, two-line HUD metrics.
-## [0.5.11] - 2026-11-20
-- **mini-hud/tray/hotkey**: reliable drag start, conditional tray hide, bounded shutdown and hotkey fallback status.
-## [0.5.10] - 2026-11-20
-- **instance/window**: exact window-title match wakes the real PULSE window and rejects tray/IME helpers.
-## [0.5.9] - 2026-11-19
-- **process/tools**: read-only Restart Manager file-lock finder for dropped paths and click-to-pick window PID.
-## [0.5.8] - 2026-11-19
-- **process/suspend**: verified Suspend/Resume with hard blocklist, [SUSPENDED] badge and exit auto-resume guard.
-## [0.5.7] - 2026-11-19
-- **cpu/table**: Flat/Clones/Tree view modes with cycle-safe hierarchy, lazy CommandLine/User metadata and extended Ctrl+C row copy.
-## [0.5.6] - 2026-11-19
-- **cpu/background**: persistent exe-path and menu-action workers; explicit resolve/denied states.
 

@@ -46,7 +46,7 @@ pub fn render_cpu_chart(ui: &mut egui::Ui, h: &mut CpuHistory) {
             PlotPoints::new(peak_raw.clone())
         };
 
-        let plot_height = ui.available_height().max(220.0);
+        let plot_height = ui.available_height().clamp(200.0, 340.0);
         let plot_width = ui.available_width().max(120.0);
 
         // Read toggle states BEFORE plot.show()

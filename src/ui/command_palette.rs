@@ -1,23 +1,38 @@
 //! Centered command palette (Ctrl+K): fuzzy command and live-process launcher.
-use std::sync::{Mutex, OnceLock};
-
-use eframe::egui;
-
 use crate::app_cmd::AppCommand;
 use crate::app_tabs::ActiveTab;
 use crate::modules::cpu::model::RawProcessCpuRow;
 use crate::modules::cpu::table_state::CpuTableState;
 use crate::theme::colors;
-
+use eframe::egui;
+use std::sync::{Mutex, OnceLock};
 #[path = "command_palette_logic.rs"]
 mod logic;
 use logic::{
     build_items, clamp_palette_selection, matches_palette_query, move_palette_selection,
     PaletteAction,
 };
-
 const INPUT_ID: &str = "command_palette_search";
-
+/// Strips navigation bracket markers from command labels for clean UI rows.
+fn clean_label(label: &str) -> String {
+    let mut out = String::with_capacity(label.len());
+    let mut skipped = false;
+    for ch in label.chars() {
+        if ch == '[' {
+            skipped = true;
+            continue;
+        }
+        if ch == ']' {
+            skipped = false;
+            continue;
+        }
+        if skipped || (ch == ' ' && out.ends_with(' ')) {
+            continue;
+        }
+        out.push(ch);
+    }
+    out
+}
 #[derive(Default)]
 struct PaletteState {
     open: bool,
@@ -25,20 +40,16 @@ struct PaletteState {
     selected_idx: usize,
     just_opened: bool,
 }
-
 static STATE: OnceLock<Mutex<PaletteState>> = OnceLock::new();
-
 fn state() -> &'static Mutex<PaletteState> {
     STATE.get_or_init(|| Mutex::new(PaletteState::default()))
 }
-
 fn close_state(state: &mut PaletteState) {
     state.open = false;
     state.just_opened = false;
     state.selected_idx = 0;
     state.query.clear();
 }
-
 /// Toggles visibility, resetting transient state on each open.
 pub fn toggle() {
     let mut guard = state().lock().unwrap_or_else(|e| e.into_inner());
@@ -55,7 +66,6 @@ pub fn toggle() {
 pub fn is_open() -> bool {
     state().lock().unwrap_or_else(|e| e.into_inner()).open
 }
-
 fn execute(
     action: PaletteAction,
     ctx: &egui::Context,
@@ -84,7 +94,8 @@ fn execute(
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         PaletteAction::SelectProcess(pid) => {
-            *active_tab = ActiveTab::Cpu;
+            *active_tab = ActiveTab::Processes;
+            crate::core::request_process_scan();
             cpu_state.search_query.clear();
             cpu_state.selected_pid = Some(pid);
             cpu_state.selected_start_time = None;
@@ -154,54 +165,91 @@ pub fn render_command_palette(
     let selected = guard.selected_idx;
     let mut pending: Option<PaletteAction> = None;
     let mut selected_response: Option<egui::Response> = None;
-    egui::Window::new("COMMAND PALETTE (Ctrl+K)")
+    egui::Window::new("Command Palette (Ctrl+K)")
         .collapsible(false)
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .frame(
+            egui::Frame::none()
+                .fill(colors::BG_CARD)
+                .stroke(egui::Stroke::new(1.0_f32, colors::BORDER))
+                .rounding(egui::Rounding::same(colors::CARD_RADIUS))
+                .inner_margin(egui::Margin::same(12.0)),
+        )
         .show(ctx, |ui| {
             ui.set_min_width(460.0);
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(">").monospace().size(13.0).color(colors::ACCENT_CYAN),
-                );
-                ui.add(
-                    egui::TextEdit::singleline(&mut query)
-                        .id(egui::Id::new(INPUT_ID))
-                        .hint_text("Search commands and processes...")
-                        .desired_width(410.0),
-                );
-            });
-            ui.separator();
+            let focused = ui.memory(|m| m.focused() == Some(egui::Id::new(INPUT_ID)));
+            egui::Frame::none()
+                .fill(colors::BG_WINDOW)
+                .stroke(egui::Stroke::new(
+                    1.0_f32,
+                    if focused { colors::ACCENT_CYAN } else { colors::BORDER },
+                ))
+                .rounding(egui::Rounding::same(colors::PILL_RADIUS))
+                .inner_margin(egui::Margin::symmetric(8.0, 4.0))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(">")
+                                .monospace()
+                                .size(13.0)
+                                .color(colors::ACCENT_CYAN),
+                        );
+                        ui.add(
+                            egui::TextEdit::singleline(&mut query)
+                                .id(egui::Id::new(INPUT_ID))
+                                .hint_text("Search commands and processes...")
+                                .desired_width(400.0),
+                        );
+                    });
+                });
+            ui.add_space(6.0);
             if visible.is_empty() {
                 ui.label(
                     egui::RichText::new("No matches").size(11.0).color(colors::TEXT_SECONDARY),
                 );
             } else {
-                egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                egui::ScrollArea::vertical().max_height(340.0).show(ui, |ui| {
                     for (row, &idx) in visible.iter().enumerate() {
                         let is_selected = row == selected;
-                        let text = if is_selected {
-                            egui::RichText::new(&items[idx].label)
-                                .monospace()
-                                .size(12.0)
-                                .strong()
-                                .color(colors::ACCENT_CYAN)
-                        } else {
-                            egui::RichText::new(&items[idx].label)
-                                .monospace()
-                                .size(12.0)
-                                .color(colors::TEXT_PRIMARY)
-                        };
-                        let response = ui.selectable_label(is_selected, text);
+                        let label = clean_label(&items[idx].label);
+                        let color =
+                            if is_selected { colors::ACCENT_CYAN } else { colors::TEXT_PRIMARY };
+                        let mut text =
+                            egui::RichText::new(&label).monospace().size(12.0).color(color);
                         if is_selected {
-                            selected_response = Some(response.clone());
+                            text = text.strong();
                         }
-                        if response.clicked() {
-                            pending = Some(items[idx].action);
+                        let mut row_response = None;
+                        egui::Frame::none()
+                            .fill(if is_selected { colors::ELEVATED } else { colors::BG_WINDOW })
+                            .stroke(egui::Stroke::new(
+                                1.0_f32,
+                                if is_selected { colors::ACCENT_CYAN } else { colors::BORDER },
+                            ))
+                            .rounding(egui::Rounding::same(colors::PILL_RADIUS))
+                            .inner_margin(egui::Margin::symmetric(8.0, 3.0))
+                            .show(ui, |ui| {
+                                row_response = Some(ui.selectable_label(is_selected, text));
+                            });
+                        if let Some(response) = row_response {
+                            if is_selected {
+                                selected_response = Some(response.clone());
+                            }
+                            if response.clicked() {
+                                pending = Some(items[idx].action);
+                            }
                         }
                     }
                 });
             }
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new("Up/Down navigate | Enter select | Esc close")
+                    .monospace()
+                    .size(10.0)
+                    .color(colors::TEXT_MUTED),
+            );
         });
     if up || down {
         if let Some(response) = selected_response {
@@ -212,5 +260,18 @@ pub fn render_command_palette(
     if let Some(action) = pending {
         close_state(&mut guard);
         execute(action, ctx, active_tab, cpu_state, cmds);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn select_process_opens_processes_tab() {
+        let ctx = egui::Context::default();
+        let (mut tab, mut cpu, mut cmds) = (ActiveTab::Cpu, CpuTableState::default(), Vec::new());
+        execute(PaletteAction::SelectProcess(4242), &ctx, &mut tab, &mut cpu, &mut cmds);
+        assert_eq!((tab, cpu.selected_pid), (ActiveTab::Processes, Some(4242)));
     }
 }

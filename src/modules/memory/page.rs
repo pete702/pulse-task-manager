@@ -2,12 +2,14 @@
 
 use eframe::egui;
 
+use crate::app_cmd::AppCommand;
 use crate::app_tabs::ActiveTab;
 use crate::modules::cpu::table_state::{CpuSortCol, CpuTableState};
 use crate::modules::memory::history::MemoryHistory;
 use crate::modules::memory::model::MemorySnapshot;
 use crate::modules::memory::view;
 use crate::theme::{card_frame, colors, load_color};
+use crate::ui::primitives::pill_button;
 
 /// Renders the Memory hardware cockpit.
 #[allow(clippy::too_many_arguments)]
@@ -18,14 +20,14 @@ pub fn render_memory_page(
     _uptime_secs: u64,
     active_tab: &mut ActiveTab,
     cpu_table_state: &mut CpuTableState,
+    cmds: &mut Vec<AppCommand>,
 ) {
     let pct = mem.ram_usage_percent();
     card_frame().show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new("[01] Memory (RAM) // HARDWARE COCKPIT")
-                    .monospace()
-                    .size(12.0)
+                egui::RichText::new("01 Memory (RAM)")
+                    .font(egui::FontId::proportional(14.0))
                     .color(colors::TEXT_PRIMARY),
             );
             ui.separator();
@@ -46,7 +48,13 @@ pub fn render_memory_page(
                 .color(colors::TEXT_SECONDARY),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("[ View Processes -> ]").clicked() {
+                if pill_button(ui, "Trim Memory").clicked() {
+                    cmds.push(AppCommand::RequestMemoryTrim);
+                }
+                if pill_button(ui, "View Processes ->")
+                    .on_hover_text("Open the master process table")
+                    .clicked()
+                {
                     cpu_table_state.ensure_sort(CpuSortCol::RamBytes, false);
                     *active_tab = ActiveTab::Processes;
                     crate::core::request_process_scan();
@@ -54,7 +62,7 @@ pub fn render_memory_page(
             });
         });
     });
-    ui.add_space(10.0);
+    ui.add_space(6.0);
 
     // Two-level cockpit (top cards + full-height chart), no vertical scrollbar.
     view::render_memory_cards(ui, mem, history);

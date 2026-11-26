@@ -4,26 +4,26 @@ use crate::i18n::Key;
 use crate::modules::memory::chart_view::set_window;
 use crate::modules::memory::model::ChartWindow;
 use crate::theme::colors;
+use crate::ui::primitives::pill_button_colored;
 use eframe::egui;
 
 const WINDOWS: [ChartWindow; 3] =
     [ChartWindow::OneMin, ChartWindow::FiveMin, ChartWindow::FifteenMin];
 
-fn window_button(ui: &mut egui::Ui, window: ChartWindow, active: bool) -> bool {
-    let color = if active { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
-    let text = egui::RichText::new(window.label_en()).monospace().size(11.0).strong().color(color);
-    let mut button = egui::Button::new(text).frame(true).min_size(egui::vec2(40.0, 20.0));
-    button = if active {
-        button.fill(colors::ACCENT_CYAN.gamma_multiply(0.15))
-    } else {
-        button.fill(colors::BORDER)
-    };
-    ui.add(button).clicked()
+/// Soft chip with JetBrains Mono numbers for the live RAM/commit readout.
+fn mono_badge(ui: &mut egui::Ui, text: &str, fg: egui::Color32) {
+    egui::Frame::none()
+        .fill(fg.gamma_multiply(0.13))
+        .stroke(egui::Stroke::NONE)
+        .rounding(egui::Rounding::same(5.0))
+        .inner_margin(egui::Margin::symmetric(8.0, 3.0))
+        .show(ui, |ui| {
+            let rich = egui::RichText::new(text).font(egui::FontId::monospace(11.5)).color(fg);
+            ui.add(egui::Label::new(rich).wrap(false));
+        });
 }
 
-/// Draws title, window buttons and the live readout left-to-right so the
-/// readout can never be clipped by the card's right edge.
-/// Also renders the Memory Spike Blackbox indicator on the right.
+/// Single clean header row: title, window pills, right-side readout and spike note.
 pub(crate) fn render_header(
     ui: &mut egui::Ui,
     selected: &mut ChartWindow,
@@ -34,55 +34,34 @@ pub(crate) fn render_header(
     latest_spike: Option<&str>,
 ) {
     let narrow = ui.available_width() < 960.0;
-    ui.horizontal_wrapped(|ui| {
+    ui.horizontal(|ui| {
         ui.label(
-            egui::RichText::new(Key::MemoryHistoryTitle.t())
-                .monospace()
-                .size(13.0)
+            egui::RichText::new("Memory Utilization History")
+                .font(egui::FontId::proportional(13.0))
                 .color(colors::ACCENT_CYAN),
-        );
+        )
+        .on_hover_text(Key::MemoryHistoryTitle.t());
         ui.add_space(8.0);
         for window in WINDOWS {
-            if window_button(ui, window, window == *selected) {
+            let col =
+                if window == *selected { colors::ACCENT_CYAN } else { colors::TEXT_SECONDARY };
+            if pill_button_colored(ui, window.label_en(), col).clicked() {
                 *selected = window;
                 set_window(ui.ctx(), window);
             }
         }
-        if !narrow {
-            ui.add_space(12.0);
-            let (label, value) = if has_commit { ("Commit", commit) } else { ("Swap", swap) };
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(format!("RAM: {ram:.1}% | {label}: {value:.1}%"))
-                        .monospace()
-                        .size(11.0)
-                        .color(colors::TEXT_SECONDARY),
-                )
-                .wrap(false),
-            );
-        }
-
-        // Blackbox badge on the right - never clipped when wrapped.
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if let Some(spike) = latest_spike {
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(format!("[ ! SPIKE: {spike} ]"))
-                            .monospace()
-                            .size(10.5)
-                            .color(colors::ACCENT_RED),
-                    )
-                    .wrap(false),
-                );
+                mono_badge(ui, spike, colors::ACCENT_RED);
             } else {
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new("[ BLACKBOX: ARMED (85% trigger) ]")
-                            .monospace()
-                            .size(10.5)
-                            .color(egui::Color32::from_rgb(0x00, 0xE0, 0x80)),
-                    )
-                    .wrap(false),
+                mono_badge(ui, "BLACKBOX: ARMED (85% trigger)", colors::EMERALD);
+            }
+            if !narrow {
+                let (label, value) = if has_commit { ("COMMIT", commit) } else { ("SWAP", swap) };
+                mono_badge(
+                    ui,
+                    &format!("RAM {ram:.1}% | {label} {value:.1}%"),
+                    colors::TEXT_SECONDARY,
                 );
             }
         });
